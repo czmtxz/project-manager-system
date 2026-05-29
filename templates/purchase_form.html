@@ -13,7 +13,8 @@
                     <div class="col-md-6">
                         <div class="mb-3">
                             <label class="form-label">采购单号 <span class="text-danger">*</span></label>
-                            <input type="text" name="purchase_no" class="form-control" placeholder="如: CG-2026-001" required value="{{ purchase.purchase_no if purchase else '' }}">
+                            <input type="text" name="purchase_no" class="form-control" placeholder="留空则系统自动生成" value="{{ purchase.purchase_no if purchase else (next_purchase_no or '') }}">
+                            <div class="form-text">采购单号不可重复；如提交时重复，系统会自动换成新的可用编号。</div>
                         </div>
                     </div>
                     <div class="col-md-6">
