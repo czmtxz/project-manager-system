@@ -23,6 +23,12 @@
                     <i class="bi bi-check-circle"></i> 确认对账
                 </button>
             </form>
+            {% elif recon.status == 'confirmed' and session.role == 'admin' %}
+            <form method="POST" action="{{ url_for('reconciliation_unconfirm', id=recon.id) }}">
+                <button type="submit" class="btn btn-warning btn-sm" onclick="return confirm('确定反确认该对账单？反确认后可重新对账。')">
+                    <i class="bi bi-arrow-counterclockwise"></i> 反确认
+                </button>
+            </form>
             {% endif %}
             <a href="{{ url_for('purchase_detail', id=recon.purchase_id) }}" class="btn btn-outline-secondary btn-sm">
                 <i class="bi bi-cart3"></i> 查看采购单

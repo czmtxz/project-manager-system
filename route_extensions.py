@@ -540,6 +540,47 @@ def register_missing_routes(app, ctx):
         flash('对账已确认', 'success')
         return redirect(url_for('reconciliation_detail', id=id))
 
+    @app.route('/reconciliation/<int:id>/unconfirm', methods=['POST'])
+    @login_required
+    @admin_required
+    def reconciliation_unconfirm(id):
+        db = get_db()
+        recon = db.execute("SELECT * FROM reconciliations WHERE id=?", (id,)).fetchone()
+        if not recon:
+            flash('对账单不存在', 'danger')
+            return redirect(url_for('reconciliation_list'))
+        if recon['status'] != 'confirmed':
+            flash('该对账单不是已确认状态，无需反确认', 'warning')
+            return redirect(url_for('reconciliation_detail', id=id))
+
+        # 反确认后按差异重新判定状态
+        recon_keys = recon.keys()
+        qty_diff_rate = abs(float(recon['qty_diff_rate'] or 0)) if 'qty_diff_rate' in recon_keys else 0
+        allowed = float(recon['allowed_loss_rate'] or 0) if 'allowed_loss_rate' in recon_keys else 0
+        freight_diff = abs(float(recon['freight_diff'] or 0)) if 'freight_diff' in recon_keys else 0
+        if qty_diff_rate > allowed:
+            new_status = 'discrepancy'
+        elif freight_diff >= 0.01:
+            new_status = 'pending'
+        else:
+            new_status = 'matched'
+
+        sets = ["status=?"]
+        params = [new_status]
+        if 'confirmed_by' in recon_keys:
+            sets.append("confirmed_by=NULL")
+        if 'confirmed_at' in recon_keys:
+            sets.append("confirmed_at=NULL")
+        db.execute(
+            f"UPDATE reconciliations SET {', '.join(sets)} WHERE id=?",
+            params + [id],
+        )
+        db.commit()
+        add_log(session.get('user_id'), session.get('username', ''), '对账反确认',
+                f"对账单ID: {id}", request.remote_addr)
+        flash('已反确认，对账单回到未确认状态', 'success')
+        return redirect(url_for('reconciliation_detail', id=id))
+
     # ---------- 付款类型 ----------
     @app.route('/payment_type/add', methods=['POST'])
     @login_required
