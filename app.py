@@ -3765,35 +3765,20 @@ def purchase_add():
     """新增采购单"""
     db = get_db()
     if request.method == 'POST':
-        project_id = request.form.get('project_id', type=int)
-        contract_id = request.form.get('contract_id', type=int) or None
-        supplier = request.form.get('supplier', '')
-        order_date = request.form.get('order_date', '')
-        remark = request.form.get('remark', '')
-
-        # 生成采购单号
-        count = db.execute("SELECT COUNT(*) FROM purchase_orders").fetchone()[0]
-        purchase_no = f'PO{datetime.now().strftime("%Y%m%d")}{str(count + 1).zfill(4)}'
-
-        # 处理附件
-        attachment = ''
-        if 'attachment' in request.files:
-            f = request.files['attachment']
-            if f and f.filename:
-                ext = os.path.splitext(f.filename)[1]
-                filename = f'purchase_{uuid.uuid4().hex[:8]}{ext}'
-                f.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                attachment = filename
-
-        db.execute("""INSERT INTO purchase_orders (project_id, contract_id, purchase_no, supplier,
-                      order_date, total_amount, status, remark, attachment, created_by, created_at)
-                      VALUES (?, ?, ?, ?, ?, 0, '待审核', ?, ?, ?, ?)""",
-                   (project_id, contract_id, purchase_no, supplier, order_date, remark,
-                    attachment, session.get('user_id'), datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        payload = _purchase_form_payload(db)
+        columns = ', '.join(payload.keys())
+        placeholders = ', '.join('?' for _ in payload)
+        cur = db.execute(
+            f"INSERT INTO purchase_orders ({columns}) VALUES ({placeholders})",
+            list(payload.values()),
+        )
+        purchase_id = cur.lastrowid
+        _replace_purchase_items(db, purchase_id)
         db.commit()
+        purchase_no = payload.get('purchase_no') or purchase_id
         add_log(session.get('user_id'), session.get('username', ''), '新增采购单', f'采购单号: {purchase_no}')
         flash('采购单创建成功', 'success')
-        return redirect(url_for('purchase_list'))
+        return redirect(url_for('purchase_detail', id=purchase_id))
 
     projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
     contracts = db.execute("SELECT id, contract_name, contract_type FROM contracts ORDER BY contract_name").fetchall()
@@ -3915,28 +3900,13 @@ def purchase_edit(id):
         return redirect(url_for('purchase_list'))
 
     if request.method == 'POST':
-        project_id = request.form.get('project_id', type=int)
-        contract_id = request.form.get('contract_id', type=int) or None
-        supplier = request.form.get('supplier', '')
-        order_date = request.form.get('order_date', '')
-        status = request.form.get('status', '待审核')
-        remark = request.form.get('remark', '')
-
-        # 处理附件
-        attachment = purchase['attachment']
-        if 'attachment' in request.files:
-            f = request.files['attachment']
-            if f and f.filename:
-                ext = os.path.splitext(f.filename)[1]
-                filename = f'purchase_{uuid.uuid4().hex[:8]}{ext}'
-                f.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                attachment = filename
-
-        db.execute("""UPDATE purchase_orders SET project_id=?, contract_id=?, supplier=?,
-                      order_date=?, status=?, remark=?, attachment=?, updated_at=?
-                      WHERE id=?""",
-                   (project_id, contract_id, supplier, order_date, status, remark,
-                    attachment, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), id))
+        payload = _purchase_form_payload(db, purchase)
+        assignments = ', '.join(f'{k}=?' for k in payload.keys())
+        db.execute(
+            f"UPDATE purchase_orders SET {assignments} WHERE id=?",
+            list(payload.values()) + [id],
+        )
+        _replace_purchase_items(db, id)
         db.commit()
         add_log(session.get('user_id'), session.get('username', ''), '编辑采购单', f'采购单ID: {id}')
         flash('采购单更新成功', 'success')
@@ -3945,8 +3915,12 @@ def purchase_edit(id):
     projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
     contracts = db.execute("SELECT id, contract_name, contract_type FROM contracts ORDER BY contract_name").fetchall()
     suppliers = db.execute("SELECT id, name FROM suppliers WHERE is_active=1 ORDER BY name").fetchall()
+    items = db.execute(
+        "SELECT * FROM purchase_items WHERE purchase_id=? ORDER BY sort_order, id",
+        (id,),
+    ).fetchall()
     return render_template('purchase_form.html', purchase=purchase, projects=projects,
-                           contracts=contracts, suppliers=suppliers)
+                           contracts=contracts, suppliers=suppliers, items=items)
 
 
 @app.route('/purchase/<int:id>/delete', methods=['POST'])
@@ -5626,6 +5600,18 @@ def api_project_invoices(pid):
     rows = db.execute(
         "SELECT id, invoice_no, invoice_type, amount FROM invoices "
         "WHERE project_id=? ORDER BY id DESC",
+        (pid,),
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route('/api/project/<int:pid>/contracts')
+@login_required
+def api_project_contracts(pid):
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, contract_name, contract_type FROM contracts "
+        "WHERE project_id=? ORDER BY contract_name",
         (pid,),
     ).fetchall()
     return jsonify([dict(r) for r in rows])
