@@ -3616,6 +3616,32 @@ def _table_columns(db, table):
     return {r[1] for r in db.execute(f'PRAGMA table_info({table})').fetchall()}
 
 
+def _next_purchase_no(db):
+    prefix = f'PO{datetime.now().strftime("%Y%m%d")}'
+    rows = db.execute(
+        "SELECT purchase_no FROM purchase_orders WHERE purchase_no LIKE ?",
+        (f'{prefix}%',),
+    ).fetchall()
+    max_seq = 0
+    for row in rows:
+        no = row['purchase_no'] or ''
+        suffix = no.replace(prefix, '', 1)
+        if suffix.isdigit():
+            max_seq = max(max_seq, int(suffix))
+    return f'{prefix}{str(max_seq + 1).zfill(4)}'
+
+
+def _purchase_no_exists(db, purchase_no, exclude_id=None):
+    if not purchase_no:
+        return False
+    sql = "SELECT id FROM purchase_orders WHERE purchase_no=?"
+    params = [purchase_no]
+    if exclude_id:
+        sql += " AND id<>?"
+        params.append(exclude_id)
+    return db.execute(sql, params).fetchone() is not None
+
+
 def _save_purchase_attachment(file_storage):
     if not file_storage or not file_storage.filename:
         return ''
@@ -3637,8 +3663,7 @@ def _purchase_form_payload(db, existing=None):
 
     purchase_no = request.form.get('purchase_no', '').strip()
     if not purchase_no:
-        count = db.execute("SELECT COUNT(*) FROM purchase_orders").fetchone()[0]
-        purchase_no = f'PO{datetime.now().strftime("%Y%m%d")}{str(count + 1).zfill(4)}'
+        purchase_no = _next_purchase_no(db)
 
     total_amount = request.form.get('total_amount', type=float)
     if total_amount is None:
@@ -3766,12 +3791,27 @@ def purchase_add():
     db = get_db()
     if request.method == 'POST':
         payload = _purchase_form_payload(db)
+        original_purchase_no = payload.get('purchase_no')
+        if _purchase_no_exists(db, original_purchase_no):
+            payload['purchase_no'] = _next_purchase_no(db)
+            flash(f'采购单号 {original_purchase_no} 已存在，系统已自动改为 {payload["purchase_no"]}', 'warning')
         columns = ', '.join(payload.keys())
         placeholders = ', '.join('?' for _ in payload)
-        cur = db.execute(
-            f"INSERT INTO purchase_orders ({columns}) VALUES ({placeholders})",
-            list(payload.values()),
-        )
+        try:
+            cur = db.execute(
+                f"INSERT INTO purchase_orders ({columns}) VALUES ({placeholders})",
+                list(payload.values()),
+            )
+        except sqlite3.IntegrityError as e:
+            if 'purchase_orders.purchase_no' in str(e):
+                payload['purchase_no'] = _next_purchase_no(db)
+                cur = db.execute(
+                    f"INSERT INTO purchase_orders ({columns}) VALUES ({placeholders})",
+                    list(payload.values()),
+                )
+                flash(f'采购单号重复，系统已自动改为 {payload["purchase_no"]}', 'warning')
+            else:
+                raise
         purchase_id = cur.lastrowid
         _replace_purchase_items(db, purchase_id)
         db.commit()
@@ -3783,8 +3823,9 @@ def purchase_add():
     projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
     contracts = db.execute("SELECT id, contract_name, contract_type FROM contracts ORDER BY contract_name").fetchall()
     suppliers = db.execute("SELECT id, name FROM suppliers WHERE is_active=1 ORDER BY name").fetchall()
+    next_purchase_no = _next_purchase_no(db)
     return render_template('purchase_form.html', projects=projects, contracts=contracts,
-                           suppliers=suppliers, now=datetime.now())
+                           suppliers=suppliers, now=datetime.now(), next_purchase_no=next_purchase_no)
 
 
 @app.route('/purchase/<int:id>')
@@ -3901,11 +3942,20 @@ def purchase_edit(id):
 
     if request.method == 'POST':
         payload = _purchase_form_payload(db, purchase)
+        if _purchase_no_exists(db, payload.get('purchase_no'), exclude_id=id):
+            flash(f'采购单号 {payload.get("purchase_no")} 已存在，请换一个单号', 'danger')
+            return redirect(url_for('purchase_edit', id=id))
         assignments = ', '.join(f'{k}=?' for k in payload.keys())
-        db.execute(
-            f"UPDATE purchase_orders SET {assignments} WHERE id=?",
-            list(payload.values()) + [id],
-        )
+        try:
+            db.execute(
+                f"UPDATE purchase_orders SET {assignments} WHERE id=?",
+                list(payload.values()) + [id],
+            )
+        except sqlite3.IntegrityError as e:
+            if 'purchase_orders.purchase_no' in str(e):
+                flash('采购单号已存在，请换一个单号', 'danger')
+                return redirect(url_for('purchase_edit', id=id))
+            raise
         _replace_purchase_items(db, id)
         db.commit()
         add_log(session.get('user_id'), session.get('username', ''), '编辑采购单', f'采购单ID: {id}')
