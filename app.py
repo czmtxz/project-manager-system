@@ -3993,33 +3993,63 @@ def purchase_delete(id):
     return redirect(url_for('purchase_list'))
 
 
+def _coerce_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+@app.route('/api/purchase/<int:purchase_id>/item/add', methods=['POST'])
 @app.route('/api/purchase/item/add', methods=['POST'])
 @login_required
-def api_purchase_item_add():
+def api_purchase_item_add(purchase_id=None):
     """API添加采购明细"""
     db = get_db()
-    data = request.get_json() or request.form
-    purchase_id = data.get('purchase_id', type=int)
-    item_name = data.get('item_name', '')
-    specification = data.get('specification', '')
-    unit = data.get('unit', '')
-    quantity = data.get('quantity', type=float) or 0
-    unit_price = data.get('unit_price', type=float) or 0
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = request.form.to_dict()
+
+    if purchase_id is None:
+        purchase_id = payload.get('purchase_id')
+    try:
+        purchase_id = int(purchase_id)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': '缺少采购单ID'}), 400
+
+    order = db.execute("SELECT id FROM purchase_orders WHERE id=?", (purchase_id,)).fetchone()
+    if not order:
+        return jsonify({'success': False, 'error': '采购单不存在'}), 404
+
+    item_name = (payload.get('item_name') or '').strip()
+    if not item_name:
+        return jsonify({'success': False, 'error': '请输入品名'}), 400
+    specification = (payload.get('specification') or '').strip()
+    unit = (payload.get('unit') or '吨').strip()
+    quantity = _coerce_float(payload.get('quantity'))
+    unit_price = _coerce_float(payload.get('unit_price'))
     amount = round(quantity * unit_price, 2)
 
-    # 获取排序号
-    max_order = db.execute("SELECT COALESCE(MAX(sort_order), 0) FROM purchase_items WHERE purchase_id=?", (purchase_id,)).fetchone()[0]
+    max_order = db.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) FROM purchase_items WHERE purchase_id=?",
+        (purchase_id,),
+    ).fetchone()[0]
 
-    db.execute("""INSERT INTO purchase_items (purchase_id, item_name, specification, unit, quantity, unit_price, amount, sort_order)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-               (purchase_id, item_name, specification, unit, quantity, unit_price, amount, max_order + 1))
+    cur = db.execute(
+        """INSERT INTO purchase_items
+           (purchase_id, item_name, specification, unit, quantity, unit_price, amount, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (purchase_id, item_name, specification, unit, quantity, unit_price, amount, max_order + 1),
+    )
+    item_id = cur.lastrowid
 
-    # 更新采购单总金额
-    total = db.execute("SELECT COALESCE(SUM(amount), 0) FROM purchase_items WHERE purchase_id=?", (purchase_id,)).fetchone()[0]
+    total = db.execute(
+        "SELECT COALESCE(SUM(amount), 0) FROM purchase_items WHERE purchase_id=?",
+        (purchase_id,),
+    ).fetchone()[0]
     db.execute("UPDATE purchase_orders SET total_amount=? WHERE id=?", (total, purchase_id))
     db.commit()
 
-    item_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
     return jsonify({'success': True, 'item_id': item_id, 'amount': amount, 'total': total})
 
 
@@ -4028,17 +4058,19 @@ def api_purchase_item_add():
 def api_purchase_item_edit(item_id):
     """API编辑采购明细"""
     db = get_db()
-    data = request.get_json() or request.form
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = request.form.to_dict()
     item = db.execute("SELECT * FROM purchase_items WHERE id=?", (item_id,)).fetchone()
     if not item:
         return jsonify({'success': False, 'message': '明细不存在'}), 404
 
-    item_name = data.get('item_name', item['item_name'])
-    specification = data.get('specification', item['specification'])
-    unit = data.get('unit', item['unit'])
-    quantity = data.get('quantity', item['quantity'])
-    unit_price = data.get('unit_price', item['unit_price'])
-    amount = round(float(quantity) * float(unit_price), 2)
+    item_name = (payload.get('item_name') or item['item_name'] or '').strip()
+    specification = payload.get('specification', item['specification'])
+    unit = payload.get('unit', item['unit']) or '吨'
+    quantity = _coerce_float(payload.get('quantity'), item['quantity'] or 0)
+    unit_price = _coerce_float(payload.get('unit_price'), item['unit_price'] or 0)
+    amount = round(quantity * unit_price, 2)
 
     db.execute("""UPDATE purchase_items SET item_name=?, specification=?, unit=?, quantity=?, unit_price=?, amount=?
                   WHERE id=?""", (item_name, specification, unit, quantity, unit_price, amount, item_id))
