@@ -3612,6 +3612,114 @@ def admin_client_deductions_sync():
 
 # ==================== 采购管理 ====================
 
+def _table_columns(db, table):
+    return {r[1] for r in db.execute(f'PRAGMA table_info({table})').fetchall()}
+
+
+def _save_purchase_attachment(file_storage):
+    if not file_storage or not file_storage.filename:
+        return ''
+    ext = os.path.splitext(file_storage.filename)[1]
+    filename = f'purchase_{uuid.uuid4().hex[:8]}{ext}'
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'purchases')
+    os.makedirs(folder, exist_ok=True)
+    file_storage.save(os.path.join(folder, filename))
+    return filename
+
+
+def _purchase_form_payload(db, existing=None):
+    cols = _table_columns(db, 'purchase_orders')
+    payload = {}
+
+    def set_if_col(column, value):
+        if column in cols:
+            payload[column] = value
+
+    purchase_no = request.form.get('purchase_no', '').strip()
+    if not purchase_no:
+        count = db.execute("SELECT COUNT(*) FROM purchase_orders").fetchone()[0]
+        purchase_no = f'PO{datetime.now().strftime("%Y%m%d")}{str(count + 1).zfill(4)}'
+
+    total_amount = request.form.get('total_amount', type=float)
+    if total_amount is None:
+        quantities = request.form.getlist('quantity[]')
+        prices = request.form.getlist('unit_price[]')
+        total_amount = 0
+        for q, p in zip(quantities, prices):
+            try:
+                total_amount += float(q or 0) * float(p or 0)
+            except ValueError:
+                pass
+
+    set_if_col('project_id', request.form.get('project_id', type=int))
+    set_if_col('contract_id', request.form.get('contract_id', type=int) or None)
+    set_if_col('purchase_no', purchase_no)
+    set_if_col('purchase_type', request.form.get('purchase_type', '材料采购'))
+    set_if_col('supplier', request.form.get('supplier', '').strip())
+    set_if_col('description', request.form.get('description', '').strip())
+    set_if_col('total_amount', total_amount or 0)
+    purchase_date = request.form.get('purchase_date', '') or request.form.get('order_date', '')
+    set_if_col('purchase_date', purchase_date)
+    set_if_col('order_date', purchase_date)
+    set_if_col('delivery_address', request.form.get('delivery_address', '').strip())
+    set_if_col('status', request.form.get('status') or (existing['status'] if existing and 'status' in existing.keys() else 'draft'))
+    set_if_col('remark', request.form.get('remark', '').strip())
+
+    attachment = existing['attachment'] if existing and 'attachment' in existing.keys() else ''
+    if 'attachment' in request.files:
+        uploaded = _save_purchase_attachment(request.files['attachment'])
+        if uploaded:
+            attachment = uploaded
+    set_if_col('attachment', attachment)
+
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    if existing is None:
+        set_if_col('created_by', session.get('user_id'))
+        set_if_col('created_at', now)
+    set_if_col('updated_at', now)
+    return payload
+
+
+def _replace_purchase_items(db, purchase_id):
+    item_names = request.form.getlist('item_name[]')
+    specs = request.form.getlist('specification[]')
+    units = request.form.getlist('unit[]')
+    quantities = request.form.getlist('quantity[]')
+    prices = request.form.getlist('unit_price[]')
+
+    db.execute("DELETE FROM purchase_items WHERE purchase_id=?", (purchase_id,))
+    item_cols = _table_columns(db, 'purchase_items')
+    for idx, name in enumerate(item_names):
+        name = (name or '').strip()
+        if not name:
+            continue
+        try:
+            qty = float(quantities[idx] or 0) if idx < len(quantities) else 0
+        except ValueError:
+            qty = 0
+        try:
+            price = float(prices[idx] or 0) if idx < len(prices) else 0
+        except ValueError:
+            price = 0
+        row = {
+            'purchase_id': purchase_id,
+            'item_name': name,
+            'specification': specs[idx].strip() if idx < len(specs) else '',
+            'unit': units[idx] if idx < len(units) else '吨',
+            'quantity': qty,
+            'unit_price': price,
+            'amount': round(qty * price, 2),
+            'sort_order': idx,
+        }
+        row = {k: v for k, v in row.items() if k in item_cols}
+        columns = ', '.join(row.keys())
+        placeholders = ', '.join('?' for _ in row)
+        db.execute(
+            f"INSERT INTO purchase_items ({columns}) VALUES ({placeholders})",
+            list(row.values()),
+        )
+
+
 @app.route('/purchase/list')
 @login_required
 def purchase_list():
