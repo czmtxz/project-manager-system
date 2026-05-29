@@ -4764,39 +4764,109 @@ def api_transport_get(id):
 @app.route('/api/transport/save', methods=['POST'])
 @login_required
 def api_transport_save():
-    """保存运输记录"""
+    """保存运输记录（按实际表结构动态写入，兼容采购明细关联）"""
     db = get_db()
-    data = request.get_json() or request.form
-    record_id = data.get('id', type=int)
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = request.form.to_dict()
 
-    project_id = data.get('project_id', type=int) or None
-    purchase_id = data.get('purchase_id', type=int) or None
-    batch_no = data.get('batch_no', '')
-    vehicle_no = data.get('vehicle_no', '')
-    driver_name = data.get('driver_name', '')
-    driver_phone = data.get('driver_phone', '')
-    transport_date = data.get('transport_date', '')
-    quantity = data.get('quantity', type=float) or 0
-    unit_price = data.get('unit_price', type=float) or 0
-    freight_amount = data.get('freight_amount', type=float) or round(quantity * unit_price, 2)
-    remark = data.get('remark', '')
+    def _val(key, default=''):
+        return (payload.get(key) if payload.get(key) is not None else default)
+
+    record_id = payload.get('id')
+    try:
+        record_id = int(record_id) if record_id not in (None, '', 'null') else None
+    except (TypeError, ValueError):
+        record_id = None
+
+    purchase_id = payload.get('purchase_id')
+    try:
+        purchase_id = int(purchase_id) if purchase_id not in (None, '', 'null') else None
+    except (TypeError, ValueError):
+        purchase_id = None
+
+    quantity = _coerce_float(payload.get('quantity'))
+    unit_price = _coerce_float(payload.get('unit_price'))
+    freight_amount = _coerce_float(payload.get('freight_amount'), round(quantity * unit_price, 2))
+
+    # 采购明细关联（多选）
+    item_ids = []
+    if isinstance(payload, dict):
+        raw_ids = payload.get('purchase_item_ids[]') or payload.get('purchase_item_ids')
+        if isinstance(raw_ids, str):
+            item_ids = [raw_ids]
+        elif isinstance(raw_ids, list):
+            item_ids = raw_ids
+    if not item_ids:
+        item_ids = request.form.getlist('purchase_item_ids[]')
+    item_ids = [int(i) for i in item_ids if str(i).strip().isdigit()]
+
+    tr_cols = _table_columns(db, 'transport_records')
+
+    fields = {
+        'purchase_id': purchase_id,
+        'batch_no': _val('batch_no'),
+        'vehicle_no': _val('vehicle_no'),
+        'driver_name': _val('driver_name'),
+        'driver_phone': _val('driver_phone'),
+        'transport_date': _val('transport_date') or None,
+        'quantity': quantity,
+        'unit_price': unit_price,
+        'freight_amount': freight_amount,
+        'remark': _val('remark'),
+    }
+    invoice_id = payload.get('invoice_id')
+    try:
+        invoice_id = int(invoice_id) if invoice_id not in (None, '', 'null') else None
+    except (TypeError, ValueError):
+        invoice_id = None
+    if 'invoice_id' in tr_cols:
+        fields['invoice_id'] = invoice_id
+    if 'project_id' in tr_cols:
+        proj = payload.get('project_id')
+        try:
+            fields['project_id'] = int(proj) if proj not in (None, '', 'null') else None
+        except (TypeError, ValueError):
+            fields['project_id'] = None
+    if 'purchase_item_id' in tr_cols:
+        fields['purchase_item_id'] = item_ids[0] if item_ids else None
+
+    # 只保留实际存在的列
+    fields = {k: v for k, v in fields.items() if k in tr_cols}
 
     if record_id:
-        db.execute("""UPDATE transport_records SET project_id=?, purchase_id=?, batch_no=?, vehicle_no=?,
-                      driver_name=?, driver_phone=?, transport_date=?, quantity=?, unit_price=?,
-                      freight_amount=?, remark=?
-                      WHERE id=?""",
-                   (project_id, purchase_id, batch_no, vehicle_no, driver_name, driver_phone,
-                    transport_date, quantity, unit_price, freight_amount, remark, record_id))
+        assignments = ', '.join(f'{k}=?' for k in fields)
+        db.execute(
+            f"UPDATE transport_records SET {assignments} WHERE id=?",
+            list(fields.values()) + [record_id],
+        )
     else:
-        db.execute("""INSERT INTO transport_records (project_id, purchase_id, batch_no, vehicle_no,
-                      driver_name, driver_phone, transport_date, quantity, unit_price, freight_amount,
-                      remark, created_by, created_at)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                   (project_id, purchase_id, batch_no, vehicle_no, driver_name, driver_phone,
-                    transport_date, quantity, unit_price, freight_amount, remark,
-                    session.get('user_id'), datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-        record_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        if 'created_by' in tr_cols:
+            fields['created_by'] = session.get('user_id')
+        if 'created_at' in tr_cols:
+            fields['created_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        columns = ', '.join(fields.keys())
+        placeholders = ', '.join('?' for _ in fields)
+        cur = db.execute(
+            f"INSERT INTO transport_records ({columns}) VALUES ({placeholders})",
+            list(fields.values()),
+        )
+        record_id = cur.lastrowid
+
+    # 维护采购明细关联表
+    db.execute("DELETE FROM transport_purchase_items WHERE transport_id=?", (record_id,))
+    tpi_cols = _table_columns(db, 'transport_purchase_items')
+    for iid in item_ids:
+        if 'quantity' in tpi_cols:
+            db.execute(
+                "INSERT INTO transport_purchase_items (transport_id, purchase_item_id, quantity) VALUES (?, ?, ?)",
+                (record_id, iid, quantity if len(item_ids) == 1 else 0),
+            )
+        else:
+            db.execute(
+                "INSERT INTO transport_purchase_items (transport_id, purchase_item_id) VALUES (?, ?)",
+                (record_id, iid),
+            )
 
     db.commit()
     add_log(session.get('user_id'), session.get('username', ''), '保存运输记录', f'记录ID: {record_id}')
