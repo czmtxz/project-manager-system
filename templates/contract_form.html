@@ -1,0 +1,104 @@
+{% extends "nav_base.html" %}
+{% block title %}{% if contract %}编辑合同{% else %}新增合同{% endif %} - 项目管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-{% if contract %}pencil-square{% else %}file-earmark-plus{% endif %}"></i>
+                        {% if contract %}编辑合同{% else %}新增合同{% endif %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data" action="{% if contract %}/contract/edit/{{ contract.id }}{% else %}/contract/add{% endif %}">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">项目 <span class="text-danger">*</span></label>
+                                <select name="project_id" class="form-select" required>
+                                    <option value="">-- 请选择项目 --</option>
+                                    {% for p in projects %}
+                                    <option value="{{ p.id }}" {% if contract and contract.project_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">合同编号 <span class="text-danger">*</span></label>
+                                <input type="text" name="contract_no" class="form-control" placeholder="如: HT-2024-001" required
+                                       value="{% if contract %}{{ contract.contract_no }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">合同名称 <span class="text-danger">*</span></label>
+                                <input type="text" name="contract_name" class="form-control" placeholder="请输入合同名称" required
+                                       value="{% if contract %}{{ contract.contract_name }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">合同类型</label>
+                                <select name="contract_type" class="form-select">
+                                    <option value="支出合同" {% if contract and contract.contract_type == '支出合同' %}selected{% endif %}>支出合同</option>
+                                    <option value="收入合同" {% if contract and contract.contract_type == '收入合同' %}selected{% endif %}>收入合同</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">合同金额</label>
+                                <input type="number" name="amount" class="form-control" step="0.01" min="0" placeholder="0.00"
+                                       value="{% if contract and contract.amount %}{{ contract.amount }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">税率(%)</label>
+                                <input type="number" name="tax_rate" class="form-control" step="0.1" min="0" placeholder="如: 6"
+                                       value="{% if contract and contract.tax_rate %}{{ contract.tax_rate }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">对方单位</label>
+                                <input type="text" name="party" class="form-control" placeholder="签约对方单位名称"
+                                       value="{% if contract %}{{ contract.party }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">签订日期</label>
+                                <input type="date" name="sign_date" class="form-control"
+                                       value="{% if contract and contract.sign_date %}{{ contract.sign_date }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">生效日期</label>
+                                <input type="date" name="effective_date" class="form-control"
+                                       value="{% if contract and contract.effective_date %}{{ contract.effective_date }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">到期日期</label>
+                                <input type="date" name="expiry_date" class="form-control"
+                                       value="{% if contract and contract.expiry_date %}{{ contract.expiry_date }}{% endif %}">
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">附件</label>
+                                <input type="file" name="attachment" class="form-control" accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx">
+                                <small class="text-muted">支持 JPG、PNG、PDF、Word、Excel 格式</small>
+                                {% if contract and contract.attachment %}
+                                <div class="mt-2">
+                                    <a href="{{ url_for('serve_upload_file', folder='contracts', filename=contract.attachment) }}" target="_blank" class="btn btn-sm btn-outline-info">
+                                        <i class="bi bi-paperclip"></i> 查看当前附件
+                                    </a>
+                                </div>
+                                {% endif %}
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">备注</label>
+                                <textarea name="remark" class="form-control" rows="3" placeholder="备注信息">{% if contract %}{{ contract.remark }}{% endif %}</textarea>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 mt-3">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> 保存
+                            </button>
+                            <a href="javascript:history.back()" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> 返回
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

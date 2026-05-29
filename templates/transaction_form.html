@@ -1,0 +1,780 @@
+{% extends "nav_base.html" %}
+{% block title %}{% if trans %}编辑交易{% else %}新增交易{% endif %} - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-{% if trans %}pencil{% else %}plus-circle{% endif %}"></i> 
+                        {% if trans %}编辑交易记录{% else %}新增交易记录{% endif %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">项目 <span class="text-danger">*</span></label>
+                                <select name="project_id" id="projectSelect" class="form-select" required onchange="loadProjectData()">
+                                    <option value="">-- 选择项目 --</option>
+                                    {% for p in projects %}
+                                    <option value="{{ p.id }}" {% if trans and trans.project_id == p.id %}selected{% elif preselected_project_id and p.id == preselected_project_id|int %}selected{% endif %}>{{ p.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">日期 <span class="text-danger">*</span></label>
+                                <input type="date" name="trans_date" class="form-control" required
+                                       value="{{ trans.trans_date if trans else (now.strftime('%Y-%m-%d') if now else '') }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">类型</label>
+                                <select name="trans_type" id="transType" class="form-select" onchange="filterCategories()">
+                                    <option value="expense" {% if trans and trans.trans_type == 'expense' %}selected{% endif %}>支出</option>
+                                    <option value="income" {% if trans and trans.trans_type == 'income' %}selected{% endif %}>收入</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">金额 <span class="text-danger">*</span></label>
+                                <input type="number" name="amount" id="amountInput" class="form-control" step="0.01" required
+                                       value="{{ trans.amount if trans else '' }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">参与人</label>
+                                <select name="participant_id" class="form-select">
+                                    <option value="">-- 选择参与人 --</option>
+                                    {% for par in participants %}
+                                    <option value="{{ par.id }}" {% if trans and trans.participant_id == par.id %}selected{% endif %}>{{ par.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">费用分类 <span class="text-danger">*</span></label>
+                                <select name="category_id" id="categorySelect" class="form-select" required onchange="onCategoryChange()">
+                                    <option value="">-- 请先选择项目 --</option>
+                                </select>
+                                <small class="text-muted" id="categoryHint">选择项目后加载关联的分类</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">支付方式</label>
+                                <select name="payment_method" class="form-select">
+                                    <option value="">-- 选择支付方式 --</option>
+                                    <option value="微信" {% if trans and trans.payment_method == '微信' %}selected{% endif %}>微信</option>
+                                    <option value="支付宝" {% if trans and trans.payment_method == '支付宝' %}selected{% endif %}>支付宝</option>
+                                    <option value="银行卡" {% if trans and trans.payment_method == '银行卡' %}selected{% endif %}>银行卡</option>
+                                    <option value="现金" {% if trans and trans.payment_method == '现金' %}selected{% endif %}>现金</option>
+                                    <option value="其他" {% if trans and trans.payment_method == '其他' %}selected{% endif %}>其他</option>
+                                </select>
+                            </div>
+                            
+                            <!-- 核算归属 -->
+                            <div class="col-12">
+                                <div class="card bg-light">
+                                    <div class="card-body py-2">
+                                        <label class="form-label mb-2"><i class="bi bi-diagram-3"></i> 费用核算归属 <span class="text-danger">*</span></label>
+                                        <div class="row">
+                                            <div class="col-md-4">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="cost_pool" id="costPoolProject" value="project" 
+                                                           {% if not trans or trans.cost_pool == 'project' or not trans.cost_pool %}checked{% endif %}>
+                                                    <label class="form-check-label" for="costPoolProject">
+                                                        <strong>项目整体费用</strong>
+                                                        <small class="d-block text-muted">计入项目整体成本，从总利润中扣除</small>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="cost_pool" id="costPoolInvestor" value="investor"
+                                                           {% if trans and trans.cost_pool == 'investor' %}checked{% endif %}>
+                                                    <label class="form-check-label" for="costPoolInvestor">
+                                                        <strong>投资人核算费用</strong>
+                                                        <small class="d-block text-muted">从投资人分红池中扣除</small>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="cost_pool" id="costPoolConnector" value="connector"
+                                                           {% if trans and trans.cost_pool == 'connector' %}checked{% endif %}>
+                                                    <label class="form-check-label" for="costPoolConnector">
+                                                        <strong>关系人核算费用</strong>
+                                                        <small class="d-block text-muted">从关系人分红池中扣除</small>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <label class="form-label">关联发票</label>
+                                <select name="invoice_id" id="invoiceSelect" class="form-select">
+                                    <option value="">-- 无关联发票 --</option>
+                                </select>
+                                <small class="text-muted" id="invoiceHint">选择项目后可加载该项目发票</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">说明</label>
+                                <input type="text" name="description" class="form-control" placeholder="交易说明"
+                                       value="{{ trans.description if trans else '' }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">商户/对方</label>
+                                <input type="text" name="merchant" class="form-control" placeholder="对方单位或商户"
+                                       value="{{ trans.merchant if trans else '' }}">
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">附件（支持多张图片识别）</label>
+                                <div class="input-group">
+                                    <input type="file" name="attachment" id="attachmentInput" class="form-control" accept=".jpg,.jpeg,.png,.pdf" multiple>
+                                    <button type="button" class="btn btn-info" id="ocrBtn" onclick="performOCR()" disabled>
+                                        <i class="bi bi-eye"></i> 识别全部图片
+                                    </button>
+                                </div>
+                                <div class="form-text">支持 JPG、PNG、PDF 格式，可同时选择多张图片</div>
+                                <!-- 已选图片预览 -->
+                                <div id="imagePreviewList" class="d-flex flex-wrap gap-2 mt-2"></div>
+                                {% if trans and trans.attachment %}
+                                <div class="mt-3 p-2 border rounded bg-light">
+                                    <div class="d-flex align-items-center gap-3">
+                                        {% if trans.attachment.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) %}
+                                        <img src="{{ url_for('uploaded_file', filename=trans.attachment) }}" 
+                                             class="img-thumbnail" 
+                                             style="max-width: 150px; max-height: 100px; cursor: pointer;"
+                                             onclick="showImagePreview('{{ url_for('uploaded_file', filename=trans.attachment) }}')"
+                                             alt="当前附件">
+                                        {% else %}
+                                        <div class="text-center p-3">
+                                            <i class="bi bi-file-earmark-text fs-1"></i>
+                                            <div class="small text-muted">{{ trans.attachment }}</div>
+                                        </div>
+                                        {% endif %}
+                                        <div>
+                                            <div class="mb-2">
+                                                <span class="badge bg-info">当前附件</span>
+                                            </div>
+                                            <a href="{{ url_for('uploaded_file', filename=trans.attachment) }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-eye"></i> 查看原图
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteAttachment({{ trans.id }})">
+                                                <i class="bi bi-trash"></i> 删除附件
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- OCR识别结果展示区域 -->
+                            <div class="col-md-12" id="ocrResultSection" style="display: none;">
+                                <div class="card bg-light border-info">
+                                    <div class="card-header py-2 bg-info text-white d-flex justify-content-between align-items-center">
+                                        <span><i class="bi bi-eye"></i> OCR识别结果（请选择要添加的记录）</span>
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-light" onclick="selectAllOCR()">
+                                                <i class="bi bi-check-all"></i> 全选
+                                            </button>
+                                            <button type="button" class="btn btn-warning" onclick="applySelectedOCR()">
+                                                <i class="bi bi-plus-circle"></i> 批量添加到系统
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="card-body py-2">
+                                        <div id="ocrRawText" class="small text-muted mb-2" style="max-height: 100px; overflow-y: auto;"></div>
+                                        <table class="table table-sm table-bordered mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th style="width: 40px;">
+                                                        <input type="checkbox" class="form-check-input" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                                                    </th>
+                                                    <th>日期</th>
+                                                    <th>金额</th>
+                                                    <th>商户</th>
+                                                    <th>类型</th>
+                                                    <th>支付方式</th>
+                                                    <th>操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="ocrDataTable">
+                                            </tbody>
+                                        </table>
+                                        <div class="mt-2 d-flex justify-content-between align-items-center">
+                                            <small class="text-muted">已选择 <span id="selectedCount" class="fw-bold text-primary">0</span> 条记录</small>
+                                            <button type="button" class="btn btn-sm btn-success" onclick="applySelectedOCR()">
+                                                <i class="bi bi-plus-circle"></i> 将选中记录添加到系统
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 采购运费关联区域 -->
+                        <div id="freightLinkSection" class="card mt-3" style="display: none;">
+                            <div class="card-header py-2 bg-info text-white">
+                                <h6 class="mb-0"><i class="bi bi-link-45deg"></i> 采购运费关联</h6>
+                            </div>
+                            <div class="card-body py-2">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label small">关联采购单</label>
+                                        <select name="purchase_id" id="purchaseSelect" class="form-select form-select-sm">
+                                            <option value="">-- 无关联 --</option>
+                                        </select>
+                                        <small class="text-muted" id="purchaseHint"></small>
+                                    </div>
+                                    <div class="col-md-6" id="transportQtyDiv" style="display: none;">
+                                        <label class="form-label small">运输数量（吨）</label>
+                                        <input type="number" name="transport_quantity" id="transportQty" class="form-control form-control-sm" step="0.01" placeholder="用于对账"
+                                               value="{{ trans.transport_quantity if trans else '' }}">
+                                        <small class="text-muted">用于与采购数量对账</small>
+                                    </div>
+                                </div>
+                                <div class="mt-2" id="freightLinkStatus"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex gap-2 mt-4">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> {% if trans %}保存修改{% else %}保存{% endif %}
+                            </button>
+                            <a href="{{ url_for('transaction_records') }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> 返回
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+let allCategories = {income: [], expense: []};
+let projectConfig = {freight_link_enabled: false};
+let editMode = {% if trans %}true{% else %}false{% endif %};
+let editData = {
+    category_id: {{ trans.category_id if trans and trans.category_id else 'null' }},
+    invoice_id: {{ trans.invoice_id if trans and trans.invoice_id else 'null' }},
+    purchase_id: {{ trans.purchase_id if trans and trans.purchase_id else 'null' }},
+    category_code: "{{ category_code if category_code else '' }}"
+};
+
+function loadProjectData() {
+    const projectId = document.getElementById('projectSelect').value;
+    const categorySelect = document.getElementById('categorySelect');
+    const categoryHint = document.getElementById('categoryHint');
+    
+    if (!projectId) {
+        categorySelect.innerHTML = '<option value="">-- 请先选择项目 --</option>';
+        categoryHint.textContent = '选择项目后加载关联的分类';
+        document.getElementById('invoiceSelect').innerHTML = '<option value="">-- 无关联发票 --</option>';
+        document.getElementById('freightLinkSection').style.display = 'none';
+        return;
+    }
+    
+    categoryHint.textContent = '加载中...';
+    
+    // 加载分类
+    fetch(`/api/project/${projectId}/categories/grouped`)
+        .then(res => res.json())
+        .then(data => {
+            allCategories = data;
+            filterCategories();
+            categoryHint.textContent = `已加载 ${data.income.length} 个收入分类, ${data.expense.length} 个支出分类`;
+            
+            // 编辑模式：回填分类
+            if (editMode && editData.category_id) {
+                categorySelect.value = editData.category_id;
+                onCategoryChange();
+            }
+        })
+        .catch(err => {
+            categoryHint.textContent = '加载分类失败';
+            console.error(err);
+        });
+    
+    // 加载发票
+    loadInvoices(projectId);
+    
+    // 加载采购单
+    loadPurchases(projectId);
+    
+    // 获取项目配置
+    fetch(`/api/project/${projectId}/config`)
+        .then(res => res.json())
+        .then(data => {
+            projectConfig = data;
+            updateFreightLinkStatus();
+        })
+        .catch(err => console.error(err));
+}
+
+function loadInvoices(projectId) {
+    const invoiceSelect = document.getElementById('invoiceSelect');
+    const invoiceHint = document.getElementById('invoiceHint');
+    invoiceHint.textContent = '加载发票中...';
+    
+    fetch(`/api/project/${projectId}/invoices`)
+        .then(res => res.json())
+        .then(data => {
+            let html = '<option value="">-- 无关联发票 --</option>';
+            data.forEach(inv => {
+                const typeName = inv.invoice_type === 'income' ? '收入' : '成本';
+                const selected = editMode && editData.invoice_id == inv.id ? 'selected' : '';
+                html += `<option value="${inv.id}" ${selected}>${inv.invoice_no || '待开'} (${typeName} ${inv.amount}元)</option>`;
+            });
+            invoiceSelect.innerHTML = html;
+            invoiceHint.textContent = data.length > 0 ? `已加载 ${data.length} 张发票` : '该项目暂无发票';
+        })
+        .catch(err => {
+            invoiceHint.textContent = '加载发票失败';
+            console.error(err);
+        });
+}
+
+function loadPurchases(projectId) {
+    const purchaseSelect = document.getElementById('purchaseSelect');
+    
+    fetch(`/api/project/${projectId}/purchases`)
+        .then(res => res.json())
+        .then(data => {
+            let html = '<option value="">-- 无关联 --</option>';
+            data.forEach(p => {
+                const selected = editMode && editData.purchase_id == p.id ? 'selected' : '';
+                html += `<option value="${p.id}" ${selected}>${p.purchase_no} - ${p.supplier || '未知供应商'}</option>`;
+            });
+            purchaseSelect.innerHTML = html;
+            document.getElementById('purchaseHint').textContent = data.length > 0 ? `${data.length} 个采购单` : '暂无采购单';
+        })
+        .catch(err => console.error(err));
+}
+
+function filterCategories() {
+    const transType = document.getElementById('transType').value;
+    const categorySelect = document.getElementById('categorySelect');
+    const cats = allCategories[transType] || [];
+    
+    if (cats.length === 0) {
+        categorySelect.innerHTML = '<option value="">-- 该项目无关联分类 --</option>';
+        return;
+    }
+    
+    let html = '<option value="">-- 选择分类 --</option>';
+    cats.forEach(cat => {
+        const selected = editMode && editData.category_id == cat.id ? 'selected' : '';
+        html += `<option value="${cat.id}" data-code="${cat.code || ''}" ${selected}>${cat.full_name}</option>`;
+    });
+    categorySelect.innerHTML = html;
+    
+    onCategoryChange();
+}
+
+function onCategoryChange() {
+    const categorySelect = document.getElementById('categorySelect');
+    const selectedOption = categorySelect.options[categorySelect.selectedIndex];
+    const categoryCode = selectedOption ? selectedOption.dataset.code : '';
+    
+    const freightSection = document.getElementById('freightLinkSection');
+    const transportQtyDiv = document.getElementById('transportQtyDiv');
+    
+    if (categoryCode === '6401.04.02') {
+        freightSection.style.display = 'block';
+        transportQtyDiv.style.display = 'block';
+        updateFreightLinkStatus();
+    } else if (categoryCode === '6401.04.01') {
+        freightSection.style.display = 'block';
+        transportQtyDiv.style.display = 'none';
+        document.getElementById('freightLinkStatus').innerHTML = '<small class="text-muted">采购成本支出可关联采购单</small>';
+    } else {
+        freightSection.style.display = 'none';
+        transportQtyDiv.style.display = 'none';
+    }
+}
+
+function updateFreightLinkStatus() {
+    const statusDiv = document.getElementById('freightLinkStatus');
+    
+    if (projectConfig.freight_link_enabled) {
+        statusDiv.innerHTML = '<span class="badge bg-success"><i class="bi bi-link-45deg"></i> 项目已启用运费关联</span><br><small class="text-muted">审批通过后将自动生成运输记录</small>';
+    } else {
+        statusDiv.innerHTML = '<span class="badge bg-secondary">项目未启用运费关联</span>';
+    }
+}
+
+// 页面加载时，如果已有项目选择（预选或编辑模式），触发加载
+document.addEventListener('DOMContentLoaded', function() {
+    const projectId = document.getElementById('projectSelect').value;
+    if (projectId) {
+        loadProjectData();
+    }
+    
+    // 编辑模式：根据分类code显示运费关联区域
+    if (editMode && editData.category_code) {
+        if (editData.category_code === '6401.04.02' || editData.category_code === '6401.04.01') {
+            document.getElementById('freightLinkSection').style.display = 'block';
+            if (editData.category_code === '6401.04.02') {
+                document.getElementById('transportQtyDiv').style.display = 'block';
+            }
+        }
+    }
+    
+    // 附件选择监听：启用OCR按钮 + 显示图片预览
+    document.getElementById('attachmentInput').addEventListener('change', function() {
+        const files = this.files;
+        const ocrBtn = document.getElementById('ocrBtn');
+        const previewList = document.getElementById('imagePreviewList');
+        
+        // 检查是否有图片文件
+        let hasImage = false;
+        previewList.innerHTML = '';
+        
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            if (file.type.match(/image.*/)) {
+                hasImage = true;
+                // 创建缩略图预览
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const div = document.createElement('div');
+                    div.className = 'position-relative';
+                    div.innerHTML = `
+                        <img src="${e.target.result}" class="img-thumbnail" style="width:60px;height:60px;object-fit:cover;">
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-primary" style="font-size:10px;">${i + 1}</span>
+                    `;
+                    previewList.appendChild(div);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+        
+        ocrBtn.disabled = !hasImage;
+        if (hasImage) {
+            ocrBtn.innerHTML = `<i class="bi bi-eye"></i> 识别全部图片 (${files.length}张)`;
+        } else {
+            ocrBtn.innerHTML = '<i class="bi bi-eye"></i> 识别全部图片';
+        }
+    });
+});
+
+// OCR识别结果存储
+let ocrResult = null;
+
+// 逐张识别所有图片并合并结果
+async function performOCR() {
+    const fileInput = document.getElementById('attachmentInput');
+    const files = fileInput.files;
+    
+    if (!files || files.length === 0) { alert('请先选择图片文件'); return; }
+    
+    const btn = document.getElementById('ocrBtn');
+    btn.disabled = true;
+    
+    // 筛选图片文件
+    const imageFiles = [];
+    for (let i = 0; i < files.length; i++) {
+        if (files[i].type.match(/image.*/)) {
+            imageFiles.push(files[i]);
+        }
+    }
+    
+    if (imageFiles.length === 0) { alert('未选择图片文件'); btn.disabled = false; return; }
+    
+    let allTransactions = [];
+    let allRawText = '';
+    let successCount = 0;
+    let failCount = 0;
+    let lastError = '';
+    
+    for (let i = 0; i < imageFiles.length; i++) {
+        btn.innerHTML = `<i class="bi bi-hourglass-split"></i> 识别中 ${i + 1}/${imageFiles.length}...`;
+        
+        try {
+            const formData = new FormData();
+            formData.append('image', imageFiles[i]);
+            
+            const res = await fetch('/api/ocr/recognize', { method: 'POST', body: formData });
+            const data = await res.json();
+            
+            if (data.success && data.transactions && data.transactions.length > 0) {
+                // 给每条记录标记来源图片序号
+                data.transactions.forEach(t => {
+                    t._source = `图片${i + 1}`;
+                });
+                allTransactions = allTransactions.concat(data.transactions);
+                allRawText += `\n--- 图片${i + 1}: ${imageFiles[i].name} ---\n${data.raw_text || ''}`;
+                successCount++;
+            } else {
+                failCount++;
+                if (data.message) lastError = data.message;
+            }
+        } catch (err) {
+            console.error(`图片${i + 1}识别失败:`, err);
+            failCount++;
+            lastError = err.message || String(err);
+        }
+    }
+    
+    btn.disabled = false;
+    btn.innerHTML = `<i class="bi bi-eye"></i> 识别全部图片 (${imageFiles.length}张)`;
+    
+    if (allTransactions.length > 0) {
+        ocrResult = allTransactions[0];
+        displayOCRResult({
+            transactions: allTransactions,
+            raw_text: allRawText,
+            count: allTransactions.length,
+            success_images: successCount,
+            fail_images: failCount
+        });
+    } else {
+        let msg = `未能识别出有效信息（成功${successCount}张，失败${failCount}张）`;
+        if (lastError) msg += '\n\n' + lastError;
+        alert(msg);
+    }
+}
+
+// 存储所有OCR识别结果
+let ocrResults = [];
+
+function displayOCRResult(data) {
+    document.getElementById('ocrRawText').textContent = data.raw_text || '';
+    ocrResults = data.transactions || [];
+    
+    let html = '';
+    ocrResults.forEach((t, index) => {
+        const sourceTag = t._source ? `<span class="badge bg-secondary me-1" style="font-size:10px;">${t._source}</span>` : '';
+        html += `
+            <tr>
+                <td><input type="checkbox" class="form-check-input ocr-checkbox" data-index="${index}" onchange="updateSelectedCount()"></td>
+                <td>${t.date || '-'}</td>
+                <td>${t.amount || '-'}</td>
+                <td>${sourceTag}${t.merchant || '-'}</td>
+                <td>${t.trans_type === 'income' ? '收入' : '支出'}</td>
+                <td>${t.payment_method || '-'}</td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="applySingleOCR(${index})">
+                        <i class="bi bi-arrow-down"></i> 填入
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    document.getElementById('ocrDataTable').innerHTML = html;
+    document.getElementById('ocrResultSection').style.display = 'block';
+    updateSelectedCount();
+    
+    // 更新标题显示识别统计
+    const header = document.querySelector('#ocrResultSection .card-header span');
+    if (header && data.count !== undefined) {
+        header.innerHTML = `<i class="bi bi-eye"></i> OCR识别结果（共${data.count}条记录，来自${data.success_images || '?'}张图片）`;
+    }
+}
+
+function updateSelectedCount() {
+    const checkboxes = document.querySelectorAll('.ocr-checkbox:checked');
+    document.getElementById('selectedCount').textContent = checkboxes.length;
+}
+
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAllCheckbox').checked;
+    document.querySelectorAll('.ocr-checkbox').forEach(cb => {
+        cb.checked = selectAll;
+    });
+    updateSelectedCount();
+}
+
+function selectAllOCR() {
+    document.getElementById('selectAllCheckbox').checked = true;
+    toggleSelectAll();
+}
+
+function applySingleOCR(index) {
+    if (!ocrResults[index]) return;
+    const result = ocrResults[index];
+    console.log('应用单条OCR结果:', result);
+    
+    // 日期字段映射: OCR返回date -> 表单字段trans_date
+    if (result.date) {
+        const dateField = document.querySelector('input[name="trans_date"]');
+        if (dateField) dateField.value = result.date;
+    }
+    
+    // 金额
+    if (result.amount) {
+        const amountField = document.querySelector('input[name="amount"]');
+        if (amountField) amountField.value = result.amount;
+    }
+    
+    // 商户
+    if (result.merchant) {
+        const merchantField = document.querySelector('input[name="merchant"]');
+        if (merchantField) merchantField.value = result.merchant;
+    }
+    
+    // 说明
+    if (result.description) {
+        const descField = document.querySelector('input[name="description"]');
+        if (descField) descField.value = result.description;
+    }
+    
+    // 交易类型
+    if (result.trans_type) {
+        const typeField = document.querySelector('select[name="trans_type"]');
+        if (typeField) {
+            typeField.value = result.trans_type;
+            filterCategories();
+        }
+    }
+    
+    // 支付方式
+    if (result.payment_method) {
+        const pmField = document.querySelector('select[name="payment_method"]');
+        if (pmField) pmField.value = result.payment_method;
+    }
+    
+    // 滚动到表单顶部
+    document.querySelector('.card-body').scrollIntoView({ behavior: 'smooth' });
+}
+
+function applySelectedOCR() {
+    const checkboxes = document.querySelectorAll('.ocr-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('请先选择要添加的记录');
+        return;
+    }
+    
+    if (checkboxes.length === 1) {
+        // 单条记录，填入表单
+        const index = parseInt(checkboxes[0].dataset.index);
+        applySingleOCR(index);
+        alert('已填入表单，请核对后保存');
+    } else {
+        // 多条记录，批量添加到系统
+        if (!confirm(`确定要将选中的 ${checkboxes.length} 条记录添加到系统吗？`)) {
+            return;
+        }
+        
+        const selectedRecords = [];
+        checkboxes.forEach(cb => {
+            const index = parseInt(cb.dataset.index);
+            selectedRecords.push(ocrResults[index]);
+        });
+        
+        // 获取当前表单中的项目ID
+        const projectId = document.getElementById('projectSelect').value;
+        if (!projectId) {
+            alert('请先选择项目');
+            return;
+        }
+        
+        // 批量添加
+        batchAddTransactions(selectedRecords, projectId);
+    }
+}
+
+function batchAddTransactions(records, projectId) {
+    const btn = document.querySelector('button[onclick="applySelectedOCR()"]');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 添加中...';
+    
+    fetch('/api/transactions/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            project_id: projectId,
+            records: records
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        
+        if (data.success) {
+            alert(`成功添加 ${data.added} 条记录${data.failed > 0 ? '，' + data.failed + '条失败' : ''}`);
+            // 刷新页面或跳转到列表
+            if (confirm('是否查看交易记录列表？')) {
+                window.location.href = '/transaction_records';
+            }
+        } else {
+            alert('添加失败: ' + (data.error || '未知错误'));
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        console.error(err);
+        alert('添加失败，请重试');
+    });
+}
+
+// 图片预览放大
+function showImagePreview(imageUrl) {
+    let modal = document.getElementById('imagePreviewModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'imagePreviewModal';
+        modal.className = 'modal fade';
+        modal.tabIndex = -1;
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">图片预览</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body text-center">
+                        <img id="previewImage" src="" class="img-fluid" style="max-height: 80vh;" alt="预览">
+                    </div>
+                    <div class="modal-footer">
+                        <a id="previewDownload" href="" target="_blank" class="btn btn-primary" download>
+                            <i class="bi bi-download"></i> 下载原图
+                        </a>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    document.getElementById('previewImage').src = imageUrl;
+    document.getElementById('previewDownload').href = imageUrl;
+    
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+}
+
+// 删除附件
+function deleteAttachment(transId) {
+    if (!confirm('确定要删除此附件吗？删除后不可恢复。')) {
+        return;
+    }
+    
+    fetch(`/api/transaction/${transId}/delete-attachment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            alert('附件已删除');
+            // 刷新页面显示
+            location.reload();
+        } else {
+            alert('删除失败: ' + (data.error || '未知错误'));
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('删除失败，请重试');
+    });
+}
+</script>
+{% endblock %}

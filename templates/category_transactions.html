@@ -1,0 +1,120 @@
+{% extends "nav_base.html" %}
+{% block title %}分类交易明细 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4>
+            <i class="bi bi-tags"></i> 
+            {{ category.name }} - 交易明细
+            {% if category.type == 'income' %}
+            <span class="badge bg-success">收入</span>
+            {% else %}
+            <span class="badge bg-danger">支出</span>
+            {% endif %}
+        </h4>
+        <a href="{{ url_for('reports.hub') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> 返回报表
+        </a>
+    </div>
+
+    <!-- 筛选 -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="GET" class="row g-2">
+                <div class="col-md-4">
+                    <select name="project_id" class="form-select">
+                        <option value="">所有项目</option>
+                        {% for p in projects %}
+                        <option value="{{ p.id }}" {% if project_id == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-outline-primary w-100">
+                        <i class="bi bi-funnel"></i> 筛选
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 汇总 -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card text-center p-3 border-start border-4 border-success">
+                <small class="text-muted">收入合计</small>
+                <h4 class="text-success mb-0">{{ "%.2f"|format(total_income) }}</h4>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center p-3 border-start border-4 border-danger">
+                <small class="text-muted">支出合计</small>
+                <h4 class="text-danger mb-0">{{ "%.2f"|format(total_expense) }}</h4>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center p-3 border-start border-4 border-primary">
+                <small class="text-muted">交易笔数</small>
+                <h4 class="text-primary mb-0">{{ transactions|length }}</h4>
+            </div>
+        </div>
+    </div>
+
+    <!-- 交易列表 -->
+    <div class="card">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="bi bi-list"></i> 交易明细列表</h6>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>日期</th>
+                            <th>项目</th>
+                            <th>分类</th>
+                            <th>摘要</th>
+                            <th class="text-end">金额</th>
+                            <th>审批状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in transactions %}
+                        <tr>
+                            <td>{{ t.trans_date }}</td>
+                            <td>{{ t.project_name or '-' }}</td>
+                            <td>{{ t.category_name or '-' }}</td>
+                            <td>{{ t.description or '-' }}</td>
+                            <td class="text-end {% if t.trans_type == 'income' %}text-success{% else %}text-danger{% endif %}">
+                                {{ "%.2f"|format(t.amount) }}
+                            </td>
+                            <td>
+                                {% if t.approval_status == 'pending' %}
+                                <span class="badge bg-warning">待审批</span>
+                                {% elif t.approval_status == 'approved' %}
+                                <span class="badge bg-success">已通过</span>
+                                {% elif t.approval_status == 'rejected' %}
+                                <span class="badge bg-danger">已拒绝</span>
+                                {% else %}
+                                <span class="badge bg-secondary">无需审批</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{{ url_for('transaction_edit', id=t.id) }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">暂无交易记录</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

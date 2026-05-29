@@ -1,0 +1,113 @@
+{% extends "nav_base.html" %}
+{% from 'macros/import_modal.html' import import_btn, import_modal %}
+{% block title %}投资记录 - 项目投资管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-list-ul"></i> 投资记录</h4>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('investment_record_add') }}" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus-circle"></i> 新增投资
+            </a>
+            {{ import_btn('importInvestmentModal', 'btn-outline-primary btn-sm') }}
+        </div>
+    </div>
+
+    <!-- 筛选 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">项目</label>
+                    <select name="project_id" class="form-select">
+                        <option value="">全部项目</option>
+                        {% for p in projects %}
+                        <option value="{{ p.id }}" {% if filters.project_id and filters.project_id|string == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">投资人</label>
+                    <select name="participant_id" class="form-select">
+                        <option value="">全部投资人</option>
+                        {% for p in participants %}
+                        <option value="{{ p.id }}" {% if filters.participant_id and filters.participant_id|string == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel"></i> 筛选</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            {% if investments %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>投资日期</th>
+                            <th>项目</th>
+                            <th>投资人</th>
+                            <th class="text-end">投资金额</th>
+                            <th>投资类型</th>
+                            <th>支付方式</th>
+                            <th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for inv in investments %}
+                        <tr>
+                            <td>{{ inv.invest_date }}</td>
+                            <td>{{ inv.project_name or '-' }}</td>
+                            <td><strong>{{ inv.participant_name }}</strong></td>
+                            <td class="text-end text-success fw-bold">¥{{ "%.2f"|format(inv.amount) }}</td>
+                            <td>{{ inv.invest_type or '-' }}</td>
+                            <td>{{ inv.payment_method or '-' }}</td>
+                            <td>{{ inv.remark or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <td colspan="3"><strong>合计</strong></td>
+                            <td class="text-end text-success fw-bold">
+                                ¥{{ "%.2f"|format(investments|sum(attribute='amount')) }}
+                            </td>
+                            <td colspan="4"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-cash-stack" style="font-size: 3rem;"></i>
+                <p class="mt-2">暂无投资记录</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% set inv_excel_extra %}
+<div class="mb-3">
+    <label class="form-label">归入项目 <span class="text-danger">*</span></label>
+    <select name="project_name" class="form-select form-select-sm" required>
+        <option value="">请选择项目...</option>
+        {% for p in projects %}
+        <option value="{{ p.name }}">{{ p.name }}</option>
+        {% endfor %}
+    </select>
+</div>
+{% endset %}
+{{ import_modal(
+    'importInvestmentModal',
+    '投资记录 Excel 导入',
+    excel_action=url_for('excel_import'),
+    excel_hint='<p class="mb-0">与项目费用相同 Excel 格式，导入后归入所选项目。</p>',
+    excel_extra=inv_excel_extra
+) }}
+{% endblock %}

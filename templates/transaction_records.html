@@ -1,0 +1,385 @@
+{% extends "nav_base.html" %}
+{% from 'macros/import_modal.html' import import_btn, import_modal %}
+{% block title %}项目费用 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-list-ul"></i> 项目费用</h4>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('transaction_add') }}" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus-circle"></i> 新增记录
+            </a>
+            {{ import_btn('importTransactionModal', 'btn-outline-primary btn-sm') }}
+        </div>
+    </div>
+
+    <!-- 汇总统计（随表头筛选联动） -->
+    <div class="row mb-3" id="summary-fees">
+        <div class="col-md-3">
+            <div class="card bg-success bg-opacity-10 border-success">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted">收入合计</small>
+                            <h5 class="mb-0 text-success" id="sum-fee-income">{{ "%.2f"|format(total_income) }} 元</h5>
+                        </div>
+                        <i class="bi bi-graph-up-arrow text-success" style="font-size: 1.5rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-danger bg-opacity-10 border-danger">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted">支出合计</small>
+                            <h5 class="mb-0 text-danger" id="sum-fee-expense">{{ "%.2f"|format(total_expense) }} 元</h5>
+                        </div>
+                        <i class="bi bi-graph-down-arrow text-danger" style="font-size: 1.5rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-primary bg-opacity-10 border-primary">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted">净收入</small>
+                            <h5 class="mb-0 {% if total_income >= total_expense %}text-primary{% else %}text-danger{% endif %}" id="sum-fee-net">{{ "%.2f"|format(total_income - total_expense) }} 元</h5>
+                        </div>
+                        <i class="bi bi-calculator text-primary" style="font-size: 1.5rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-secondary bg-opacity-10 border-secondary">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted">记录数</small>
+                            <h5 class="mb-0" id="sum-fee-count">{{ transactions|length }} 条</h5>
+                        </div>
+                        <i class="bi bi-list-ol text-secondary" style="font-size: 1.5rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 服务端筛选：项目 / 类型 -->
+    <div class="card mb-3">
+        <div class="card-header py-2">
+            <i class="bi bi-funnel"></i> 查询条件
+        </div>
+        <div class="card-body py-2">
+            <form method="GET" action="{{ url_for('transaction_records') }}">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted mb-0">项目</label>
+                        <select name="project_id" class="form-select form-select-sm">
+                            <option value="">全部项目</option>
+                            {% for p in projects %}
+                            <option value="{{ p.id }}" {% if project_id|string == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-muted mb-0">类型</label>
+                        <select name="type" class="form-select form-select-sm">
+                            <option value="">全部</option>
+                            <option value="income" {% if trans_type == 'income' %}selected{% endif %}>收入</option>
+                            <option value="expense" {% if trans_type == 'expense' %}selected{% endif %}>支出</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-search"></i> 查询
+                        </button>
+                        <a href="{{ url_for('transaction_records') }}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-x-lg"></i> 重置
+                        </a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if category_summary %}
+    <div class="mb-3">
+        <h6 class="text-muted mb-2"><i class="bi bi-pie-chart"></i> 分类汇总</h6>
+        <div class="row g-2" id="category-summary-box">
+            {% for cs in category_summary %}
+            <div class="col-md-3 col-6 category-summary-item" data-type="{{ cs.type }}" data-category="{{ cs.name }}" role="button" style="cursor:pointer" title="点击按此分类筛选">
+                <div class="border rounded p-2 small">
+                    <span class="badge {% if cs.type == 'income' %}bg-success{% else %}bg-danger{% endif %}">{{ cs.name }}</span>
+                    <div class="fw-semibold mt-1 {% if cs.type == 'income' %}text-success{% else %}text-danger{% endif %}">
+                        {{ "%.2f"|format(cs.total) }} <span class="text-muted fw-normal">({{ cs.cnt }}笔)</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div class="card-header py-2">
+            <span><i class="bi bi-table"></i> 费用明细</span>
+            <small class="text-muted ms-2">表头可直接筛选，汇总随筛选更新</small>
+        </div>
+        <div class="card-body p-0">
+            {% if transactions %}
+            <div id="filter-empty-hint" class="alert alert-info py-2 small d-none m-2 mb-0" role="status">
+                当前表头筛选无匹配记录，请调整条件或点击「清空」。
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover table-sm mb-0 detail-table" id="table-project-fees">
+                    <thead class="table-light">
+                        <tr class="thead-labels">
+                            <th>日期</th>
+                            <th>项目</th>
+                            <th>类型</th>
+                            <th>分类</th>
+                            <th>参与人</th>
+                            <th>说明</th>
+                            <th class="text-end">金额</th>
+                            <th>单据</th>
+                            <th style="width:90px">操作</th>
+                        </tr>
+                        <tr class="thead-filters">
+                            <th><input type="text" class="form-control col-filter" data-filter="date" placeholder="筛选"></th>
+                            <th><input type="text" class="form-control col-filter" data-filter="project" placeholder="筛选"></th>
+                            <th>
+                                <select class="form-select col-filter" data-filter="type">
+                                    <option value="">全部</option>
+                                    <option value="income">收入</option>
+                                    <option value="expense">支出</option>
+                                </select>
+                            </th>
+                            <th>
+                                <select class="form-select col-filter" data-filter="category">
+                                    <option value="">全部</option>
+                                    {% for c in categories %}
+                                    <option value="{{ c.name }}">{{ c.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </th>
+                            <th><input type="text" class="form-control col-filter" data-filter="person" placeholder="筛选"></th>
+                            <th><input type="text" class="form-control col-filter" data-filter="desc" placeholder="筛选"></th>
+                            <th><input type="text" class="form-control col-filter" data-filter="amount" placeholder="筛选"></th>
+                            <th></th>
+                            <th><button type="button" class="btn btn-link btn-sm p-0 text-muted btn-clear-filters" title="清空表头筛选">清空</button></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in transactions %}
+                        <tr data-type="{{ t.trans_type }}" data-amount="{{ t.amount }}"
+                            data-filter-date="{{ t.trans_date or '' }}"
+                            data-filter-project="{{ t.project_name or '' }}"
+                            data-filter-type="{{ t.trans_type }}"
+                            data-filter-category="{{ t.category_name or '' }}"
+                            data-filter-person="{{ t.participant_name or '' }}"
+                            data-filter-desc="{{ (t.description or '') ~ ' ' ~ (t.merchant or '') }}"
+                            data-filter-amount="{{ t.amount }}">
+                            <td>{{ t.trans_date or '-' }}</td>
+                            <td>{{ t.project_name or '-' }}</td>
+                            <td>
+                                {% if t.trans_type == 'income' %}
+                                <span class="badge bg-success">收入</span>
+                                {% else %}
+                                <span class="badge bg-danger">支出</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ t.category_name or '-' }}</td>
+                            <td>{{ t.participant_name or '-' }}</td>
+                            <td>{{ t.description or '-' }}</td>
+                            <td class="text-end {% if t.trans_type == 'income' %}text-success{% else %}text-danger{% endif %}">
+                                {{ "%.2f"|format(t.amount) }}
+                            </td>
+                            <td>
+                                {% if t.attachment %}
+                                    {% if t.attachment.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) %}
+                                    <img src="{{ url_for('uploaded_file', filename=t.attachment) }}"
+                                         class="img-thumbnail"
+                                         style="max-width: 80px; max-height: 60px; cursor: pointer;"
+                                         onclick="showImageModal('{{ url_for('uploaded_file', filename=t.attachment) }}')"
+                                         alt="单据">
+                                    {% else %}
+                                    <a href="{{ url_for('uploaded_file', filename=t.attachment) }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-file-earmark"></i>
+                                    </a>
+                                    {% endif %}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-nowrap">
+                                <a href="{{ url_for('transaction_edit', id=t.id) }}" class="btn btn-sm btn-outline-primary" title="编辑"><i class="bi bi-pencil"></i></a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                <p class="mt-2">暂无项目费用记录</p>
+                <a href="{{ url_for('transaction_add') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i> 创建第一条记录
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% set txn_excel_extra %}
+<input type="hidden" name="import_type" value="transaction">
+<div class="mb-3">
+    <label class="form-label">归入项目 <span class="text-danger">*</span></label>
+    <select name="project_name" class="form-select form-select-sm" required>
+        <option value="">请选择项目...</option>
+        {% for project in projects %}
+        <option value="{{ project.name }}">{{ project.name }}</option>
+        {% endfor %}
+    </select>
+</div>
+{% endset %}
+{{ import_modal(
+    'importTransactionModal',
+    '项目费用数据导入',
+    image_action=url_for('ocr_upload'),
+    excel_action=url_for('excel_import'),
+    image_hint='上传支付截图，识别后进入确认页再入账。',
+    excel_hint='<p class="mb-1">表头示例：日期、金额、参与人、分类、备注等（详见导入说明）。</p>',
+    excel_extra=txn_excel_extra
+) }}
+
+<div class="modal fade" id="imageModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">单据图片</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="modalImage" src="" class="img-fluid" style="max-height: 80vh;" alt="单据图片">
+            </div>
+            <div class="modal-footer">
+                <a id="modalDownload" href="" target="_blank" class="btn btn-primary" download>
+                    <i class="bi bi-download"></i> 下载原图
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showImageModal(imageUrl) {
+    document.getElementById('modalImage').src = imageUrl;
+    document.getElementById('modalDownload').href = imageUrl;
+    new bootstrap.Modal(document.getElementById('imageModal')).show();
+}
+
+function applyColumnFilters(table) {
+    const criteria = {};
+    table.querySelectorAll('thead .col-filter').forEach(el => {
+        const key = el.getAttribute('data-filter');
+        if (!key) return;
+        const val = (el.value || '').trim();
+        if (val) criteria[key] = val.toLowerCase();
+    });
+    let visible = 0;
+    const rows = table.querySelectorAll('tbody tr');
+    rows.forEach(row => {
+        let show = true;
+        for (const [key, val] of Object.entries(criteria)) {
+            const raw = (row.getAttribute('data-filter-' + key) || '').toString().toLowerCase();
+            const ctrl = table.querySelector('thead .col-filter[data-filter="' + key + '"]');
+            const exact = ctrl && ctrl.tagName === 'SELECT';
+            if (exact ? raw !== val : !raw.includes(val)) { show = false; break; }
+        }
+        row.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+    return { visible, total: rows.length, criteria };
+}
+
+function updateFeeSummary() {
+    const table = document.getElementById('table-project-fees');
+    if (!table) return;
+    const rows = Array.from(table.querySelectorAll('tbody tr')).filter(r => r.style.display !== 'none');
+    let income = 0, expense = 0;
+    rows.forEach(r => {
+        const amt = parseFloat(r.getAttribute('data-amount')) || 0;
+        if (r.getAttribute('data-type') === 'income') income += amt;
+        else expense += amt;
+    });
+    const net = income - expense;
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    set('sum-fee-income', income.toFixed(2) + ' 元');
+    set('sum-fee-expense', expense.toFixed(2) + ' 元');
+    set('sum-fee-net', net.toFixed(2) + ' 元');
+    set('sum-fee-count', rows.length + ' 条');
+    const netEl = document.getElementById('sum-fee-net');
+    if (netEl) netEl.className = 'mb-0 ' + (net >= 0 ? 'text-primary' : 'text-danger');
+}
+
+function highlightCategorySummary(table) {
+    const typeVal = table.querySelector('thead .col-filter[data-filter="type"]')?.value || '';
+    document.querySelectorAll('.category-summary-item').forEach(el => {
+        if (!typeVal) { el.style.opacity = '1'; return; }
+        el.style.opacity = el.getAttribute('data-type') === typeVal ? '1' : '0.35';
+    });
+}
+
+function initProjectFeesTable() {
+    const table = document.getElementById('table-project-fees');
+    if (!table) return;
+    const run = () => {
+        const result = applyColumnFilters(table);
+        const hint = document.getElementById('filter-empty-hint');
+        if (hint) {
+            const active = Object.keys(result.criteria || {}).length > 0;
+            hint.classList.toggle('d-none', !active || result.visible > 0);
+        }
+        updateFeeSummary();
+        highlightCategorySummary(table);
+    };
+    table.querySelectorAll('thead .col-filter').forEach(el => {
+        el.addEventListener('input', run);
+        el.addEventListener('change', run);
+    });
+    table.querySelectorAll('thead .btn-clear-filters').forEach(btn => {
+        btn.addEventListener('click', () => {
+            table.querySelectorAll('thead .col-filter').forEach(el => { el.value = ''; });
+            run();
+        });
+    });
+    document.querySelectorAll('.category-summary-item[data-category]').forEach(card => {
+        card.addEventListener('click', () => {
+            const cat = card.getAttribute('data-category') || '';
+            const type = card.getAttribute('data-type') || '';
+            const catEl = table.querySelector('thead .col-filter[data-filter="category"]');
+            const typeEl = table.querySelector('thead .col-filter[data-filter="type"]');
+            if (catEl) catEl.value = cat;
+            if (typeEl && type) typeEl.value = type;
+            run();
+        });
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initProjectFeesTable);
+} else {
+    initProjectFeesTable();
+}
+</script>
+{% endblock %}

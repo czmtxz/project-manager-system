@@ -1,0 +1,83 @@
+{% extends "nav_base.html" %}
+{% block title %}销售合同 - 项目投资管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-file-earmark-text"></i> 销售合同</h4>
+        <a href="{{ url_for('contract_add') }}?type=sales" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> 新增销售合同
+        </a>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">项目</label>
+                    <select name="project_id" class="form-select">
+                        <option value="">全部项目</option>
+                        {% for p in projects %}
+                        <option value="{{ p.id }}" {% if filters.project_id and filters.project_id|string == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel"></i> 筛选</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            {% if contracts %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>合同编号</th>
+                            <th>合同名称</th>
+                            <th>项目</th>
+                            <th>甲方</th>
+                            <th class="text-end">合同金额</th>
+                            <th class="text-end">吨数</th>
+                            <th class="text-end">已回款</th>
+                            <th class="text-end">已回吨数</th>
+                            <th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in contracts %}
+                        <tr>
+                            <td><code>{{ c.contract_no }}</code></td>
+                            <td><a href="{{ url_for('contract_edit', id=c.id) }}">{{ c.contract_name }}</a></td>
+                            <td>{{ c.project_name or '-' }}</td>
+                            <td>{{ c.party or '-' }}</td>
+                            <td class="text-end">¥{{ "%.2f"|format(c.amount or 0) }}</td>
+                            <td class="text-end">{{ "%.2f"|format(c.quantity or 0) }} 吨</td>
+                            <td class="text-end text-success">¥{{ "%.2f"|format(c.paid_amount) }}</td>
+                            <td class="text-end">{{ "%.2f"|format(c.paid_quantity) }} 吨</td>
+                            <td>
+                                {% if c.status == 'active' %}
+                                <span class="badge bg-success">执行中</span>
+                                {% elif c.status == 'completed' %}
+                                <span class="badge bg-primary">已完成</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ c.status }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-file-earmark-text" style="font-size: 3rem;"></i>
+                <p class="mt-2">暂无销售合同</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

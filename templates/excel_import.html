@@ -1,0 +1,178 @@
+{% extends "nav_base.html" %}
+{% block title %}Excel 导入 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <h4 class="mb-4"><i class="bi bi-file-earmark-excel"></i> Excel 导入</h4>
+
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-upload"></i> 上传 Excel 文件</h6>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">导入类型 <span class="text-danger">*</span></label>
+                            <select name="import_type" class="form-select" id="importType">
+                                <option value="transaction">项目费用</option>
+                                <option value="investment">投资记录</option>
+                                <option value="payment">付款记录</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Excel 文件 <span class="text-danger">*</span></label>
+                            <input type="file" name="file" class="form-control" accept=".xlsx,.xls" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">选择项目 <span class="text-danger">*</span></label>
+                            <select name="project_name" class="form-select" id="projectSelect" required>
+                                <option value="">请选择项目...</option>
+                                {% for project in projects %}
+                                <option value="{{ project.name }}">{{ project.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">所有记录将归入此项目。</div>
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-upload"></i> 开始导入
+                            </button>
+                            <a href="{{ url_for('transaction_records') }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> 返回
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 项目费用格式 -->
+            <div class="card mt-3 format-card" id="transactionFormat">
+                <div class="card-header bg-success bg-opacity-10">
+                    <h6 class="mb-0 text-success"><i class="bi bi-check-circle"></i> 项目费用格式</h6>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">支持两种格式：</p>
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>时间</th>
+                                <th>收款方</th>
+                                <th>付款方</th>
+                                <th>明细</th>
+                                <th>支出</th>
+                                <th>备注</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>4.6</td>
+                                <td>赵小丽</td>
+                                <td>张玉君</td>
+                                <td>碎石款</td>
+                                <td>50000</td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <small class="text-muted">
+                        时间支持 "4.6"（月.日）和 "2026-04-20" 格式；
+                        支出列为<strong>正数=支出</strong>，<strong class="text-success">负数=收入</strong>；
+                        收款方作为商户，付款方作为参与人。
+                    </small>
+                </div>
+            </div>
+
+            <!-- 投资记录格式 -->
+            <div class="card mt-3 format-card d-none" id="investmentFormat">
+                <div class="card-header bg-primary bg-opacity-10">
+                    <h6 class="mb-0 text-primary"><i class="bi bi-cash-stack"></i> 投资记录格式</h6>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>日期</th>
+                                <th>参与人</th>
+                                <th>投资金额</th>
+                                <th>投资类型</th>
+                                <th>支付方式</th>
+                                <th>备注</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>2026-04-15</td>
+                                <td>张三</td>
+                                <td>100000</td>
+                                <td>现金</td>
+                                <td>银行转账</td>
+                                <td>首期投资</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <small class="text-muted">
+                        投资金额为正数；参与人姓名需与系统中一致，不一致将自动创建新参与人。
+                    </small>
+                </div>
+            </div>
+
+            <!-- 付款记录格式 -->
+            <div class="card mt-3 format-card d-none" id="paymentFormat">
+                <div class="card-header bg-warning bg-opacity-10">
+                    <h6 class="mb-0 text-warning"><i class="bi bi-credit-card"></i> 付款记录格式</h6>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>日期</th>
+                                <th>付款编号</th>
+                                <th>参与人</th>
+                                <th>付款金额</th>
+                                <th>支付方式</th>
+                                <th>备注</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>2026-04-15</td>
+                                <td>FK20260415001</td>
+                                <td>张三</td>
+                                <td>50000</td>
+                                <td>银行转账</td>
+                                <td>材料款</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <small class="text-muted">
+                        付款金额为正数；付款编号可为空，系统将自动生成；参与人姓名需与系统中一致。
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.getElementById('importType').addEventListener('change', function() {
+    const type = this.value;
+    // 隐藏所有格式说明
+    document.querySelectorAll('.format-card').forEach(card => {
+        card.classList.add('d-none');
+    });
+    // 显示对应的格式说明
+    if (type === 'transaction') {
+        document.getElementById('transactionFormat').classList.remove('d-none');
+    } else if (type === 'investment') {
+        document.getElementById('investmentFormat').classList.remove('d-none');
+    } else if (type === 'payment') {
+        document.getElementById('paymentFormat').classList.remove('d-none');
+    }
+});
+</script>
+{% endblock %}

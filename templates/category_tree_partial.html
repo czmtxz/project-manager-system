@@ -1,0 +1,69 @@
+<div class="accordion" id="{{ accordion_id }}">
+    {% for l1 in tree %}
+    <div class="accordion-item category-tree-item" data-search="{{ l1.code }} {{ l1.name }}">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#{{ prefix }}-l1-{{ l1.id }}">
+                <span class="badge bg-secondary me-2">{{ l1.code }}</span>
+                <strong>{{ l1.name }}</strong>
+                {% if l1.usage_count %}<span class="badge bg-info ms-2">{{ l1.usage_count }}笔</span>{% endif %}
+            </button>
+        </h2>
+        <div id="{{ prefix }}-l1-{{ l1.id }}" class="accordion-collapse collapse" data-bs-parent="#{{ accordion_id }}">
+            <div class="accordion-body p-2">
+                <div class="d-flex justify-content-end gap-1 mb-2">
+                    <a href="{{ url_for('category_edit', cid=l1.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                    {% if l1.is_leaf and l1.usage_count == 0 %}
+                    <a href="{{ url_for('category_delete', id=l1.id) }}" class="btn btn-sm btn-outline-danger"
+                       onclick="return confirm('确定删除？')">删除</a>
+                    {% endif %}
+                </div>
+                {% for l2 in l1.children %}
+                <div class="border-start border-3 border-secondary ms-2 mb-2 category-tree-item" data-search="{{ l2.code }} {{ l2.name }}">
+                    <div class="d-flex justify-content-between align-items-center p-2 bg-light flex-wrap gap-1">
+                        <span>
+                            <span class="badge bg-light text-dark me-1">{{ l2.code }}</span>
+                            <strong>{{ l2.name }}</strong>
+                            {% if l2.usage_count %}<span class="badge bg-info">{{ l2.usage_count }}</span>{% endif %}
+                        </span>
+                        <span class="btn-group btn-group-sm">
+                            <a href="{{ url_for('category_edit', cid=l2.id) }}" class="btn btn-outline-primary">编辑</a>
+                            {% if l2.is_leaf and l2.usage_count == 0 %}
+                            <a href="{{ url_for('category_delete', id=l2.id) }}" class="btn btn-outline-danger"
+                               onclick="return confirm('确定删除？')">删除</a>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="list-group list-group-flush">
+                        {% for l3 in l2.children %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center ps-3 category-tree-item"
+                             data-search="{{ l3.code }} {{ l3.name }}">
+                            <span>
+                                <span class="badge bg-primary me-1">末级</span>
+                                <span class="badge bg-light text-dark me-1">{{ l3.code }}</span>
+                                {{ l3.name }}
+                                {% if l3.usage_count %}
+                                <a href="{{ url_for('category_transactions', category_id=l3.id) }}" class="badge bg-info text-decoration-none">{{ l3.usage_count }}笔</a>
+                                {% endif %}
+                            </span>
+                            <span class="btn-group btn-group-sm">
+                                <a href="{{ url_for('category_edit', cid=l3.id) }}" class="btn btn-outline-primary">编辑</a>
+                                {% if l3.usage_count == 0 %}
+                                <a href="{{ url_for('category_delete', id=l3.id) }}" class="btn btn-outline-danger"
+                                   onclick="return confirm('确定删除？')">删除</a>
+                                {% else %}
+                                <a href="{{ url_for('category_transactions', category_id=l3.id) }}" class="btn btn-outline-secondary">明细</a>
+                                {% endif %}
+                            </span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <p class="text-muted text-center py-3 mb-0">暂无科目</p>
+    {% endfor %}
+</div>

@@ -1,0 +1,78 @@
+{% extends "nav_base.html" %}
+{% block title %}新增往来款 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-arrow-left-right"></i> 新增往来款记录</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">类型</label>
+                                <select name="trans_type" class="form-select">
+                                    <option value="入账">入账</option>
+                                    <option value="退款">退款</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">参与人</label>
+                                <select name="participant_id" class="form-select">
+                                    <option value="">-- 选择参与人 --</option>
+                                    {% for par in participants %}
+                                    <option value="{{ par.id }}">{{ par.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">日期</label>
+                                <input type="date" name="trans_date" class="form-control"
+                                       value="{{ now.strftime('%Y-%m-%d') if now else '' }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">金额</label>
+                                <input type="number" name="amount" class="form-control" step="0.01" min="0.01" placeholder="0.00">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">支付方式</label>
+                                <select name="payment_method" class="form-select">
+                                    <option value="">-- 选择 --</option>
+                                    <option value="微信">微信</option>
+                                    <option value="支付宝">支付宝</option>
+                                    <option value="银行卡">银行卡转账</option>
+                                    <option value="现金">现金</option>
+                                    <option value="其他">其他</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">付款方/对方</label>
+                                <input type="text" name="payer" class="form-control" placeholder="对方单位或个人">
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">备注</label>
+                                <textarea name="remark" class="form-control" rows="2" placeholder="备注信息"></textarea>
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">附件（支持图片）</label>
+                                <input type="file" name="attachment" class="form-control" accept=".jpg,.jpeg,.png,.pdf">
+                                <div class="form-text">支持 JPG、PNG、PDF 格式</div>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 mt-4">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> 保存
+                            </button>
+                            <a href="{{ url_for('project_detail', pid=pid) }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> 返回项目
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

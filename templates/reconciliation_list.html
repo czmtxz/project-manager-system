@@ -1,0 +1,153 @@
+{% extends "nav_base.html" %}
+{% block title %}对账中心 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-calculator"></i> 对账中心</h4>
+    </div>
+
+    <!-- 可对账的采购单 -->
+    {% if pending_purchases %}
+    <div class="card mb-4 border-warning">
+        <div class="card-header bg-warning bg-opacity-10">
+            <h6 class="mb-0"><i class="bi bi-bell"></i> 待对账采购单</h6>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>采购单号</th>
+                            <th>项目</th>
+                            <th>供应商</th>
+                            <th>采购日期</th>
+                            <th>状态</th>
+                            <th class="text-center">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for po in pending_purchases %}
+                        <tr>
+                            <td><code>{{ po.purchase_no }}</code></td>
+                            <td>{{ po.project_name or '-' }}</td>
+                            <td>{{ po.supplier or '-' }}</td>
+                            <td>{{ po.purchase_date or '-' }}</td>
+                            <td>
+                                {% if po.status == 'submitted' %}
+                                <span class="badge bg-primary">已提交</span>
+                                {% elif po.status == 'partial' %}
+                                <span class="badge bg-warning">部分到货</span>
+                                {% elif po.status == 'completed' %}
+                                <span class="badge bg-success">已完成</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <a href="{{ url_for('reconciliation_create', purchase_id=po.id) }}" class="btn btn-sm btn-primary">
+                                    <i class="bi bi-calculator"></i> 发起对账
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 筛选栏 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label">项目</label>
+                    <select name="project_id" class="form-select">
+                        <option value="">全部项目</option>
+                        {% for p in projects %}
+                        <option value="{{ p.id }}" {% if filters.project_id and filters.project_id|string == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">状态</label>
+                    <select name="status" class="form-select">
+                        <option value="">全部状态</option>
+                        <option value="pending" {% if filters.status == 'pending' %}selected{% endif %}>待确认</option>
+                        <option value="matched" {% if filters.status == 'matched' %}selected{% endif %}>对账一致</option>
+                        <option value="discrepancy" {% if filters.status == 'discrepancy' %}selected{% endif %}>存在差异</option>
+                        <option value="confirmed" {% if filters.status == 'confirmed' %}selected{% endif %}>已确认</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel"></i> 筛选</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if reconciliations %}
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>对账单号</th>
+                            <th>采购单号</th>
+                            <th>项目</th>
+                            <th>供应商</th>
+                            <th class="text-end">采购数量</th>
+                            <th class="text-end">运输数量</th>
+                            <th class="text-end">差异率</th>
+                            <th class="text-end">运费总额</th>
+                            <th>状态</th>
+                            <th class="text-center">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in reconciliations %}
+                        <tr>
+                            <td><a href="{{ url_for('reconciliation_detail', id=r.id) }}"><code>{{ r.reconciliation_no }}</code></a></td>
+                            <td>{{ r.purchase_no }}</td>
+                            <td>{{ r.project_name or '-' }}</td>
+                            <td>{{ r.supplier or '-' }}</td>
+                            <td class="text-end">{{ "%.2f"|format(r.purchase_quantity) }}</td>
+                            <td class="text-end">{{ "%.2f"|format(r.total_transport_qty) }}</td>
+                            <td class="text-end {% if r.qty_diff_rate|abs > r.allowed_loss_rate %}text-danger{% else %}text-success{% endif %}">
+                                {{ "%.2f"|format(r.qty_diff_rate) }}%
+                            </td>
+                            <td class="text-end">¥{{ "%.2f"|format(r.total_freight) }}</td>
+                            <td>
+                                {% if r.status == 'matched' %}
+                                <span class="badge bg-success">对账一致</span>
+                                {% elif r.status == 'discrepancy' %}
+                                <span class="badge bg-danger">存在差异</span>
+                                {% elif r.status == 'confirmed' %}
+                                <span class="badge bg-info">已确认</span>
+                                {% else %}
+                                <span class="badge bg-secondary">待确认</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <a href="{{ url_for('reconciliation_detail', id=r.id) }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye"></i> 查看
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+        <i class="bi bi-calculator" style="font-size: 4rem;"></i>
+        <p class="mt-3 fs-5">暂无对账记录</p>
+        {% if not pending_purchases %}
+        <p class="small">暂无可对账的采购单</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

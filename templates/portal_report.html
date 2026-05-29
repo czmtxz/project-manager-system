@@ -1,0 +1,248 @@
+{% extends "portal_base.html" %}
+
+{% block title %}分析报表 - 客户协同平台{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0"><i class="bi bi-graph-up"></i> 分析报表</h4>
+</div>
+
+<!-- 筛选条件 -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">开始日期</label>
+                <input type="date" class="form-control" name="start_date" 
+                       value="{{ request.args.get('start_date', default_start_date) }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">结束日期</label>
+                <input type="date" class="form-control" name="end_date" 
+                       value="{{ request.args.get('end_date', default_end_date) }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">类型</label>
+                <select class="form-select" name="type">
+                    <option value="">全部</option>
+                    <option value="recharge" {% if request.args.get('type') == 'recharge' %}selected{% endif %}>充值</option>
+                    <option value="deduction" {% if request.args.get('type') == 'deduction' %}selected{% endif %}>扣减</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">
+                    <i class="bi bi-search"></i> 查询
+                </button>
+                <a href="{{ url_for('portal_report') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise"></i> 重置
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 汇总卡片 -->
+<div class="row mb-4">
+    <div class="col-md-4 mb-3">
+        <div class="card stat-card success position-relative">
+            <i class="bi bi-plus-circle stat-icon"></i>
+            <div class="stat-value">{{ "%.2f"|format(total_recharge) }}</div>
+            <div class="stat-label">充值总额（元）</div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card stat-card danger position-relative">
+            <i class="bi bi-dash-circle stat-icon"></i>
+            <div class="stat-value">{{ "%.2f"|format(total_deduction) }}</div>
+            <div class="stat-label">扣减总额（元）</div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card stat-card primary position-relative">
+            <i class="bi bi-wallet2 stat-icon"></i>
+            <div class="stat-value">{{ "%.2f"|format(current_balance) }}</div>
+            <div class="stat-label">当前余额（元）</div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 图表 -->
+    <div class="col-lg-8 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-bar-chart"></i> 趋势图
+            </div>
+            <div class="card-body">
+                <canvas id="trendChart" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 类型占比 -->
+    <div class="col-lg-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-pie-chart"></i> 类型占比
+            </div>
+            <div class="card-body">
+                <canvas id="typeChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 明细表格 -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-table"></i> 按日期汇总
+    </div>
+    <div class="card-body p-0">
+        {% if daily_stats %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>日期</th>
+                        <th>充值金额</th>
+                        <th>扣减金额</th>
+                        <th>净变动</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stat in daily_stats %}
+                    <tr>
+                        <td>{{ stat.date }}</td>
+                        <td>
+                            {% if stat.recharge > 0 %}
+                            <span class="text-success">+{{ "%.2f"|format(stat.recharge) }}</span>
+                            {% else %}
+                            <span class="text-muted">0.00</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if stat.deduction > 0 %}
+                            <span class="text-danger">-{{ "%.2f"|format(stat.deduction) }}</span>
+                            {% else %}
+                            <span class="text-muted">0.00</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% set net = stat.recharge - stat.deduction %}
+                            {% if net > 0 %}
+                            <strong class="text-success">+{{ "%.2f"|format(net) }}</strong>
+                            {% elif net < 0 %}
+                            <strong class="text-danger">{{ "%.2f"|format(net) }}</strong>
+                            {% else %}
+                            <span class="text-muted">0.00</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="table-light">
+                        <td><strong>合计</strong></td>
+                        <td><strong class="text-success">+{{ "%.2f"|format(total_recharge) }}</strong></td>
+                        <td><strong class="text-danger">-{{ "%.2f"|format(total_deduction) }}</strong></td>
+                        <td>
+                            {% set net_total = total_recharge - total_deduction %}
+                            {% if net_total > 0 %}
+                            <strong class="text-success">+{{ "%.2f"|format(net_total) }}</strong>
+                            {% elif net_total < 0 %}
+                            <strong class="text-danger">{{ "%.2f"|format(net_total) }}</strong>
+                            {% else %}
+                            <strong class="text-muted">0.00</strong>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-bar-chart" style="font-size: 3rem;"></i>
+            <p class="mt-2">暂无数据</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 趋势图
+    {% if daily_stats %}
+    const dates = {{ daily_stats | map(attribute='date') | list | tojson }};
+    const recharges = {{ daily_stats | map(attribute='recharge') | list | tojson }};
+    const deductions = {{ daily_stats | map(attribute='deduction') | list | tojson }};
+    
+    const trendCtx = document.getElementById('trendChart').getContext('2d');
+    new Chart(trendCtx, {
+        type: 'bar',
+        data: {
+            labels: dates,
+            datasets: [
+                {
+                    label: '充值',
+                    data: recharges,
+                    backgroundColor: 'rgba(25, 135, 84, 0.7)',
+                    borderColor: 'rgba(25, 135, 84, 1)',
+                    borderWidth: 1
+                },
+                {
+                    label: '扣减',
+                    data: deductions,
+                    backgroundColor: 'rgba(220, 53, 69, 0.7)',
+                    borderColor: 'rgba(220, 53, 69, 1)',
+                    borderWidth: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+    
+    // 类型占比图
+    const typeCtx = document.getElementById('typeChart').getContext('2d');
+    new Chart(typeCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['充值', '扣减'],
+            datasets: [{
+                data: [{{ total_recharge }}, {{ total_deduction }}],
+                backgroundColor: [
+                    'rgba(25, 135, 84, 0.8)',
+                    'rgba(220, 53, 69, 0.8)'
+                ],
+                borderColor: [
+                    'rgba(25, 135, 84, 1)',
+                    'rgba(220, 53, 69, 1)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+    {% else %}
+    // 无数据时显示提示
+    document.getElementById('trendChart').parentElement.innerHTML = '<div class="text-center py-5 text-muted"><i class="bi bi-bar-chart" style="font-size: 3rem;"></i><p class="mt-2">暂无数据</p></div>';
+    document.getElementById('typeChart').parentElement.innerHTML = '<div class="text-center py-5 text-muted"><i class="bi bi-pie-chart" style="font-size: 3rem;"></i><p class="mt-2">暂无数据</p></div>';
+    {% endif %}
+</script>
+{% endblock %}

@@ -1,0 +1,50 @@
+<div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 category-tree-table">
+        <thead class="table-light">
+            <tr>
+                <th>分类名称</th>
+                <th class="text-end">金额</th>
+                <th class="text-end">笔数</th>
+                <th class="text-center">操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for l1 in roots %}
+            <tr class="level-1" data-level="1" data-id="{{ l1.id }}">
+                <td class="name-cell">
+                    {% if l1.children %}<i class="bi bi-caret-right-fill expand-btn" data-l1="{{ l1.id }}"></i>{% endif %}
+                    {{ l1.name }}
+                </td>
+                <td class="text-end {{ amount_class }}">{{ "%.2f"|format(l1.total) }}</td>
+                <td class="text-end">-</td>
+                <td class="text-center">
+                    <a href="{{ url_for('category_transactions', category_id=l1.id) }}" class="btn btn-sm btn-outline-info">明细</a>
+                </td>
+            </tr>
+            {% for l2 in l1.children %}
+            <tr class="level-2" data-level="2" data-parent="{{ l1.id }}" data-id="{{ l2.id }}" style="display:none;">
+                <td class="name-cell">
+                    {% if l2.children %}<i class="bi bi-caret-right-fill expand-btn" data-l2="{{ l2.id }}" data-l1="{{ l1.id }}"></i>{% endif %}
+                    {{ l2.name }}
+                </td>
+                <td class="text-end {{ amount_class }}">{{ "%.2f"|format(l2.total) }}</td>
+                <td class="text-end">-</td>
+                <td class="text-center">
+                    <a href="{{ url_for('category_transactions', category_id=l2.id) }}" class="btn btn-sm btn-outline-info">明细</a>
+                </td>
+            </tr>
+            {% for l3 in l2.children %}
+            <tr class="level-3" data-level="3" data-parent="{{ l2.id }}" style="display:none;">
+                <td class="name-cell">{{ l3.name }}</td>
+                <td class="text-end {{ amount_class }}">{{ "%.2f"|format(l3.total) }}</td>
+                <td class="text-end">{{ l3.count }}</td>
+                <td class="text-center">
+                    <a href="{{ url_for('category_transactions', category_id=l3.id) }}" class="btn btn-sm btn-outline-info">明细</a>
+                </td>
+            </tr>
+            {% endfor %}
+            {% endfor %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

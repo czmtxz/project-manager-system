@@ -1,0 +1,322 @@
+{% extends "nav_base.html" %}
+{% block title %}{{ participant.name }} - 参与人详情{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4><i class="bi bi-person"></i> {{ participant.name }}</h4>
+            <span class="text-muted">
+                {% if participant.role == 'controller' %}
+                <span class="badge bg-danger">掌控人</span>
+                {% elif participant.role == 'connector' %}
+                <span class="badge bg-info">关系人</span>
+                {% elif participant.role == 'manager' %}
+                <span class="badge bg-primary">负责人</span>
+                {% elif participant.role == 'investor' %}
+                <span class="badge bg-success">投资人</span>
+                {% else %}
+                <span class="badge bg-secondary">参与人</span>
+                {% endif %}
+                {% if participant.linked_username %}
+                <span class="badge bg-info ms-2"><i class="bi bi-person-check"></i> {{ participant.linked_username }}</span>
+                {% endif %}
+            </span>
+        </div>
+        <div>
+            <a href="{{ url_for('participant_edit', pid=participant.id) }}" class="btn btn-outline-primary">
+                <i class="bi bi-pencil"></i> 编辑
+            </a>
+            <a href="{{ url_for('participant_delete', pid=participant.id) }}" class="btn btn-outline-danger" 
+               onclick="return confirm('确定要删除此参与人吗？此操作不可恢复！')">
+                <i class="bi bi-trash"></i> 删除
+            </a>
+            <a href="{{ url_for('participant_list') }}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> 返回列表
+            </a>
+        </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary bg-opacity-10">
+                <div class="card-body text-center">
+                    <h3 class="text-primary">{{ stats.project_count }}</h3>
+                    <small class="text-muted">参与项目</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success bg-opacity-10">
+                <div class="card-body text-center">
+                    <h3 class="text-success">{{ "%.2f"|format(stats.total_investment) }}</h3>
+                    <small class="text-muted">总投资</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-danger bg-opacity-10">
+                <div class="card-body text-center">
+                    <h3 class="text-danger">{{ "%.2f"|format(stats.total_expense) }}</h3>
+                    <small class="text-muted">总支出</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info bg-opacity-10">
+                <div class="card-body text-center">
+                    <h3 class="text-info">{{ "%.2f"|format(stats.total_income) }}</h3>
+                    <small class="text-muted">总收入</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 基本信息 -->
+        <div class="col-lg-4">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-info-circle"></i> 基本信息</h6>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <tr><td class="text-muted">姓名</td><td><strong>{{ participant.name }}</strong></td></tr>
+                        <tr><td class="text-muted">手机号</td><td>{{ participant.phone or '-' }}</td></tr>
+                        <tr><td class="text-muted">状态</td><td>
+                            {% if participant.status == 'active' %}
+                            <span class="badge bg-success">正常</span>
+                            {% else %}
+                            <span class="badge bg-secondary">停用</span>
+                            {% endif %}
+                        </td></tr>
+                        <tr><td class="text-muted">备注</td><td>{{ participant.remark or '-' }}</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 关联项目 -->
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="bi bi-folder"></i> 关联项目</h6>
+                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addProjectModal">
+                        <i class="bi bi-plus"></i> 添加项目
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    {% if projects %}
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>项目名称</th>
+                                <th>项目角色</th>
+                                <th>投资比例</th>
+                                <th>分红比例</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in projects %}
+                            <tr>
+                                <td>
+                                    <a href="{{ url_for('project_detail', pid=p.project_id) }}">{{ p.project_name }}</a>
+                                    <br><small class="text-muted">{{ p.project_status }}</small>
+                                </td>
+                                <td>
+                                    {% if p.project_role == 'manager' %}
+                                    <span class="badge bg-primary">负责人</span>
+                                    {% elif p.project_role == 'investor' %}
+                                    <span class="badge bg-success">投资人</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">参与人</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ "%.1f"|format(p.investment_ratio) }}%</td>
+                                <td>{{ "%.1f"|format(p.dividend_ratio) }}%</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-danger remove-project-btn" 
+                                            data-participant="{{ participant.id }}" 
+                                            data-project="{{ p.project_id }}">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="text-center py-4 text-muted">
+                        <i class="bi bi-folder" style="font-size: 2rem;"></i>
+                        <p>暂无关联项目</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 最近收支记录 -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-list-ul"></i> 最近收支记录</h6>
+                </div>
+                <div class="card-body p-0">
+                    {% if transactions %}
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>日期</th>
+                                <th>项目</th>
+                                <th>说明</th>
+                                <th>金额</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for t in transactions %}
+                            <tr>
+                                <td>{{ t.trans_date }}</td>
+                                <td><small>{{ t.project_name }}</small></td>
+                                <td>{{ t.description[:20] }}{% if t.description|length > 20 %}...{% endif %}</td>
+                                <td class="{% if t.trans_type == 'income' %}text-success{% else %}text-danger{% endif %}">
+                                    {% if t.trans_type == 'income' %}+{% else %}-{% endif %}{{ "%.2f"|format(t.amount) }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="text-center py-4 text-muted">暂无记录</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 投资记录 -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-cash-stack"></i> 投资记录</h6>
+                </div>
+                <div class="card-body p-0">
+                    {% if investments %}
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>日期</th>
+                                <th>项目</th>
+                                <th>金额</th>
+                                <th>备注</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for i in investments %}
+                            <tr>
+                                <td>{{ i.invest_date }}</td>
+                                <td><small>{{ i.project_name }}</small></td>
+                                <td class="text-success">{{ "%.2f"|format(i.amount) }}</td>
+                                <td>{{ i.remark or '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="text-center py-4 text-muted">暂无记录</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加项目弹窗 -->
+<div class="modal fade" id="addProjectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加关联项目</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addProjectForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">选择项目</label>
+                        <select name="project_id" class="form-select" required>
+                            <option value="">请选择项目...</option>
+                            {% for p in all_projects %}
+                            <option value="{{ p.id }}">{{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">项目角色</label>
+                        <select name="project_role" class="form-select">
+                            <option value="member">参与人</option>
+                            <option value="manager">负责人</option>
+                            <option value="investor">投资人</option>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-6">
+                            <label class="form-label">投资比例(%)</label>
+                            <input type="number" name="investment_ratio" class="form-control" value="0" min="0" max="100" step="0.1">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">分红比例(%)</label>
+                            <input type="number" name="dividend_ratio" class="form-control" value="0" min="0" max="100" step="0.1">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">确认添加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('addProjectForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    
+    fetch(`/api/participant/{{ participant.id }}/projects`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message || '操作失败');
+        }
+    });
+});
+
+document.querySelectorAll('.remove-project-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        if (!confirm('确定要移除此项目关联吗？')) return;
+        
+        const participantId = this.dataset.participant;
+        const projectId = this.dataset.project;
+        
+        fetch(`/api/participant/${participantId}/project/${projectId}`, {
+            method: 'DELETE'
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

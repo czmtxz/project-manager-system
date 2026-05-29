@@ -1,0 +1,490 @@
+{% extends "nav_base.html" %}
+{% block title %}报表 - 项目费用归集系统{% endblock %}
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+.category-tree-table tr.level-1 { background-color: #f8f9fa; font-weight: bold; }
+.category-tree-table tr.level-2 { background-color: #fff; }
+.category-tree-table tr.level-3 { background-color: #fafafa; font-size: 0.9em; }
+.category-tree-table td.name-cell { padding-left: 1em; }
+.category-tree-table tr.level-2 td.name-cell { padding-left: 2em; }
+.category-tree-table tr.level-3 td.name-cell { padding-left: 3em; }
+.chart-container { height: 300px; }
+.expand-btn { cursor: pointer; }
+.expand-btn:hover { color: #0d6efd; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <h4 class="mb-4"><i class="bi bi-graph-up"></i> 报表中心</h4>
+
+    <!-- 筛选 -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="GET" class="row g-2">
+                <div class="col-md-4">
+                    <select name="project_id" class="form-select">
+                        <option value="">所有项目</option>
+                        {% for p in projects %}
+                        <option value="{{ p.id }}" {% if project_id == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-outline-primary w-100">
+                        <i class="bi bi-funnel"></i> 筛选
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 汇总统计 -->
+    <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card text-center p-3 border-start border-4 border-success">
+                <small class="text-muted">总收入</small>
+                <h4 class="text-success mb-0">{{ "%.2f"|format(summary.total_income) }}</h4>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card text-center p-3 border-start border-4 border-danger">
+                <small class="text-muted">总支出</small>
+                <h4 class="text-danger mb-0">{{ "%.2f"|format(summary.total_expense) }}</h4>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card text-center p-3 border-start border-4 border-primary">
+                <small class="text-muted">利润</small>
+                <h4 class="text-primary mb-0">{{ "%.2f"|format(total_profit) }}</h4>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card text-center p-3 border-start border-4 border-warning">
+                <small class="text-muted">毛利率</small>
+                <h4 class="text-warning mb-0">{{ "%.2f"|format(profit_rate) }}%</h4>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图表区域 -->
+    <div class="row g-3 mb-4">
+        <!-- 收入分类饼图 -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-pie-chart text-success"></i> 收入分类分布</h6>
+                </div>
+                <div class="card-body">
+                    <div id="incomeChart" class="chart-container"></div>
+                </div>
+            </div>
+        </div>
+        <!-- 支出分类饼图 -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-pie-chart text-danger"></i> 支出分类分布</h6>
+                </div>
+                <div class="card-body">
+                    <div id="expenseChart" class="chart-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 月度趋势图 -->
+    <div class="row g-3 mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-bar-chart"></i> 月度收支趋势</h6>
+                </div>
+                <div class="card-body">
+                    <div id="monthlyChart" style="height: 300px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 项目汇总 -->
+    <div class="row g-3 mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-folder"></i> 项目汇总</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>项目</th>
+                                    <th>预算</th>
+                                    <th>收入</th>
+                                    <th>支出</th>
+                                    <th>利润</th>
+                                    <th>执行率</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for p in project_summary %}
+                                <tr>
+                                    <td>{{ p.name }}</td>
+                                    <td>{{ "%.2f"|format(p.budget or 0) }}</td>
+                                    <td class="text-success">{{ "%.2f"|format(p.income) }}</td>
+                                    <td class="text-danger">{{ "%.2f"|format(p.expense) }}</td>
+                                    <td class="{% if p.income - p.expense >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                        {{ "%.2f"|format(p.income - p.expense) }}
+                                    </td>
+                                    <td>
+                                        {% if p.budget and p.budget > 0 %}
+                                            {% set rate = (p.expense / p.budget * 100)|round(1) %}
+                                            <div class="progress" style="height: 20px;">
+                                                <div class="progress-bar {% if rate > 100 %}bg-danger{% elif rate > 80 %}bg-warning{% else %}bg-success{% endif %}" 
+                                                     style="width: {{ [rate, 100]|min }}%">
+                                                    {{ rate }}%
+                                                </div>
+                                            </div>
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 三级分类汇总表 -->
+    <div class="row g-3">
+        <!-- 支出分类明细 -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header bg-danger text-white">
+                    <h6 class="mb-0"><i class="bi bi-tags"></i> 支出分类明细（三级展开）</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0 category-tree-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>分类名称</th>
+                                    <th class="text-end">金额</th>
+                                    <th class="text-end">笔数</th>
+                                    <th class="text-center">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expenseCategoryTree">
+                                {% for l1 in category_tree.expense %}
+                                <!-- 一级分类 -->
+                                <tr class="level-1" data-level="1" data-id="{{ l1.id }}">
+                                    <td class="name-cell">
+                                        <i class="bi bi-caret-right-fill expand-btn" data-l1="{{ l1.id }}"></i>
+                                        {{ l1.name }}
+                                    </td>
+                                    <td class="text-end text-danger">{{ "%.2f"|format(l1.total) }}</td>
+                                    <td class="text-end">-</td>
+                                    <td class="text-center">
+                                        <a href="{{ url_for('category_transactions', category_id=l1.id) }}" class="btn btn-sm btn-outline-info">明细</a>
+                                    </td>
+                                </tr>
+                                {% for l2 in l1.children %}
+                                <!-- 二级分类 -->
+                                <tr class="level-2" data-level="2" data-parent="{{ l1.id }}" data-id="{{ l2.id }}" style="display:none;">
+                                    <td class="name-cell">
+                                        <i class="bi bi-caret-right-fill expand-btn" data-l2="{{ l2.id }}" data-l1="{{ l1.id }}"></i>
+                                        {{ l2.name }}
+                                    </td>
+                                    <td class="text-end text-danger">{{ "%.2f"|format(l2.total) }}</td>
+                                    <td class="text-end">-</td>
+                                    <td class="text-center">
+                                        <a href="{{ url_for('category_transactions', category_id=l2.id) }}" class="btn btn-sm btn-outline-info btn-sm">明细</a>
+                                    </td>
+                                </tr>
+                                {% for l3 in l2.children %}
+                                <!-- 三级分类 -->
+                                <tr class="level-3" data-level="3" data-parent="{{ l2.id }}" data-grandparent="{{ l1.id }}" style="display:none;">
+                                    <td class="name-cell">{{ l3.name }}</td>
+                                    <td class="text-end text-danger">{{ "%.2f"|format(l3.total) }}</td>
+                                    <td class="text-end">{{ l3.count }}</td>
+                                    <td class="text-center">
+                                        <a href="{{ url_for('category_transactions', category_id=l3.id) }}" class="btn btn-sm btn-outline-info btn-sm">明细</a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                                {% endfor %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 收入分类明细 -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h6 class="mb-0"><i class="bi bi-tags"></i> 收入分类明细（三级展开）</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0 category-tree-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>分类名称</th>
+                                    <th class="text-end">金额</th>
+                                    <th class="text-end">笔数</th>
+                                    <th class="text-center">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="incomeCategoryTree">
+                                {% for l1 in category_tree.income %}
+                                <!-- 一级分类 -->
+                                <tr class="level-1" data-level="1" data-id="{{ l1.id }}">
+                                    <td class="name-cell">
+                                        <i class="bi bi-caret-right-fill expand-btn" data-l1="{{ l1.id }}"></i>
+                                        {{ l1.name }}
+                                    </td>
+                                    <td class="text-end text-success">{{ "%.2f"|format(l1.total) }}</td>
+                                    <td class="text-end">-</td>
+                                    <td class="text-center">
+                                        <a href="{{ url_for('category_transactions', category_id=l1.id) }}" class="btn btn-sm btn-outline-info">明细</a>
+                                    </td>
+                                </tr>
+                                {% for l2 in l1.children %}
+                                <!-- 二级分类 -->
+                                <tr class="level-2" data-level="2" data-parent="{{ l1.id }}" data-id="{{ l2.id }}" style="display:none;">
+                                    <td class="name-cell">
+                                        <i class="bi bi-caret-right-fill expand-btn" data-l2="{{ l2.id }}" data-l1="{{ l1.id }}"></i>
+                                        {{ l2.name }}
+                                    </td>
+                                    <td class="text-end text-success">{{ "%.2f"|format(l2.total) }}</td>
+                                    <td class="text-end">-</td>
+                                    <td class="text-center">
+                                        <a href="{{ url_for('category_transactions', category_id=l2.id) }}" class="btn btn-sm btn-outline-info btn-sm">明细</a>
+                                    </td>
+                                </tr>
+                                {% for l3 in l2.children %}
+                                <!-- 三级分类 -->
+                                <tr class="level-3" data-level="3" data-parent="{{ l2.id }}" data-grandparent="{{ l1.id }}" style="display:none;">
+                                    <td class="name-cell">{{ l3.name }}</td>
+                                    <td class="text-end text-success">{{ "%.2f"|format(l3.total) }}</td>
+                                    <td class="text-end">{{ l3.count }}</td>
+                                    <td class="text-center">
+                                        <a href="{{ url_for('category_transactions', category_id=l3.id) }}" class="btn btn-sm btn-outline-info btn-sm">明细</a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                                {% endfor %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 图表数据
+var chartData = {{ chart_data|safe }};
+
+// 收入分类饼图
+var incomeChart = echarts.init(document.getElementById('incomeChart'));
+var incomeOption = {
+    tooltip: {
+        trigger: 'item',
+        formatter: '{b}: {c} ({d}%)'
+    },
+    legend: {
+        orient: 'vertical',
+        left: 'left',
+        top: 'center'
+    },
+    series: [{
+        name: '收入分类',
+        type: 'pie',
+        radius: ['40%', '70%'],
+        center: ['60%', '50%'],
+        avoidLabelOverlap: false,
+        itemStyle: {
+            borderRadius: 10,
+            borderColor: '#fff',
+            borderWidth: 2
+        },
+        label: {
+            show: false,
+            position: 'center'
+        },
+        emphasis: {
+            label: {
+                show: true,
+                fontSize: 16,
+                fontWeight: 'bold'
+            }
+        },
+        labelLine: {
+            show: false
+        },
+        data: chartData.income_by_category
+    }],
+    color: ['#28a745', '#20c997', '#198754', '#00bc8c', '#3dd5f3', '#0dcaf0']
+};
+incomeChart.setOption(incomeOption);
+
+// 支出分类饼图
+var expenseChart = echarts.init(document.getElementById('expenseChart'));
+var expenseOption = {
+    tooltip: {
+        trigger: 'item',
+        formatter: '{b}: {c} ({d}%)'
+    },
+    legend: {
+        orient: 'vertical',
+        left: 'left',
+        top: 'center'
+    },
+    series: [{
+        name: '支出分类',
+        type: 'pie',
+        radius: ['40%', '70%'],
+        center: ['60%', '50%'],
+        avoidLabelOverlap: false,
+        itemStyle: {
+            borderRadius: 10,
+            borderColor: '#fff',
+            borderWidth: 2
+        },
+        label: {
+            show: false,
+            position: 'center'
+        },
+        emphasis: {
+            label: {
+                show: true,
+                fontSize: 16,
+                fontWeight: 'bold'
+            }
+        },
+        labelLine: {
+            show: false
+        },
+        data: chartData.expense_by_category
+    }],
+    color: ['#dc3545', '#fd7e14', '#ffc107', '#e35d6a', '#ff6b6b', '#ee5a5a']
+};
+expenseChart.setOption(expenseOption);
+
+// 月度趋势图
+var monthlyChart = echarts.init(document.getElementById('monthlyChart'));
+var monthlyOption = {
+    tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+            type: 'shadow'
+        }
+    },
+    legend: {
+        data: ['收入', '支出']
+    },
+    grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '3%',
+        containLabel: true
+    },
+    xAxis: {
+        type: 'category',
+        data: chartData.monthly_labels
+    },
+    yAxis: {
+        type: 'value'
+    },
+    series: [
+        {
+            name: '收入',
+            type: 'bar',
+            stack: 'total',
+            itemStyle: { color: '#28a745' },
+            data: chartData.monthly_income
+        },
+        {
+            name: '支出',
+            type: 'bar',
+            stack: 'total',
+            itemStyle: { color: '#dc3545' },
+            data: chartData.monthly_expense
+        }
+    ]
+};
+monthlyChart.setOption(monthlyOption);
+
+// 窗口大小变化时重绘图表
+window.addEventListener('resize', function() {
+    incomeChart.resize();
+    expenseChart.resize();
+    monthlyChart.resize();
+});
+
+// 分类树展开/收起
+document.querySelectorAll('.expand-btn[data-l1]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var l1Id = this.getAttribute('data-l1');
+        var rows = document.querySelectorAll('tr.level-2[data-parent="' + l1Id + '"]');
+        var isExpanded = this.classList.contains('bi-caret-down-fill');
+        
+        if (isExpanded) {
+            // 收起
+            this.classList.remove('bi-caret-down-fill');
+            this.classList.add('bi-caret-right-fill');
+            rows.forEach(function(row) {
+                row.style.display = 'none';
+                // 同时收起三级
+                var l2Id = row.getAttribute('data-id');
+                document.querySelectorAll('tr.level-3[data-parent="' + l2Id + '"]').forEach(function(r) {
+                    r.style.display = 'none';
+                });
+            });
+        } else {
+            // 展开
+            this.classList.remove('bi-caret-right-fill');
+            this.classList.add('bi-caret-down-fill');
+            rows.forEach(function(row) {
+                row.style.display = '';
+            });
+        }
+    });
+});
+
+document.querySelectorAll('.expand-btn[data-l2]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var l2Id = this.getAttribute('data-l2');
+        var rows = document.querySelectorAll('tr.level-3[data-parent="' + l2Id + '"]');
+        var isExpanded = this.classList.contains('bi-caret-down-fill');
+        
+        if (isExpanded) {
+            // 收起
+            this.classList.remove('bi-caret-down-fill');
+            this.classList.add('bi-caret-right-fill');
+            rows.forEach(function(row) {
+                row.style.display = 'none';
+            });
+        } else {
+            // 展开
+            this.classList.remove('bi-caret-right-fill');
+            this.classList.add('bi-caret-down-fill');
+            rows.forEach(function(row) {
+                row.style.display = '';
+            });
+        }
+    });
+});
+</script>
+{% endblock %}

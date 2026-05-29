@@ -1,0 +1,131 @@
+{% extends "nav_base.html" %}
+{% block title %}新增销售回款 - 项目投资管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-cash"></i> 新增销售回款</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label class="form-label">选择项目 <span class="text-danger">*</span></label>
+                            <select name="project_id" class="form-select" id="projectId" required>
+                                <option value="">请选择项目...</option>
+                                {% for p in projects %}
+                                <option value="{{ p.id }}">{{ p.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">关联销售合同</label>
+                            <select name="contract_id" class="form-select" id="contractId">
+                                <option value="">-- 请先选择项目 --</option>
+                            </select>
+                            <small class="text-muted">选择项目后将显示该项目的销售合同</small>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">回款日期 <span class="text-danger">*</span></label>
+                                    <input type="date" name="payment_date" class="form-control" value="{{ now.strftime('%Y-%m-%d') if now else '' }}" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">付款方</label>
+                                    <input type="text" name="payer" class="form-control" placeholder="甲方名称">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">回款金额 <span class="text-danger">*</span></label>
+                                    <input type="number" name="amount" class="form-control" step="0.01" min="0.01" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">回款吨数</label>
+                                    <input type="number" name="quantity" class="form-control" step="0.01" min="0">
+                                    <small class="text-muted">用于分红计算</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">支付方式</label>
+                            <select name="payment_method" class="form-select">
+                                <option value="">请选择...</option>
+                                <option value="银行转账">银行转账</option>
+                                <option value="微信">微信</option>
+                                <option value="支付宝">支付宝</option>
+                                <option value="现金">现金</option>
+                                <option value="承兑汇票">承兑汇票</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">备注</label>
+                            <textarea name="remark" class="form-control" rows="2"></textarea>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> 保存
+                            </button>
+                            <a href="{{ url_for('sales_payment_list') }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> 返回
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 选择项目时动态加载销售合同
+document.getElementById('projectId').addEventListener('change', function() {
+    const projectId = this.value;
+    const contractSelect = document.getElementById('contractId');
+    
+    // 清空合同下拉
+    contractSelect.innerHTML = '<option value="">加载中...</option>';
+    
+    if (!projectId) {
+        contractSelect.innerHTML = '<option value="">-- 请先选择项目 --</option>';
+        return;
+    }
+    
+    // 获取该项目的销售合同
+    fetch('/api/project/' + projectId + '/contracts')
+        .then(res => res.json())
+        .then(data => {
+            contractSelect.innerHTML = '<option value="">不关联合同</option>';
+            
+            // 只显示销售合同
+            const salesContracts = data.filter(c => c.contract_type === 'sales');
+            
+            if (salesContracts.length > 0) {
+                salesContracts.forEach(c => {
+                    const qty = c.quantity ? c.quantity + '吨' : '';
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = `${c.contract_no} - ${c.contract_name} (${qty})`;
+                    contractSelect.appendChild(opt);
+                });
+            } else {
+                contractSelect.innerHTML = '<option value="">-- 该项目暂无销售合同 --</option>';
+            }
+        })
+        .catch(err => {
+            console.error('加载合同失败:', err);
+            contractSelect.innerHTML = '<option value="">加载失败</option>';
+        });
+});
+</script>
+{% endblock %}

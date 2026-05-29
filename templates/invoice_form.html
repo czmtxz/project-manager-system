@@ -1,0 +1,154 @@
+{% extends "nav_base.html" %}
+{% block title %}{% if invoice %}编辑发票{% else %}新增发票{% endif %} - 项目管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-{% if invoice %}pencil-square{% else %}receipt{% endif %}"></i>
+                        {% if invoice %}编辑发票{% else %}新增发票{% endif %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data" action="{% if invoice %}/invoice/edit/{{ invoice.id }}{% else %}/invoice/add{% endif %}">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">项目 <span class="text-danger">*</span></label>
+                                <select name="project_id" class="form-select" id="projectId" required>
+                                    <option value="">-- 请选择项目 --</option>
+                                    {% for p in projects %}
+                                    <option value="{{ p.id }}" {% if invoice and invoice.project_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">关联合同</label>
+                                <select name="contract_id" class="form-select" id="contractId">
+                                    <option value="">-- 请先选择项目 --</option>
+                                    {% for c in contracts %}
+                                    <option value="{{ c.id }}" {% if invoice and invoice.contract_id == c.id %}selected{% endif %}>{{ c.contract_no }} - {{ c.contract_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">发票号码 <span class="text-danger">*</span></label>
+                                <input type="text" name="invoice_no" class="form-control" placeholder="请输入发票号码" required
+                                       value="{% if invoice %}{{ invoice.invoice_no }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">发票类型</label>
+                                <select name="invoice_type" class="form-select" id="invoiceType">
+                                    <option value="成本发票" {% if invoice and invoice.invoice_type == '成本发票' %}selected{% endif %}>成本发票</option>
+                                    <option value="收入发票" {% if invoice and invoice.invoice_type == '收入发票' %}selected{% endif %}>收入发票</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">开票金额</label>
+                                <input type="number" name="amount" class="form-control" step="0.01" min="0" placeholder="0.00" id="invoiceAmount"
+                                       value="{% if invoice and invoice.amount %}{{ invoice.amount }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">税率(%)</label>
+                                <input type="number" name="tax_rate" class="form-control" step="0.1" min="0" placeholder="如: 6" id="invoiceTaxRate"
+                                       value="{% if invoice and invoice.tax_rate %}{{ invoice.tax_rate }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">税额（自动计算）</label>
+                                <input type="number" name="tax_amount" class="form-control" step="0.01" id="taxAmount" readonly placeholder="自动计算"
+                                       value="{% if invoice and invoice.tax_amount %}{{ invoice.tax_amount }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">开票日期</label>
+                                <input type="date" name="invoice_date" class="form-control"
+                                       value="{% if invoice and invoice.invoice_date %}{{ invoice.invoice_date }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">发票状态</label>
+                                <select name="status" class="form-select">
+                                    <option value="待开" {% if invoice and invoice.status == '待开' %}selected{% endif %}>待开</option>
+                                    <option value="已开" {% if invoice and invoice.status == '已开' %}selected{% endif %}>已开</option>
+                                    <option value="已收" {% if invoice and invoice.status == '已收' %}selected{% endif %}>已收</option>
+                                    <option value="已认证" {% if invoice and invoice.status == '已认证' %}selected{% endif %}>已认证</option>
+                                </select>
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">附件</label>
+                                <input type="file" name="attachment" class="form-control" accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx">
+                                <small class="text-muted">支持 JPG、PNG、PDF、Word、Excel 格式</small>
+                                {% if invoice and invoice.attachment %}
+                                <div class="mt-2">
+                                    <a href="{{ url_for('serve_upload_file', folder='invoices', filename=invoice.attachment) }}" target="_blank" class="btn btn-sm btn-outline-info">
+                                        <i class="bi bi-paperclip"></i> 查看当前附件
+                                    </a>
+                                </div>
+                                {% endif %}
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">备注</label>
+                                <textarea name="remark" class="form-control" rows="3" placeholder="备注信息">{% if invoice %}{{ invoice.remark }}{% endif %}</textarea>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 mt-3">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> 保存
+                            </button>
+                            <a href="javascript:history.back()" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> 返回
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+    // 项目下拉改变时，动态加载该项目的合同列表
+    document.getElementById('projectId').addEventListener('change', function() {
+        const projectId = this.value;
+        const contractSelect = document.getElementById('contractId');
+        contractSelect.innerHTML = '<option value="">-- 加载中... --</option>';
+
+        if (!projectId) {
+            contractSelect.innerHTML = '<option value="">-- 请先选择项目 --</option>';
+            return;
+        }
+
+        fetch('/api/project/' + projectId + '/contracts')
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                contractSelect.innerHTML = '<option value="">-- 不关联 --</option>';
+                if (data && data.length > 0) {
+                    data.forEach(function(c) {
+                        const option = document.createElement('option');
+                        option.value = c.id;
+                        option.textContent = c.contract_no + ' - ' + c.contract_name;
+                        contractSelect.appendChild(option);
+                    });
+                }
+            })
+            .catch(function(err) {
+                contractSelect.innerHTML = '<option value="">-- 加载失败 --</option>';
+                console.error('加载合同列表失败:', err);
+            });
+    });
+
+    // 金额或税率改变时自动计算税额 = 金额 * 税率 / 100
+    function calcTax() {
+        const amount = parseFloat(document.getElementById('invoiceAmount').value) || 0;
+        const rate = parseFloat(document.getElementById('invoiceTaxRate').value) || 0;
+        const tax = amount * rate / 100;
+        document.getElementById('taxAmount').value = tax.toFixed(2);
+    }
+
+    document.getElementById('invoiceAmount').addEventListener('input', calcTax);
+    document.getElementById('invoiceTaxRate').addEventListener('input', calcTax);
+
+    // 页面加载时如果已有金额和税率，计算一次税额
+    calcTax();
+</script>
+{% endblock %}

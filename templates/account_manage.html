@@ -1,0 +1,560 @@
+{% extends "nav_base.html" %}
+{% block title %}账号管理 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1"><i class="bi bi-people"></i> 账号管理</h4>
+            <div class="text-muted small">统一维护内部账号、客户协同专员与客户门户账号</div>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addCollabModal">
+                <i class="bi bi-person-lines-fill"></i> 新增客户协同专员
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                <i class="bi bi-plus-lg"></i> 新增内部用户
+            </button>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body py-3">
+                    <div class="text-muted small">全部内部账号</div>
+                    <div class="fs-4 fw-bold">{{ stats.total }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body py-3">
+                    <div class="text-muted small">正常</div>
+                    <div class="fs-4 fw-bold text-success">{{ stats.active }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body py-3">
+                    <div class="text-muted small">待审批</div>
+                    <div class="fs-4 fw-bold text-warning">{{ stats.pending }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body py-3">
+                    <div class="text-muted small">已禁用</div>
+                    <div class="fs-4 fw-bold text-danger">{{ stats.disabled }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item">
+            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-staff" type="button">
+                <i class="bi bi-person-badge"></i> 内部账号
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-client" type="button">
+                <i class="bi bi-building"></i> 客户协同账号
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <!-- 内部账号 -->
+        <div class="tab-pane fade show active" id="tab-staff">
+            <div class="alert alert-info py-2 small mb-3">
+                <i class="bi bi-shield-lock"></i>
+                <strong>客户协同专员</strong>：仅可登录客户协同管理（客户账户、充值审核、资金报表），
+                <strong>无法</strong>访问项目、费用、采购、销售等 ERP 模块；仅能查看<strong>负责客户</strong>（请在列表中点「负责客户」分配，或由其审核通过的客户自动纳入）。
+            </div>
+            <div class="card mb-3">
+                <div class="card-body">
+                    <form method="get" class="row g-2 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label small text-muted">关键词</label>
+                            <input type="text" name="keyword" class="form-control" value="{{ filters.keyword }}"
+                                   placeholder="用户名 / 姓名 / 手机 / 部门">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted">角色</label>
+                            <select name="role" class="form-select">
+                                <option value="">全部角色</option>
+                                {% for role in roles %}
+                                <option value="{{ role.code }}" {% if filters.role == role.code %}selected{% endif %}>{{ role.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted">状态</label>
+                            <select name="status" class="form-select">
+                                <option value="">全部状态</option>
+                                <option value="active" {% if filters.status == 'active' %}selected{% endif %}>正常</option>
+                                <option value="pending" {% if filters.status == 'pending' %}selected{% endif %}>待审批</option>
+                                <option value="disabled" {% if filters.status == 'disabled' %}selected{% endif %}>禁用</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2 d-flex gap-2">
+                            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search"></i> 筛选</button>
+                            <a href="{{ url_for('account_manage') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-counterclockwise"></i></a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            {% set pending_users = users|selectattr('status', 'equalto', 'pending')|list %}
+            {% if pending_users %}
+            <div class="card mb-4 border-warning">
+                <div class="card-header bg-warning bg-opacity-10">
+                    <h6 class="mb-0"><i class="bi bi-clock text-warning"></i> 待审批用户 ({{ pending_users|length }})</h6>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>用户名</th>
+                                <th>真实姓名</th>
+                                <th>手机</th>
+                                <th>部门</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in pending_users %}
+                            <tr>
+                                <td>{{ user.username }}</td>
+                                <td>{{ user.real_name or '-' }}</td>
+                                <td>{{ user.phone or '-' }}</td>
+                                <td>{{ user.department or '-' }}</td>
+                                <td>
+                                    <form method="POST" action="{{ url_for('account_approve', uid=user.id) }}" style="display:inline">
+                                        <input type="hidden" name="action" value="approve">
+                                        <button type="submit" class="btn btn-sm btn-success">通过</button>
+                                    </form>
+                                    <form method="POST" action="{{ url_for('account_approve', uid=user.id) }}" style="display:inline">
+                                        <input type="hidden" name="action" value="reject">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">拒绝</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">内部用户列表</h6>
+                    <span class="text-muted small">当前筛选 {{ users|length }} 条</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>用户名</th>
+                                <th>姓名 / 联系方式</th>
+                                <th>部门</th>
+                                <th>角色</th>
+                                <th>状态</th>
+                                <th>最后登录</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold">{{ user.username }}</div>
+                                    {% if user.id == session.user_id %}<span class="badge bg-secondary">当前登录</span>{% endif %}
+                                </td>
+                                <td>
+                                    <div>{{ user.real_name or '-' }}</div>
+                                    <div class="text-muted small">{{ user.phone or '' }}{% if user.phone and user.email %} / {% endif %}{{ user.email or '' }}</div>
+                                </td>
+                                <td>{{ user.department or '-' }}</td>
+                                <td>
+                                    {% for role in roles %}
+                                    {% if role.code == user.role %}<span class="badge bg-primary">{{ role.name }}</span>{% endif %}
+                                    {% endfor %}
+                                </td>
+                                <td>
+                                    {% if user.status == 'active' or not user.status %}
+                                    <span class="badge bg-success">正常</span>
+                                    {% elif user.status == 'disabled' %}
+                                    <span class="badge bg-danger">禁用</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ user.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-muted small">{{ user.last_login or '-' }}</td>
+                                <td class="text-nowrap">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editUserModal{{ user.id }}">维护</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#pwdUserModal{{ user.id }}">重置密码</button>
+                                    {% if user.role == 'client_collab' %}
+                                    <a href="{{ url_for('admin_user_collab_scope', uid=user.id) }}" class="btn btn-sm btn-outline-primary">负责客户</a>
+                                    {% endif %}
+                                    {% if user.id != session.user_id %}
+                                    <form method="POST" action="{{ url_for('account_toggle', uid=user.id) }}" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-warning">{% if user.status == 'disabled' %}启用{% else %}禁用{% endif %}</button>
+                                    </form>
+                                    <a href="{{ url_for('account_delete', uid=user.id) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('确认删除账号 {{ user.username }}？')">删除</a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="7" class="text-center text-muted py-4">没有匹配的账号</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 客户协同账号 -->
+        <div class="tab-pane fade" id="tab-client">
+            <div class="d-flex justify-content-between mb-3">
+                <p class="text-muted small mb-0">客户门户登录账号，按公司（客户主数据）隔离数据；专员角色请在「内部账号」中创建。</p>
+                <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addClientModal">
+                    <i class="bi bi-plus-lg"></i> 代建客户账号
+                </button>
+            </div>
+            <div class="card">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 table-sm">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>用户名</th>
+                                    <th>公司</th>
+                                    <th>主数据</th>
+                                    <th>联系人</th>
+                                    <th>状态</th>
+                                    <th class="text-end">余额</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for acc in client_accounts %}
+                                <tr>
+                                    <td>{{ acc.username }}</td>
+                                    <td>{{ acc.company_name or '-' }}</td>
+                                    <td>{{ acc.customer_master_name or ('#' ~ acc.customer_id if acc.customer_id else '未绑定') }}</td>
+                                    <td>{{ acc.contact_name or '-' }}</td>
+                                    <td>
+                                        {% if acc.status == 'pending' %}<span class="badge bg-warning">待审核</span>
+                                        {% elif acc.status in ('approved', 'active') %}<span class="badge bg-success">已激活</span>
+                                        {% elif acc.status == 'disabled' %}<span class="badge bg-secondary">已禁用</span>
+                                        {% elif acc.status == 'rejected' %}<span class="badge bg-danger">已拒绝</span>
+                                        {% else %}<span class="badge bg-secondary">{{ acc.status }}</span>{% endif %}
+                                    </td>
+                                    <td class="text-end">{{ "%.2f"|format(acc.balance or 0) }}</td>
+                                    <td class="text-nowrap">
+                                        {% if acc.status == 'pending' %}
+                                        <a href="{{ url_for('admin_client_account_approve', id=acc.id) }}" class="btn btn-sm btn-success">通过</a>
+                                        <a href="{{ url_for('admin_client_account_reject', id=acc.id) }}" class="btn btn-sm btn-outline-danger">拒绝</a>
+                                        {% endif %}
+                                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#bindModal{{ acc.id }}">绑定</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#pwdModal{{ acc.id }}">重置密码</button>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="7" class="text-center text-muted py-4">暂无客户账号</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <p class="mt-2 small text-muted">
+                <a href="{{ url_for('admin_client_accounts') }}">打开完整客户账户管理</a> ·
+                <a href="{{ url_for('admin_client_recharges') }}">充值审核</a>
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- 新增客户协同专员（固定角色） -->
+<div class="modal fade" id="addCollabModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('account_add') }}">
+                <input type="hidden" name="role" value="client_collab">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-lines-fill"></i> 新增客户协同专员</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">该账号登录后仅显示「客户协同」管理界面，不能查看项目费用等模块。</p>
+                    <div class="mb-3">
+                        <label class="form-label">用户名 *</label>
+                        <input type="text" name="username" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">密码 *</label>
+                        <input type="password" name="password" class="form-control" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">姓名</label>
+                            <input type="text" name="real_name" class="form-control">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">手机</label>
+                            <input type="text" name="phone" class="form-control">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">部门</label>
+                        <input type="text" name="department" class="form-control" value="客户协同">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">创建专员账号</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 新增内部用户 -->
+<div class="modal fade" id="addUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('account_add') }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">新增内部用户</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">用户名 *</label>
+                        <input type="text" name="username" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">密码 *</label>
+                        <input type="password" name="password" class="form-control" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">姓名</label>
+                            <input type="text" name="real_name" class="form-control">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">手机</label>
+                            <input type="text" name="phone" class="form-control">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">邮箱</label>
+                        <input type="email" name="email" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">部门</label>
+                        <input type="text" name="department" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">角色</label>
+                        <select name="role" class="form-select">
+                            {% for role in roles %}
+                                    <option value="{{ role.code }}" {% if role.code == 'client_collab' %}disabled{% endif %}>{{ role.name }}{% if role.code == 'client_collab' %}（请用上方按钮）{% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">创建</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 代建客户账号 -->
+<div class="modal fade" id="addClientModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin_client_accounts_create') }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">代建客户协同账号</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">用户名 *</label>
+                        <input type="text" name="username" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">初始密码 *</label>
+                        <input type="password" name="password" class="form-control" required minlength="6">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">绑定客户主数据</label>
+                        <select name="customer_id" class="form-select">
+                            <option value="">按公司名称自动匹配/创建</option>
+                            {% for c in customers %}
+                            <option value="{{ c.id }}">{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">公司名称 *</label>
+                        <input type="text" name="company_name" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">联系人</label>
+                        <input type="text" name="contact_name" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">手机</label>
+                        <input type="text" name="phone" class="form-control">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">创建并激活</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% for user in users %}
+<div class="modal fade" id="editUserModal{{ user.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('account_update', uid=user.id) }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">维护账号：{{ user.username }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">用户名 *</label>
+                        <input type="text" name="username" class="form-control" value="{{ user.username }}" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">姓名</label>
+                            <input type="text" name="real_name" class="form-control" value="{{ user.real_name or '' }}">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">手机</label>
+                            <input type="text" name="phone" class="form-control" value="{{ user.phone or '' }}">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">邮箱</label>
+                        <input type="email" name="email" class="form-control" value="{{ user.email or '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">部门</label>
+                        <input type="text" name="department" class="form-control" value="{{ user.department or '' }}">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">角色</label>
+                            <select name="role" class="form-select" {% if user.id == session.user_id %}disabled{% endif %}>
+                                {% for role in roles %}
+                                <option value="{{ role.code }}" {% if user.role == role.code %}selected{% endif %}>{{ role.name }}</option>
+                                {% endfor %}
+                            </select>
+                            {% if user.id == session.user_id %}
+                            <input type="hidden" name="role" value="{{ user.role }}">
+                            <div class="form-text">当前登录账号不可在此变更自身角色。</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">状态</label>
+                            <select name="status" class="form-select" {% if user.id == session.user_id %}disabled{% endif %}>
+                                <option value="active" {% if user.status == 'active' or not user.status %}selected{% endif %}>正常</option>
+                                <option value="pending" {% if user.status == 'pending' %}selected{% endif %}>待审批</option>
+                                <option value="disabled" {% if user.status == 'disabled' %}selected{% endif %}>禁用</option>
+                            </select>
+                            {% if user.id == session.user_id %}
+                            <input type="hidden" name="status" value="active">
+                            <div class="form-text">当前登录账号不可禁用自己。</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存维护信息</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="pwdUserModal{{ user.id }}" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('account_reset_password', uid=user.id) }}">
+                <div class="modal-header">
+                    <h6 class="modal-title">重置密码：{{ user.username }}</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="password" name="password" class="form-control" required minlength="4" placeholder="新密码">
+                    <div class="form-text">内部账号使用此密码登录，保存后立即生效。</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary btn-sm">确定重置</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+{% for acc in client_accounts %}
+<div class="modal fade" id="bindModal{{ acc.id }}" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin_client_account_bind', id=acc.id) }}">
+                <div class="modal-header"><h6 class="modal-title">绑定主数据</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <select name="customer_id" class="form-select" required>
+                        {% for c in customers %}
+                        <option value="{{ c.id }}" {% if acc.customer_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary btn-sm">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="pwdModal{{ acc.id }}" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin_client_account_reset_password', id=acc.id) }}">
+                <div class="modal-header"><h6 class="modal-title">重置密码</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <input type="password" name="password" class="form-control" required minlength="6" placeholder="新密码">
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary btn-sm">确定</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

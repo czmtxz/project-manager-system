@@ -1,0 +1,1145 @@
+{% extends "nav_base.html" %}
+{% block title %}{{ project.name }} - 项目费用归集系统{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4">
+    <!-- 项目头部 -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4>
+                <a href="{{ url_for('project_list') }}" class="text-muted me-2"><i class="bi bi-arrow-left"></i></a>
+                {{ project.name }}
+                {% if project.status == '进行中' %}
+                <span class="badge bg-primary ms-2">{{ project.status }}</span>
+                {% elif project.status == '已完成' %}
+                <span class="badge bg-success ms-2">{{ project.status }}</span>
+                {% elif project.status == '已暂停' %}
+                <span class="badge bg-warning text-dark ms-2">{{ project.status }}</span>
+                {% endif %}
+            </h4>
+            {% if project.description %}
+            <p class="text-muted mb-0">{{ project.description }}</p>
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('reports.view', slug='fee-profit', project_id=project.id) }}" class="btn btn-outline-info btn-sm">
+                <i class="bi bi-graph-up"></i> 查看报表
+            </a>
+        </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="row g-3 mb-4">
+        <div class="col-xl-2 col-md-4 col-6">
+            <div class="card text-center p-3">
+                <small class="text-muted">总收入</small>
+                <h5 class="text-success mb-0">{{ "%.2f"|format(total_income) }}</h5>
+            </div>
+        </div>
+        <div class="col-xl-2 col-md-4 col-6">
+            <div class="card text-center p-3">
+                <small class="text-muted">总支出</small>
+                <h5 class="text-danger mb-0">{{ "%.2f"|format(total_expense) }}</h5>
+            </div>
+        </div>
+        <div class="col-xl-2 col-md-4 col-6">
+            <div class="card text-center p-3">
+                <small class="text-muted">投资总额</small>
+                <h5 class="text-info mb-0">{{ "%.2f"|format(total_investment) }}</h5>
+            </div>
+        </div>
+        <div class="col-xl-2 col-md-4 col-6">
+            <div class="card text-center p-3">
+                <small class="text-muted">分红总额</small>
+                <h5 class="text-warning mb-0">{{ "%.2f"|format(total_dividend) }}</h5>
+            </div>
+        </div>
+        <div class="col-xl-2 col-md-4 col-6">
+            <div class="card text-center p-3">
+                <small class="text-muted">当前余额</small>
+                <h5 class="{% if balance >= 0 %}text-success{% else %}text-danger{% endif %} mb-0">{{ "%.2f"|format(balance) }}</h5>
+            </div>
+        </div>
+    </div>
+
+    <!-- 多页签 -->
+    <ul class="nav nav-tabs mb-3" id="projectTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="participant-tab" data-bs-toggle="tab" data-bs-target="#tab-participant" type="button" role="tab">
+                <i class="bi bi-people"></i> 项目参与人
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="categories-tab" data-bs-toggle="tab" data-bs-target="#tab-categories" type="button" role="tab">
+                <i class="bi bi-tags"></i> 费用分类
+                {% if uses_category_whitelist %}
+                <span class="badge bg-secondary ms-1">{{ enabled_category_ids|length }}</span>
+                {% endif %}
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="transaction-tab" data-bs-toggle="tab" data-bs-target="#tab-transaction" type="button" role="tab">
+                <i class="bi bi-list-ul"></i> 项目费用
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="investment-tab" data-bs-toggle="tab" data-bs-target="#tab-investment" type="button" role="tab">
+                <i class="bi bi-cash-stack"></i> 投资记录
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="dividend-tab" data-bs-toggle="tab" data-bs-target="#tab-dividend" type="button" role="tab">
+                <i class="bi bi-gift"></i> 分红记录
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="payment-tab" data-bs-toggle="tab" data-bs-target="#tab-payment" type="button" role="tab">
+                <i class="bi bi-credit-card"></i> 付款记录
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="fund-tab" data-bs-toggle="tab" data-bs-target="#tab-fund" type="button" role="tab">
+                <i class="bi bi-arrow-left-right"></i> 往来款记录
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="projectTabContent">
+
+        <!-- ====== Tab 1: 项目参与人 ====== -->
+        <div class="tab-pane fade show active" id="tab-participant" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <span class="fw-semibold"><i class="bi bi-people"></i> 项目参与人</span>
+                    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addParticipantModal">
+                        <i class="bi bi-plus"></i> 添加参与人
+                    </button>
+                </div>
+                <div class="card-body">
+                    {% if participants %}
+                    <!-- 参与人汇总统计 -->
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">参与人总数</small>
+                                <h5 class="mb-0 text-primary">{{ participants|length }} 人</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">总投资比例</small>
+                                <h5 class="mb-0 text-info">{{ participants|sum(attribute='investment_ratio')|default(0) }}%</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">总分红比例</small>
+                                <h5 class="mb-0 text-warning">{{ participants|sum(attribute='dividend_ratio')|default(0) }}%</h5>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm mb-0 detail-table" id="table-participant">
+                            <thead class="table-light">
+                                <tr class="thead-labels">
+                                    <th>姓名</th>
+                                    <th>角色</th>
+                                    <th>投资比例</th>
+                                    <th>分红比例</th>
+                                    <th style="width:120px">操作</th>
+                                </tr>
+                                <tr class="thead-filters">
+                                    <th><input type="text" class="form-control col-filter" data-filter="name" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="role" placeholder="筛选"></th>
+                                    <th></th>
+                                    <th></th>
+                                    <th><button type="button" class="btn btn-link btn-sm p-0 text-muted btn-clear-filters" title="清空筛选">清空</button></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for p in participants %}
+                                <tr data-filter-name="{{ p.name }}" data-filter-role="{{ p.project_role or '' }}">
+                                    <td><a href="{{ url_for('participant_detail', pid=p.id) }}">{{ p.name }}</a></td>
+                                    <td>{{ p.project_role or '-' }}</td>
+                                    <td>{{ p.investment_ratio or 0 }}%</td>
+                                    <td>{{ p.dividend_ratio or 0 }}%</td>
+                                    <td>
+                                        <form method="POST" action="{{ url_for('project_participant_remove', pid=project.id, participant_id=p.id) }}" style="display:inline" onsubmit="return confirm('确定从本项目移除该参与人？')">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="移除"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-people" style="font-size: 2.5rem;"></i>
+                        <p class="mt-2 mb-0">暂无参与人</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== Tab: 费用分类配置 ====== -->
+        <div class="tab-pane fade" id="tab-categories" role="tabpanel">
+            <div class="card">
+                <div class="card-header py-2">
+                    <span class="fw-semibold"><i class="bi bi-tags"></i> 本项目费用分类</span>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">
+                        基础资料中的分类为<strong>标准库</strong>（全公司统一）。此处仅勾选<strong>最末级科目</strong>（三级明细，无下级科目）；
+                        保存后，本项目「项目费用」录入、筛选、分类汇总仅显示已选项。
+                    </p>
+                    {% if uses_category_whitelist %}
+                    <div class="alert alert-info py-2 small mb-3">
+                        已启用白名单：当前本项目启用 <strong>{{ enabled_category_ids|length }}</strong> 个分类。
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning py-2 small mb-3">
+                        尚未保存配置：费用录入将显示<strong>全部</strong>标准分类。请勾选本项目需要的分类后保存。
+                    </div>
+                    {% endif %}
+                    <form method="POST" action="{{ url_for('project_categories_save', pid=project.id) }}">
+                        <div class="row g-4">
+                            <div class="col-md-6">
+                                <h6 class="text-danger border-bottom pb-1"><i class="bi bi-arrow-down-circle"></i> 支出类</h6>
+                                <div class="category-check-list" style="max-height: 420px; overflow-y: auto;">
+                                    {% for c in all_categories if c.type == 'expense' %}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="category_ids"
+                                               value="{{ c.id }}" id="cat-exp-{{ c.id }}"
+                                               {% if c.id in enabled_category_ids %}checked{% endif %}>
+                                        <label class="form-check-label" for="cat-exp-{{ c.id }}">
+                                            {{ c.name }}
+                                            {% if c.code %}<span class="text-muted small">({{ c.code }})</span>{% endif %}
+                                        </label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6 class="text-success border-bottom pb-1"><i class="bi bi-arrow-up-circle"></i> 收入类</h6>
+                                <div class="category-check-list" style="max-height: 420px; overflow-y: auto;">
+                                    {% for c in all_categories if c.type == 'income' %}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="category_ids"
+                                               value="{{ c.id }}" id="cat-inc-{{ c.id }}"
+                                               {% if c.id in enabled_category_ids %}checked{% endif %}>
+                                        <label class="form-check-label" for="cat-inc-{{ c.id }}">
+                                            {{ c.name }}
+                                            {% if c.code %}<span class="text-muted small">({{ c.code }})</span>{% endif %}
+                                        </label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3 d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-lg"></i> 保存配置
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-select-expense-travel">
+                                快捷：销售差旅费 + 销售业务招待费
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== Tab 2: 项目费用 ====== -->
+        <div class="tab-pane fade" id="tab-transaction" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <span class="fw-semibold"><i class="bi bi-list-ul"></i> 项目费用</span>
+                    <a href="{{ url_for('transaction_add') }}?project_id={{ project.id }}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-plus"></i> 新增
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% if transactions %}
+                    <!-- 收支汇总 -->
+                    <div class="row mb-3" id="summary-transaction">
+                        {% set income_total = transactions|selectattr('trans_type', 'equalto', 'income')|sum(attribute='amount') %}
+                        {% set expense_total = transactions|selectattr('trans_type', 'equalto', 'expense')|sum(attribute='amount') %}
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">收入合计</small>
+                                <h5 class="mb-0 text-success" id="sum-trans-income">{{ "%.2f"|format(income_total) }}</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">支出合计</small>
+                                <h5 class="mb-0 text-danger" id="sum-trans-expense">{{ "%.2f"|format(expense_total) }}</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">记录总数</small>
+                                <h5 class="mb-0 text-primary" id="sum-trans-count">{{ transactions|length }} 条</h5>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 分类汇总 -->
+                    {% if category_summary %}
+                    <div class="mb-3">
+                        <h6 class="text-muted mb-2"><i class="bi bi-pie-chart"></i> 分类汇总（自动统计）</h6>
+                        <div class="row g-2" id="category-summary-box">
+                            {% for cs in category_summary %}
+                            <div class="col-md-3 col-6 category-summary-item" data-type="{{ cs.type }}" data-category="{{ cs.name }}" role="button" style="cursor:pointer" title="点击按此分类筛选">
+                                <div class="border rounded p-2 small">
+                                    <span class="badge {% if cs.type == 'income' %}bg-success{% else %}bg-danger{% endif %}">{{ cs.name }}</span>
+                                    <div class="fw-semibold mt-1 {% if cs.type == 'income' %}text-success{% else %}text-danger{% endif %}">
+                                        {{ "%.2f"|format(cs.total) }} <span class="text-muted fw-normal">({{ cs.cnt }}笔)</span>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    <div id="filter-empty-hint" class="alert alert-info py-2 small d-none mb-2" role="status">
+                        当前筛选条件下没有匹配记录，请调整筛选或点击「清空」。
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm mb-0 detail-table" id="table-transaction">
+                            <thead class="table-light">
+                                <tr class="thead-labels">
+                                    <th>日期</th>
+                                    <th>类型</th>
+                                    <th>分类</th>
+                                    <th>参与人</th>
+                                    <th>说明</th>
+                                    <th class="text-end">金额</th>
+                                    <th>单据</th>
+                                    <th style="width:100px">操作</th>
+                                </tr>
+                                <tr class="thead-filters">
+                                    <th><input type="text" class="form-control col-filter" data-filter="date" placeholder="筛选"></th>
+                                    <th>
+                                        <select class="form-select col-filter" data-filter="type">
+                                            <option value="">全部</option>
+                                            <option value="income">收入</option>
+                                            <option value="expense">支出</option>
+                                        </select>
+                                    </th>
+                                    <th>
+                                        <select class="form-select col-filter" data-filter="category">
+                                            <option value="">全部</option>
+                                            {% for c in categories %}
+                                            <option value="{{ c.name }}">{{ c.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="person" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="desc" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="amount" placeholder="筛选"></th>
+                                    <th></th>
+                                    <th><button type="button" class="btn btn-link btn-sm p-0 text-muted btn-clear-filters" title="清空筛选">清空</button></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for t in transactions %}
+                                <tr data-type="{{ t.trans_type }}" data-amount="{{ t.amount }}"
+                                    data-filter-date="{{ t.trans_date or '' }}"
+                                    data-filter-type="{{ t.trans_type }}"
+                                    data-filter-category="{{ t.category_name or '' }}"
+                                    data-filter-person="{{ t.participant_name or '' }}"
+                                    data-filter-desc="{{ t.description or '' }}"
+                                    data-filter-amount="{{ t.amount }}">
+                                    <td>{{ t.trans_date or '-' }}</td>
+                                    <td>
+                                        {% if t.trans_type == 'income' %}
+                                        <span class="badge bg-success">收入</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">支出</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ t.category_name or '-' }}</td>
+                                    <td>{{ t.participant_name or '-' }}</td>
+                                    <td>{{ t.description or '-' }}</td>
+                                    <td class="text-end {% if t.trans_type == 'income' %}text-success{% else %}text-danger{% endif %}">
+                                        {{ "%.2f"|format(t.amount) }}
+                                    </td>
+                                    <td>
+                                        {% if t.attachment %}
+                                            {% if t.attachment.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) %}
+                                            <img src="{{ url_for('uploaded_file', filename=t.attachment) }}" class="img-thumbnail" style="max-width: 60px; max-height: 40px; cursor:pointer;" alt="单据">
+                                            {% else %}
+                                            <a href="{{ url_for('uploaded_file', filename=t.attachment) }}" target="_blank" class="btn btn-xs btn-outline-primary">查看</a>
+                                            {% endif %}
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-nowrap">
+                                        <a href="{{ url_for('transaction_edit', id=t.id) }}" class="btn btn-sm btn-outline-primary" title="编辑"><i class="bi bi-pencil"></i></a>
+                                        <form method="POST" action="{{ url_for('transaction_delete', id=t.id) }}" style="display:inline" onsubmit="return confirm('确定删除此记录？')">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="删除"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-inbox" style="font-size: 2.5rem;"></i>
+                        <p class="mt-2 mb-0">暂无收支记录</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== Tab 3: 投资记录 ====== -->
+        <div class="tab-pane fade" id="tab-investment" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <span class="fw-semibold"><i class="bi bi-cash-stack"></i> 投资记录</span>
+                    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addInvestmentModal">
+                        <i class="bi bi-plus"></i> 新增投资
+                    </button>
+                </div>
+                <div class="card-body">
+                    {% if investments %}
+                    <!-- 投资汇总 -->
+                    <div class="row mb-3" id="summary-investment">
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">投资总额</small>
+                                <h5 class="mb-0 text-success" id="sum-invest-total">{{ "%.2f"|format(investments|sum(attribute='amount')) }}</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">投资笔数</small>
+                                <h5 class="mb-0 text-primary" id="sum-invest-count">{{ investments|length }} 笔</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">参与人数</small>
+                                <h5 class="mb-0 text-info" id="sum-invest-people">{{ investments|map(attribute='participant_name')|unique|list|length }} 人</h5>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm mb-0 detail-table" id="table-investment">
+                            <thead class="table-light">
+                                <tr class="thead-labels">
+                                    <th>日期</th>
+                                    <th>参与人</th>
+                                    <th class="text-end">金额</th>
+                                    <th>备注</th>
+                                    <th style="width:100px">操作</th>
+                                </tr>
+                                <tr class="thead-filters">
+                                    <th><input type="text" class="form-control col-filter" data-filter="date" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="person" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="amount" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="remark" placeholder="筛选"></th>
+                                    <th><button type="button" class="btn btn-link btn-sm p-0 text-muted btn-clear-filters" title="清空筛选">清空</button></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for inv in investments %}
+                                <tr data-amount="{{ inv.amount }}" data-person="{{ inv.participant_name or '' }}"
+                                    data-filter-date="{{ inv.invest_date or '' }}"
+                                    data-filter-person="{{ inv.participant_name or '' }}"
+                                    data-filter-amount="{{ inv.amount }}"
+                                    data-filter-remark="{{ inv.remark or '' }}">
+                                    <td>{{ inv.invest_date or '-' }}</td>
+                                    <td>{{ inv.participant_name or '-' }}</td>
+                                    <td class="text-end text-success fw-semibold">{{ "%.2f"|format(inv.amount) }}</td>
+                                    <td>{{ inv.remark or '-' }}</td>
+                                    <td class="text-nowrap">
+                                        <a href="{{ url_for('investment_edit', pid=project.id, id=inv.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+                                        <form method="POST" action="{{ url_for('investment_delete', pid=project.id, id=inv.id) }}" style="display:inline" onsubmit="return confirm('确定删除？')">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-cash-stack" style="font-size: 2.5rem;"></i>
+                        <p class="mt-2 mb-0">暂无投资记录</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== Tab 4: 分红记录 ====== -->
+        <div class="tab-pane fade" id="tab-dividend" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <span class="fw-semibold"><i class="bi bi-gift"></i> 分红记录</span>
+                    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addDividendModal">
+                        <i class="bi bi-plus"></i> 新增分红
+                    </button>
+                </div>
+                <div class="card-body">
+                    {% if dividends %}
+                    <!-- 分红汇总 -->
+                    <div class="row mb-3" id="summary-dividend">
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">分红总额</small>
+                                <h5 class="mb-0 text-warning" id="sum-div-total">{{ "%.2f"|format(dividends|sum(attribute='amount')) }}</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">分红笔数</small>
+                                <h5 class="mb-0 text-primary" id="sum-div-count">{{ dividends|length }} 笔</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">受益人数</small>
+                                <h5 class="mb-0 text-info" id="sum-div-people">{{ dividends|map(attribute='participant_name')|unique|list|length }} 人</h5>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm mb-0 detail-table" id="table-dividend">
+                            <thead class="table-light">
+                                <tr class="thead-labels">
+                                    <th>日期</th>
+                                    <th>参与人</th>
+                                    <th class="text-end">金额</th>
+                                    <th>备注</th>
+                                    <th style="width:100px">操作</th>
+                                </tr>
+                                <tr class="thead-filters">
+                                    <th><input type="text" class="form-control col-filter" data-filter="date" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="person" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="amount" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="remark" placeholder="筛选"></th>
+                                    <th><button type="button" class="btn btn-link btn-sm p-0 text-muted btn-clear-filters" title="清空筛选">清空</button></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for div in dividends %}
+                                <tr data-amount="{{ div.amount }}" data-person="{{ div.participant_name or '' }}"
+                                    data-filter-date="{{ div.dividend_date or '' }}"
+                                    data-filter-person="{{ div.participant_name or '' }}"
+                                    data-filter-amount="{{ div.amount }}"
+                                    data-filter-remark="{{ div.remark or '' }}">
+                                    <td>{{ div.dividend_date or '-' }}</td>
+                                    <td>{{ div.participant_name or '-' }}</td>
+                                    <td class="text-end text-warning fw-semibold">{{ "%.2f"|format(div.amount) }}</td>
+                                    <td>{{ div.remark or '-' }}</td>
+                                    <td class="text-nowrap">
+                                        <a href="{{ url_for('dividend_edit', pid=project.id, id=div.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+                                        <form method="POST" action="{{ url_for('dividend_delete', pid=project.id, id=div.id) }}" style="display:inline" onsubmit="return confirm('确定删除？')">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-gift" style="font-size: 2.5rem;"></i>
+                        <p class="mt-2 mb-0">暂无分红记录</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== Tab 5: 付款记录 ====== -->
+        <div class="tab-pane fade" id="tab-payment" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <span class="fw-semibold"><i class="bi bi-credit-card"></i> 付款记录</span>
+                    <a href="{{ url_for('payment_add', pid=project.id) }}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-plus"></i> 新增付款
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% if payments %}
+                    <!-- 付款汇总 -->
+                    <div class="row mb-3" id="summary-payment">
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">付款总额</small>
+                                <h5 class="mb-0 text-danger" id="sum-pay-total">{{ "%.2f"|format(payments|sum(attribute='amount')) }}</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">付款笔数</small>
+                                <h5 class="mb-0 text-primary" id="sum-pay-count">{{ payments|length }} 笔</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">涉及合同</small>
+                                <h5 class="mb-0 text-info" id="sum-pay-contracts">{{ payments|map(attribute='contract_name')|unique|reject('none')|list|length }} 个</h5>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm mb-0 detail-table" id="table-payment">
+                            <thead class="table-light">
+                                <tr class="thead-labels">
+                                    <th>日期</th>
+                                    <th>参与人</th>
+                                    <th>合同</th>
+                                    <th class="text-end">金额</th>
+                                    <th>备注</th>
+                                    <th style="width:80px">操作</th>
+                                </tr>
+                                <tr class="thead-filters">
+                                    <th><input type="text" class="form-control col-filter" data-filter="date" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="person" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="contract" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="amount" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="remark" placeholder="筛选"></th>
+                                    <th><button type="button" class="btn btn-link btn-sm p-0 text-muted btn-clear-filters" title="清空筛选">清空</button></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for pay in payments %}
+                                <tr data-amount="{{ pay.amount }}" data-contract="{{ pay.contract_name or '-' }}"
+                                    data-filter-date="{{ pay.payment_date or '' }}"
+                                    data-filter-person="{{ pay.participant_name or '' }}"
+                                    data-filter-contract="{{ pay.contract_name or '' }}"
+                                    data-filter-amount="{{ pay.amount }}"
+                                    data-filter-remark="{{ pay.remark or '' }}">
+                                    <td>{{ pay.payment_date or '-' }}</td>
+                                    <td>{{ pay.participant_name or '-' }}</td>
+                                    <td>{{ pay.contract_name or '-' }}</td>
+                                    <td class="text-end text-danger fw-semibold">{{ "%.2f"|format(pay.amount) }}</td>
+                                    <td>{{ pay.remark or '-' }}</td>
+                                    <td>
+                                        <form method="POST" action="{{ url_for('payment_delete', pid=project.id, id=pay.id) }}" style="display:inline" onsubmit="return confirm('确定删除？')">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-credit-card" style="font-size: 2.5rem;"></i>
+                        <p class="mt-2 mb-0">暂无付款记录</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== Tab 6: 往来款记录 ====== -->
+        <div class="tab-pane fade" id="tab-fund" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <span class="fw-semibold"><i class="bi bi-arrow-left-right"></i> 往来款记录</span>
+                    <a href="{{ url_for('fund_transaction_add', pid=project.id) }}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-plus"></i> 新增往来款
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% if fund_trans %}
+                    <!-- 往来款汇总 -->
+                    {% set borrow_total = fund_trans|selectattr('trans_type', 'equalto', 'borrow')|sum(attribute='amount') %}
+                    {% set repay_total = fund_trans|selectattr('trans_type', 'equalto', 'repay')|sum(attribute='amount') %}
+                    {% set loan_total = fund_trans|selectattr('trans_type', 'equalto', 'loan')|sum(attribute='amount') %}
+                    {% set return_total = fund_trans|selectattr('trans_type', 'equalto', 'return')|sum(attribute='amount') %}
+                    <div class="row mb-3" id="summary-fund">
+                        <div class="col-md-2">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">借出</small>
+                                <h5 class="mb-0 text-warning" id="sum-fund-borrow">{{ "%.2f"|format(borrow_total) }}</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">归还</small>
+                                <h5 class="mb-0 text-success" id="sum-fund-repay">{{ "%.2f"|format(repay_total) }}</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">借入</small>
+                                <h5 class="mb-0 text-info" id="sum-fund-loan">{{ "%.2f"|format(loan_total) }}</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">还款</small>
+                                <h5 class="mb-0 text-primary" id="sum-fund-return">{{ "%.2f"|format(return_total) }}</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="border rounded p-2 text-center">
+                                <small class="text-muted">记录数</small>
+                                <h5 class="mb-0 text-secondary" id="sum-fund-count">{{ fund_trans|length }} 笔</h5>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm mb-0 detail-table" id="table-fund">
+                            <thead class="table-light">
+                                <tr class="thead-labels">
+                                    <th>日期</th>
+                                    <th>参与人</th>
+                                    <th>类型</th>
+                                    <th class="text-end">金额</th>
+                                    <th>备注</th>
+                                    <th style="width:80px">操作</th>
+                                </tr>
+                                <tr class="thead-filters">
+                                    <th><input type="text" class="form-control col-filter" data-filter="date" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="person" placeholder="筛选"></th>
+                                    <th>
+                                        <select class="form-select col-filter" data-filter="type">
+                                            <option value="">全部</option>
+                                            <option value="borrow">借出</option>
+                                            <option value="repay">归还</option>
+                                            <option value="loan">借入</option>
+                                            <option value="return">还款</option>
+                                        </select>
+                                    </th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="amount" placeholder="筛选"></th>
+                                    <th><input type="text" class="form-control col-filter" data-filter="remark" placeholder="筛选"></th>
+                                    <th><button type="button" class="btn btn-link btn-sm p-0 text-muted btn-clear-filters" title="清空筛选">清空</button></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ft in fund_trans %}
+                                <tr data-type="{{ ft.trans_type }}" data-amount="{{ ft.amount }}"
+                                    data-filter-date="{{ ft.trans_date or '' }}"
+                                    data-filter-person="{{ ft.participant_name or '' }}"
+                                    data-filter-type="{{ ft.trans_type }}"
+                                    data-filter-amount="{{ ft.amount }}"
+                                    data-filter-remark="{{ ft.remark or '' }}">
+                                    <td>{{ ft.trans_date or '-' }}</td>
+                                    <td>{{ ft.participant_name or '-' }}</td>
+                                    <td>
+                                        {% if ft.trans_type == 'borrow' %}
+                                        <span class="badge bg-warning text-dark">借出</span>
+                                        {% elif ft.trans_type == 'repay' %}
+                                        <span class="badge bg-success">归还</span>
+                                        {% elif ft.trans_type == 'loan' %}
+                                        <span class="badge bg-info">借入</span>
+                                        {% elif ft.trans_type == 'return' %}
+                                        <span class="badge bg-primary">还款</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end {% if ft.trans_type in ['borrow', 'return'] %}text-danger{% else %}text-success{% endif %} fw-semibold">
+                                        {{ "%.2f"|format(ft.amount) }}
+                                    </td>
+                                    <td>{{ ft.remark or '-' }}</td>
+                                    <td>
+                                        <form method="POST" action="{{ url_for('fund_transaction_delete', pid=project.id, id=ft.id) }}" style="display:inline" onsubmit="return confirm('确定删除？')">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-arrow-left-right" style="font-size: 2.5rem;"></i>
+                        <p class="mt-2 mb-0">暂无往来款记录</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /tab-content -->
+</div>
+
+<!-- 添加参与人 -->
+<div class="modal fade" id="addParticipantModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加参与人</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('project_participant_add', pid=project.id) }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">选择参与人</label>
+                        <select name="participant_id" class="form-select" required>
+                            <option value="">-- 请选择 --</option>
+                            {% for par in available_participants %}
+                            <option value="{{ par.id }}">{{ par.name }}</option>
+                            {% endfor %}
+                        </select>
+                        {% if not available_participants %}
+                        <small class="text-muted">无可添加参与人，请先在「参与人」菜单中新建</small>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">项目角色</label>
+                        <select name="project_role" class="form-select">
+                            <option value="member">成员</option>
+                            <option value="manager">负责人</option>
+                            <option value="investor">投资人</option>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-6">
+                            <label class="form-label">投资比例(%)</label>
+                            <input type="number" name="investment_ratio" class="form-control" step="0.01" value="0">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">分红比例(%)</label>
+                            <input type="number" name="dividend_ratio" class="form-control" step="0.01" value="0">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">添加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 新增投资 -->
+<div class="modal fade" id="addInvestmentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新增投资</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('investment_add', pid=project.id) }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">参与人</label>
+                        <select name="participant_id" class="form-select" required>
+                            {% for par in participants %}
+                            <option value="{{ par.id }}">{{ par.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">投资日期</label>
+                        <input type="date" name="invest_date" class="form-control" value="{{ now.strftime('%Y-%m-%d') if now else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">投资金额</label>
+                        <input type="number" name="amount" class="form-control" step="0.01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">投资类型</label>
+                        <select name="invest_type" class="form-select">
+                            <option value="启动资金">启动资金</option>
+                            <option value="追加投资">追加投资</option>
+                            <option value="借款">借款</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">支付方式</label>
+                        <select name="payment_method" class="form-select">
+                            <option value="">-- 选择 --</option>
+                            <option value="微信">微信</option>
+                            <option value="支付宝">支付宝</option>
+                            <option value="银行卡">银行卡</option>
+                            <option value="现金">现金</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">备注</label>
+                        <input type="text" name="remark" class="form-control">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 新增分红 -->
+<div class="modal fade" id="addDividendModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新增分红</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('dividend_add', pid=project.id) }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">参与人</label>
+                        <select name="participant_id" class="form-select" required>
+                            {% for par in participants %}
+                            <option value="{{ par.id }}">{{ par.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">分红日期</label>
+                        <input type="date" name="dividend_date" class="form-control" value="{{ now.strftime('%Y-%m-%d') if now else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">分红金额</label>
+                        <input type="number" name="amount" class="form-control" step="0.01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">分红期间</label>
+                        <input type="text" name="period" class="form-control" placeholder="如: 2024年第一季度">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">支付方式</label>
+                        <select name="payment_method" class="form-select">
+                            <option value="">-- 选择 --</option>
+                            <option value="微信">微信</option>
+                            <option value="支付宝">支付宝</option>
+                            <option value="银行卡">银行卡</option>
+                            <option value="现金">现金</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">备注</label>
+                        <input type="text" name="remark" class="form-control">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 表头列筛选：按 data-filter-* 属性匹配
+function applyColumnFilters(table) {
+    const criteria = {};
+    table.querySelectorAll('thead .col-filter').forEach(el => {
+        const key = el.getAttribute('data-filter');
+        if (!key) return;
+        const val = (el.value || '').trim();
+        if (val) criteria[key] = val.toLowerCase();
+    });
+    let visible = 0;
+    const rows = table.querySelectorAll('tbody tr');
+    rows.forEach(row => {
+        let show = true;
+        for (const [key, val] of Object.entries(criteria)) {
+            const raw = (row.getAttribute('data-filter-' + key) || '').toString().toLowerCase();
+            if (elUsesExactMatch(key, table)) {
+                if (raw !== val) { show = false; break; }
+            } else if (!raw.includes(val)) {
+                show = false;
+                break;
+            }
+        }
+        row.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+    return { visible, total: rows.length, criteria };
+}
+
+function elUsesExactMatch(key, table) {
+    const ctrl = table.querySelector('thead .col-filter[data-filter="' + key + '"]');
+    return ctrl && ctrl.tagName === 'SELECT';
+}
+
+function initDetailTableFilters(tableId, summaryTab) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const run = () => {
+        const result = applyColumnFilters(table);
+        if (summaryTab === 'transaction') {
+            const hint = document.getElementById('filter-empty-hint');
+            if (hint) {
+                const active = Object.keys(result.criteria || {}).length > 0;
+                hint.classList.toggle('d-none', !active || result.visible > 0);
+            }
+        }
+        if (summaryTab) {
+            updateSummary(summaryTab);
+            if (summaryTab === 'transaction') highlightCategorySummary(table);
+        }
+    };
+    table.querySelectorAll('thead .col-filter').forEach(el => {
+        el.addEventListener('input', run);
+        el.addEventListener('change', run);
+    });
+    table.querySelectorAll('thead .btn-clear-filters').forEach(btn => {
+        btn.addEventListener('click', () => {
+            table.querySelectorAll('thead .col-filter').forEach(el => { el.value = ''; });
+            run();
+        });
+    });
+}
+
+function highlightCategorySummary(table) {
+    const typeCtrl = table.querySelector('thead .col-filter[data-filter="type"]');
+    const typeVal = typeCtrl ? typeCtrl.value : '';
+    document.querySelectorAll('.category-summary-item').forEach(el => {
+        if (!typeVal) { el.style.opacity = '1'; return; }
+        el.style.opacity = el.getAttribute('data-type') === typeVal ? '1' : '0.35';
+    });
+}
+
+// 获取可见行
+function getVisibleRows(tabName) {
+    const table = document.getElementById('table-' + tabName);
+    if (!table) return [];
+    return Array.from(table.querySelectorAll('tbody tr')).filter(r => r.style.display !== 'none');
+}
+
+// 格式化数字
+function fmt(n) { return Number(n).toFixed(2); }
+
+// 根据页签更新汇总
+function updateSummary(tabName) {
+    const rows = getVisibleRows(tabName);
+
+    if (tabName === 'transaction') {
+        let income = 0, expense = 0;
+        rows.forEach(r => {
+            const amt = parseFloat(r.getAttribute('data-amount')) || 0;
+            if (r.getAttribute('data-type') === 'income') income += amt;
+            else expense += amt;
+        });
+        setText('sum-trans-income', fmt(income));
+        setText('sum-trans-expense', fmt(expense));
+        setText('sum-trans-count', rows.length + ' 条');
+    }
+    else if (tabName === 'investment') {
+        let total = 0;
+        const people = new Set();
+        rows.forEach(r => {
+            total += parseFloat(r.getAttribute('data-amount')) || 0;
+            const name = r.getAttribute('data-person');
+            if (name) people.add(name);
+        });
+        setText('sum-invest-total', fmt(total));
+        setText('sum-invest-count', rows.length + ' 笔');
+        setText('sum-invest-people', people.size + ' 人');
+    }
+    else if (tabName === 'dividend') {
+        let total = 0;
+        const people = new Set();
+        rows.forEach(r => {
+            total += parseFloat(r.getAttribute('data-amount')) || 0;
+            const name = r.getAttribute('data-person');
+            if (name) people.add(name);
+        });
+        setText('sum-div-total', fmt(total));
+        setText('sum-div-count', rows.length + ' 笔');
+        setText('sum-div-people', people.size + ' 人');
+    }
+    else if (tabName === 'payment') {
+        let total = 0;
+        const contracts = new Set();
+        rows.forEach(r => {
+            total += parseFloat(r.getAttribute('data-amount')) || 0;
+            const c = r.getAttribute('data-contract');
+            if (c && c !== '-') contracts.add(c);
+        });
+        setText('sum-pay-total', fmt(total));
+        setText('sum-pay-count', rows.length + ' 笔');
+        setText('sum-pay-contracts', contracts.size + ' 个');
+    }
+    else if (tabName === 'fund') {
+        let borrow = 0, repay = 0, loan = 0, ret = 0;
+        rows.forEach(r => {
+            const amt = parseFloat(r.getAttribute('data-amount')) || 0;
+            const t = r.getAttribute('data-type');
+            if (t === 'borrow') borrow += amt;
+            else if (t === 'repay') repay += amt;
+            else if (t === 'loan') loan += amt;
+            else if (t === 'return') ret += amt;
+        });
+        setText('sum-fund-borrow', fmt(borrow));
+        setText('sum-fund-repay', fmt(repay));
+        setText('sum-fund-loan', fmt(loan));
+        setText('sum-fund-return', fmt(ret));
+        setText('sum-fund-count', rows.length + ' 笔');
+    }
+}
+
+function setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+}
+
+function bootDetailTableFilters() {
+    initDetailTableFilters('table-participant', null);
+    initDetailTableFilters('table-transaction', 'transaction');
+    initDetailTableFilters('table-investment', 'investment');
+    initDetailTableFilters('table-dividend', 'dividend');
+    initDetailTableFilters('table-payment', 'payment');
+    initDetailTableFilters('table-fund', 'fund');
+    document.querySelectorAll('.category-summary-item[data-category]').forEach(card => {
+        card.addEventListener('click', () => {
+            const table = document.getElementById('table-transaction');
+            if (!table) return;
+            const cat = card.getAttribute('data-category') || '';
+            const type = card.getAttribute('data-type') || '';
+            const catEl = table.querySelector('thead .col-filter[data-filter="category"]');
+            const typeEl = table.querySelector('thead .col-filter[data-filter="type"]');
+            if (catEl) catEl.value = cat;
+            if (typeEl && type) typeEl.value = type;
+            applyColumnFilters(table);
+            updateSummary('transaction');
+            highlightCategorySummary(table);
+        });
+    });
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootDetailTableFilters);
+} else {
+    bootDetailTableFilters();
+}
+
+// 打开 #tab-categories 时切换到费用分类页签
+(function() {
+    const hash = window.location.hash;
+    if (hash === '#tab-categories') {
+        const el = document.getElementById('categories-tab');
+        if (el) bootstrap.Tab.getOrCreateInstance(el).show();
+    }
+})();
+
+// 快捷勾选：业务招待费 + 管理人员差旅费
+document.getElementById('btn-select-expense-travel')?.addEventListener('click', function() {
+    document.querySelectorAll('#tab-categories input[type=checkbox]').forEach(cb => { cb.checked = false; });
+    document.querySelectorAll('#tab-categories label').forEach(lbl => {
+        const t = lbl.textContent || '';
+        if (t.includes('销售业务招待费') || t.includes('销售差旅费')) {
+            const id = lbl.getAttribute('for');
+            const cb = id ? document.getElementById(id) : null;
+            if (cb) cb.checked = true;
+        }
+    });
+});
+</script>
+{% endblock %}

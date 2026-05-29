@@ -1,0 +1,132 @@
+{% extends "nav_base.html" %}
+{% block title %}销售出库单 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <!-- 页面标题 -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-box-seam"></i> 销售出库单</h4>
+        <a href="{{ url_for('sales_order_add') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> 新增出库单
+        </a>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" action="{{ url_for('sales_order_list') }}" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label for="project_id" class="form-label">项目</label>
+                    <select name="project_id" id="project_id" class="form-select">
+                        <option value="">全部项目</option>
+                        {% for p in projects %}
+                        <option value="{{ p.id }}" {% if filters.project_id and filters.project_id|string == p.id|string %}selected{% endif %}>
+                            {{ p.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="status" class="form-label">状态</label>
+                    <select name="status" id="status" class="form-select">
+                        <option value="">全部状态</option>
+                        <option value="pending" {% if filters.status == 'pending' %}selected{% endif %}>待处理</option>
+                        <option value="partial" {% if filters.status == 'partial' %}selected{% endif %}>运输中</option>
+                        <option value="delivered" {% if filters.status == 'delivered' %}selected{% endif %}>已送达</option>
+                        <option value="completed" {% if filters.status == 'completed' %}selected{% endif %}>已完成</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="customer" class="form-label">客户名称</label>
+                    <input type="text" name="customer" id="customer" class="form-control" value="{{ filters.customer }}" placeholder="客户名称">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-funnel"></i> 筛选
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 销售出库单列表 -->
+    {% if orders %}
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>出库单号</th>
+                            <th>项目</th>
+                            <th>客户名称</th>
+                            <th class="text-end">销售金额</th>
+                            <th class="text-end">销售数量</th>
+                            <th>下单日期</th>
+                            <th>运输车次</th>
+                            <th>状态</th>
+                            <th class="text-center">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for o in orders %}
+                        <tr>
+                            <td><a href="{{ url_for('sales_order_detail', id=o.id) }}"><code>{{ o.order_no }}</code></a></td>
+                            <td>{{ o.project_name or '-' }}</td>
+                            <td>{{ o.customer_name or '-' }}</td>
+                            <td class="text-end">{{ "%.2f"|format(o.total_amount or 0) }}</td>
+                            <td class="text-end">{{ "%.2f"|format(o.total_qty or 0) }}</td>
+                            <td>{{ o.order_date or '-' }}</td>
+                            <td class="text-center">
+                                {% if o.transport_count > 0 %}
+                                <span class="badge bg-info">{{ o.transport_count }}车</span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if o.status == 'pending' %}
+                                <span class="badge bg-secondary">待处理</span>
+                                {% elif o.status == 'partial' %}
+                                <span class="badge bg-primary">运输中</span>
+                                {% elif o.status == 'delivered' %}
+                                <span class="badge bg-warning text-dark">已送达</span>
+                                {% elif o.status == 'completed' %}
+                                <span class="badge bg-success">已完成</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ o.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{{ url_for('sales_order_detail', id=o.id) }}" class="btn btn-outline-primary" title="查看">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    {% if o.status == 'pending' %}
+                                    <a href="{{ url_for('sales_order_edit', id=o.id) }}" class="btn btn-outline-secondary" title="编辑">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <a href="{{ url_for('sales_order_delete', id=o.id) }}" class="btn btn-outline-danger" title="删除"
+                                       onclick="return confirm('确定要删除此出库单吗？')">
+                                        <i class="bi bi-trash"></i>
+                                    </a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+        <i class="bi bi-box-seam" style="font-size: 4rem;"></i>
+        <p class="mt-3 fs-5">暂无销售出库单记录</p>
+        <a href="{{ url_for('sales_order_add') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> 创建第一份出库单
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

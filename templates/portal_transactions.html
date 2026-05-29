@@ -1,0 +1,183 @@
+{% extends "portal_base.html" %}
+
+{% block title %}账户明细 - 客户协同平台{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0"><i class="bi bi-journal-text"></i> 账户明细</h4>
+</div>
+
+<!-- 筛选条件 -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">类型</label>
+                <select class="form-select" name="type">
+                    <option value="">全部</option>
+                    <option value="recharge" {% if request.args.get('type') == 'recharge' %}selected{% endif %}>充值</option>
+                    <option value="deduction" {% if request.args.get('type') == 'deduction' %}selected{% endif %}>扣减</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">开始日期</label>
+                <input type="date" class="form-control" name="start_date" value="{{ request.args.get('start_date', '') }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">结束日期</label>
+                <input type="date" class="form-control" name="end_date" value="{{ request.args.get('end_date', '') }}">
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">
+                    <i class="bi bi-search"></i> 筛选
+                </button>
+                <a href="{{ url_for('portal_transactions') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise"></i> 重置
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 统计卡片 -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="text-muted">当前余额</div>
+                <div class="h3 mb-0 text-primary">{{ "%.2f"|format(current_balance) }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="text-muted">筛选期间充值</div>
+                <div class="h3 mb-0 text-success">+{{ "%.2f"|format(total_recharge) }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="text-muted">筛选期间扣减</div>
+                <div class="h3 mb-0 text-danger">-{{ "%.2f"|format(total_deduction) }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 明细表格 -->
+<div class="card">
+    <div class="card-body p-0">
+        {% if transactions %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>类型</th>
+                        <th>金额</th>
+                        <th>余额</th>
+                        <th>备注</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tx in transactions %}
+                    <tr>
+                        <td>{{ (tx.created_at or '')[:19] }}</td>
+                        <td>
+                            {% if tx.type == 'recharge' %}
+                            <span class="badge bg-success">
+                                <i class="bi bi-plus-circle"></i> 充值
+                            </span>
+                            {% else %}
+                            <span class="badge bg-danger">
+                                <i class="bi bi-dash-circle"></i> 扣减
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if tx.type == 'recharge' %}
+                            <strong class="text-success">+{{ "%.2f"|format(tx.amount) }}</strong>
+                            {% else %}
+                            <strong class="text-danger">-{{ "%.2f"|format(tx.amount) }}</strong>
+                            {% endif %}
+                        </td>
+                        <td>{{ "%.2f"|format(tx.balance_after) }}</td>
+                        <td>
+                            {% if tx.remark %}
+                            <span data-bs-toggle="tooltip" title="{{ tx.remark }}">{{ tx.remark[:30] }}{% if tx.remark|length > 30 %}...{% endif %}</span>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-journal" style="font-size: 3rem;"></i>
+            <p class="mt-2">暂无明细记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 分页 -->
+{% if pagination and pagination.pages > 1 %}
+<nav class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ pagination.prev_num }}&{{ request.args|exclude('page')|urlencode }}">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled">
+            <span class="page-link"><i class="bi bi-chevron-left"></i></span>
+        </li>
+        {% endif %}
+        
+        {% for p in pagination.iter_pages() %}
+            {% if p %}
+                {% if p == pagination.page %}
+                <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                {% else %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ p }}&{{ request.args|exclude('page')|urlencode }}">{{ p }}</a>
+                </li>
+                {% endif %}
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ pagination.next_num }}&{{ request.args|exclude('page')|urlencode }}">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled">
+            <span class="page-link"><i class="bi bi-chevron-right"></i></span>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 初始化工具提示
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+</script>
+{% endblock %}

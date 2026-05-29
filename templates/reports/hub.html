@@ -1,0 +1,355 @@
+{% extends staff_layout|default('nav_base.html') %}
+{% block title %}报表中心{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/report_hub.css') }}">
+{% endblock %}
+{% block content %}
+<div class="report-hub-wrap {% if is_collab_report_hub %}collab-mode{% endif %}{% if hub_dark_mode %} report-hub-dark{% endif %} px-2 px-md-0"
+     id="reportHubRoot"
+     data-dark="{{ '1' if hub_dark_mode else '0' }}"
+     data-preview-api="{{ url_for('reports.api_preview', slug='_slug_') }}"
+     data-fav-api="{{ url_for('reports.api_toggle_favorite', slug='_slug_') }}"
+     data-prefs-api="{{ url_for('reports.api_prefs_update') }}">
+    <section class="report-hub-hero">
+        <div class="report-hub-hero-inner">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+                <div>
+                    <h1><i class="bi bi-compass"></i> 报表探索站</h1>
+                    <p class="lead mb-0">
+                        {% if is_collab_report_hub %}
+                        专注客户资金，数据按负责范围隔离展示
+                        {% else %}
+                        挑一张「数据地图」出发 —— 共 {{ total_reports }} 张报表等你解锁
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="report-hub-toolbar">
+                    <button type="button" class="report-toolbar-btn" id="themeToggle" title="切换明暗主题">
+                        <i class="bi {% if hub_dark_mode %}bi-sun{% else %}bi-moon-stars{% endif %}"></i>
+                        <span>{% if hub_dark_mode %}浅色{% else %}暗色{% endif %}</span>
+                    </button>
+                </div>
+            </div>
+            <div class="report-hub-search mt-3">
+                <i class="bi bi-search text-white-50"></i>
+                <input type="search" id="reportSearch" placeholder="搜报表名称，比如「回款」「预警」…" autocomplete="off">
+                <button type="button" class="btn btn-sm btn-light rounded-pill px-3" id="reportSearchClear" style="display:none;">清除</button>
+            </div>
+            <div class="report-hub-stats">
+                <div class="report-hub-stat">
+                    <strong>{{ total_reports }}</strong>
+                    可用报表
+                </div>
+                <div class="report-hub-stat">
+                    <strong id="favCountStat">{{ favorite_slugs|length }}</strong>
+                    我的收藏
+                </div>
+                <div class="report-hub-stat">
+                    <strong>{{ modules|length }}</strong>
+                    业务板块
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% if is_collab_report_hub %}
+    <div class="alert alert-light border py-2 small mb-3 report-collab-tip">
+        <i class="bi bi-shield-check text-primary"></i>
+        仅展示您<strong>负责客户</strong>的资金数据；未分配客户请联系管理员。
+    </div>
+    {% endif %}
+
+    <nav class="report-hub-nav" id="reportNav" aria-label="报表分类">
+        <button type="button" class="report-hub-chip active" data-module="all"
+                style="background: linear-gradient(135deg, #6366f1, #8b5cf6);">
+            <i class="bi bi-grid"></i> 全部
+            <span class="chip-count">{{ total_reports }}</span>
+        </button>
+        <button type="button" class="report-hub-chip report-hub-chip-fav" data-module="favorites"
+                style="--chip-accent: #f59e0b;">
+            <i class="bi bi-star-fill"></i> 我的收藏
+            <span class="chip-count" id="favChipCount">{{ favorite_slugs|length }}</span>
+        </button>
+        {% for mod_code, mod_label in modules %}
+        {% set items = grouped.get(mod_code, []) %}
+        {% if items %}
+        {% set ui = module_ui.get(mod_code, {}) %}
+        <button type="button" class="report-hub-chip" data-module="{{ mod_code }}"
+                data-accent="{{ ui.accent or '#64748b' }}"
+                style="--chip-accent: {{ ui.accent or '#64748b' }};">
+            <i class="bi {{ ui.icon or 'bi-folder' }}"></i> {{ mod_label }}
+            <span class="chip-count">{{ items|length }}</span>
+        </button>
+        {% endif %}
+        {% endfor %}
+    </nav>
+
+    {% if favorite_slugs %}
+    <div class="report-favorites-strip" id="favoritesStrip">
+        <div class="report-favorites-strip-head">
+            <i class="bi bi-stars"></i> 常用报表
+            <span class="text-muted small">按账号保存，换设备登录仍有效</span>
+        </div>
+        <div class="report-favorites-pills" id="favPills">
+            {% for card in report_cards if card.slug in favorite_slugs %}
+            <a href="{{ url_for('reports.view', slug=card.slug) }}" class="report-fav-pill"
+               data-slug="{{ card.slug }}" style="--pill-accent: {{ card.accent }};">
+                <i class="bi {{ card.icon }}"></i> {{ card.title }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <div class="report-favorites-strip report-favorites-empty" id="favoritesStrip" style="display:none;">
+        <div class="report-favorites-strip-head">
+            <i class="bi bi-star"></i> 常用报表
+        </div>
+        <p class="small text-muted mb-0">点击卡片上的 <i class="bi bi-star"></i> 收藏，会出现在这里</p>
+    </div>
+    {% endif %}
+
+    <div class="report-bento" id="reportBento">
+        {% set ns = namespace(last_mod='') %}
+        {% for card in report_cards|sort(attribute='favorited', reverse=true) %}
+        {% if card.module != ns.last_mod %}
+        {% set ns.last_mod = card.module %}
+        <div class="report-section-label" data-section="{{ card.module }}">{{ card.module_label }}</div>
+        {% endif %}
+        {% include 'reports/_hub_card.html' %}
+        {% endfor %}
+        <div class="report-empty" id="reportEmpty">
+            <i class="bi bi-emoji-frown display-6 d-block mb-2"></i>
+            没有匹配的报表，换个关键词试试？
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var root = document.getElementById('reportHubRoot');
+    var previewTpl = root.getAttribute('data-preview-api');
+    var favTpl = root.getAttribute('data-fav-api');
+    var prefsApi = root.getAttribute('data-prefs-api');
+    var chips = document.querySelectorAll('.report-hub-chip');
+    var items = document.querySelectorAll('.report-card-item');
+    var sections = document.querySelectorAll('.report-section-label');
+    var search = document.getElementById('reportSearch');
+    var clearBtn = document.getElementById('reportSearchClear');
+    var empty = document.getElementById('reportEmpty');
+    var themeBtn = document.getElementById('themeToggle');
+    var favCountStat = document.getElementById('favCountStat');
+    var favChipCount = document.getElementById('favChipCount');
+    var favStrip = document.getElementById('favoritesStrip');
+    var favPills = document.getElementById('favPills');
+    var activeMod = 'all';
+    var previewCache = {};
+
+    function paintChip(btn, on) {
+        if (!on) {
+            btn.style.background = root.classList.contains('report-hub-dark') ? '#1e293b' : '#fff';
+            btn.style.color = root.classList.contains('report-hub-dark') ? '#cbd5e1' : '#475569';
+            return;
+        }
+        var accent = btn.getAttribute('data-accent') || '#6366f1';
+        if (btn.dataset.module === 'all') {
+            btn.style.background = 'linear-gradient(135deg, #6366f1, #8b5cf6)';
+        } else if (btn.dataset.module === 'favorites') {
+            btn.style.background = 'linear-gradient(135deg, #f59e0b, #fbbf24)';
+        } else {
+            btn.style.background = accent;
+        }
+        btn.style.color = '#fff';
+    }
+
+    function applyFilter() {
+        var q = (search.value || '').trim().toLowerCase();
+        var visible = 0;
+        items.forEach(function(el) {
+            var mod = el.dataset.module;
+            var text = (el.dataset.search || '').toLowerCase();
+            var modOk = activeMod === 'all' || mod === activeMod;
+            if (activeMod === 'favorites') {
+                modOk = el.classList.contains('is-favorite');
+            }
+            var searchOk = !q || text.indexOf(q) >= 0;
+            var show = modOk && searchOk;
+            el.classList.toggle('is-hidden', !show);
+            if (show) visible++;
+        });
+        sections.forEach(function(sec) {
+            var mod = sec.dataset.section;
+            var any = false;
+            items.forEach(function(el) {
+                if (!el.classList.contains('is-hidden') && el.dataset.module === mod) any = true;
+            });
+            var secShow = activeMod === 'all' && any;
+            if (activeMod !== 'all' && activeMod !== 'favorites' && activeMod === mod) secShow = any;
+            if (activeMod === 'favorites') secShow = false;
+            sec.style.display = secShow ? '' : 'none';
+        });
+        empty.classList.toggle('show', visible === 0);
+        clearBtn.style.display = q ? '' : 'none';
+    }
+
+    chips.forEach(function(btn) {
+        paintChip(btn, btn.classList.contains('active'));
+        btn.addEventListener('click', function() {
+            chips.forEach(function(b) {
+                b.classList.remove('active');
+                paintChip(b, false);
+            });
+            btn.classList.add('active');
+            paintChip(btn, true);
+            activeMod = btn.dataset.module || 'all';
+            applyFilter();
+        });
+    });
+
+    search.addEventListener('input', applyFilter);
+    clearBtn.addEventListener('click', function() {
+        search.value = '';
+        applyFilter();
+        search.focus();
+    });
+
+    function setDark(on) {
+        root.classList.toggle('report-hub-dark', on);
+        root.dataset.dark = on ? '1' : '0';
+        var icon = themeBtn.querySelector('i');
+        var label = themeBtn.querySelector('span');
+        icon.className = on ? 'bi bi-sun' : 'bi bi-moon-stars';
+        label.textContent = on ? '浅色' : '暗色';
+        chips.forEach(function(b) { if (!b.classList.contains('active')) paintChip(b, false); });
+        fetch(prefsApi, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({dark_mode: on})
+        }).catch(function() {});
+    }
+
+    themeBtn.addEventListener('click', function() {
+        setDark(root.dataset.dark !== '1');
+    });
+
+    function renderMetrics(listEl, data) {
+        listEl.innerHTML = '';
+        if (!data.metrics || !data.metrics.length) {
+            listEl.innerHTML = '<li class="report-preview-empty">暂无指标数据</li>';
+            return;
+        }
+        data.metrics.forEach(function(m) {
+            var li = document.createElement('li');
+            li.innerHTML = '<span class="metric-label">' + m.label + '</span><strong class="metric-value">' + m.value + '</strong>';
+            listEl.appendChild(li);
+        });
+        var periodEl = listEl.closest('.report-flip-back').querySelector('[data-preview-period]');
+        if (periodEl && data.period) periodEl.textContent = data.period;
+    }
+
+    function loadPreview(slug, listEl) {
+        if (previewCache[slug]) {
+            renderMetrics(listEl, previewCache[slug]);
+            return;
+        }
+        listEl.innerHTML = '<li class="report-preview-loading"><span class="spinner-border spinner-border-sm"></span> 加载中…</li>';
+        fetch(previewTpl.replace('_slug_', slug))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data.ok) throw new Error(data.message || 'fail');
+                previewCache[slug] = data;
+                renderMetrics(listEl, data);
+            })
+            .catch(function() {
+                listEl.innerHTML = '<li class="report-preview-empty">预览加载失败</li>';
+            });
+    }
+
+    function updateFavUI(count) {
+        if (favCountStat) favCountStat.textContent = count;
+        if (favChipCount) favChipCount.textContent = count;
+        if (count === 0 && favStrip) {
+            favStrip.classList.add('report-favorites-empty');
+            if (favPills) favPills.innerHTML = '';
+        }
+    }
+
+    function addFavPill(slug, title, iconClass, accent) {
+        if (!favPills) {
+            favStrip = document.getElementById('favoritesStrip');
+            favStrip.style.display = '';
+            favStrip.classList.remove('report-favorites-empty');
+            var head = favStrip.querySelector('.report-favorites-strip-head') || favStrip;
+            favPills = document.createElement('div');
+            favPills.id = 'favPills';
+            favPills.className = 'report-favorites-pills';
+            favStrip.appendChild(favPills);
+        }
+        if (favPills.querySelector('[data-slug="' + slug + '"]')) return;
+        var a = document.createElement('a');
+        a.className = 'report-fav-pill';
+        a.href = '/reports/' + slug;
+        a.dataset.slug = slug;
+        a.style.setProperty('--pill-accent', accent || '#6366f1');
+        a.innerHTML = '<i class="' + iconClass + '"></i> ' + title;
+        favPills.appendChild(a);
+    }
+
+    function removeFavPill(slug) {
+        var p = favPills && favPills.querySelector('[data-slug="' + slug + '"]');
+        if (p) p.remove();
+    }
+
+    document.querySelectorAll('.report-card-item').forEach(function(item) {
+        var slug = item.dataset.slug;
+        var flipWrap = item.querySelector('.report-flip');
+        var flipBtn = item.querySelector('.report-flip-btn');
+        var favBtn = item.querySelector('.report-fav-btn');
+        var metricsEl = item.querySelector('[data-preview-metrics]');
+
+        function doFlip() {
+            var flipped = flipWrap.classList.toggle('is-flipped');
+            if (flipped && metricsEl) loadPreview(slug, metricsEl);
+        }
+
+        flipBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            doFlip();
+        });
+
+        flipWrap.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                doFlip();
+            }
+        });
+
+        favBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            fetch(favTpl.replace('_slug_', slug), {method: 'POST'})
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (!data.ok) return;
+                    var on = data.favorited;
+                    item.classList.toggle('is-favorite', on);
+                    favBtn.classList.toggle('active', on);
+                    favBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+                    favBtn.title = on ? '取消收藏' : '收藏常用';
+                    favBtn.querySelector('i').className = on ? 'bi bi-star-fill' : 'bi bi-star';
+                    var title = item.dataset.title;
+                    var iconEl = item.querySelector('.report-card-module i');
+                    var iconClass = iconEl ? iconEl.className : 'bi bi-bar-chart';
+                    var accent = getComputedStyle(item.querySelector('.report-card')).getPropertyValue('--card-accent').trim();
+                    if (on) addFavPill(slug, title, iconClass, accent);
+                    else removeFavPill(slug);
+                    updateFavUI(data.favorites.length);
+                    if (activeMod === 'favorites') applyFilter();
+                });
+        });
+    });
+
+    applyFilter();
+})();
+</script>
+{% endblock %}

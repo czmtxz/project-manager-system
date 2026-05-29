@@ -1,0 +1,313 @@
+{% extends staff_layout|default('nav_base.html') %}
+{% block title %}{{ meta.title }} - 报表中心{% endblock %}
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>.chart-container { height: 320px; }</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{{ url_for('reports.hub') }}">报表中心</a></li>
+            <li class="breadcrumb-item active">{{ meta.title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-3"><i class="bi bi-bar-chart-line"></i> {{ meta.title }}</h4>
+    <p class="text-muted small">{{ meta.description }}</p>
+
+    {% include 'reports/_filters.html' %}
+
+    {% if data.kpis %}
+    <div class="row g-3 mb-4">
+        {% for k in data.kpis %}
+        <div class="col-xl-3 col-md-4 col-6">
+            <div class="card text-center p-3 border-start border-4 border-{{ k.border }}">
+                <small class="text-muted">{{ k.label }}</small>
+                <h5 class="mb-0">{{ k.value }}</h5>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if data.chart_mode and data.chart_mode != 'none' %}
+    <div class="row g-3 mb-4" id="report-charts">
+        {% if data.chart_mode == 'executive' %}
+        <div class="col-lg-8">
+            <div class="card"><div class="card-header"><h6 class="mb-0">月度费用收支与利润</h6></div>
+            <div class="card-body"><div id="chartMain" class="chart-container"></div></div></div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card"><div class="card-header"><h6 class="mb-0">项目毛利 Top10</h6></div>
+            <div class="card-body"><div id="chartSide" class="chart-container"></div></div></div>
+        </div>
+        {% elif data.chart_mode == 'project_profit' %}
+        <div class="col-12">
+            <div class="card"><div class="card-header"><h6 class="mb-0">预算 vs 实际支出</h6></div>
+            <div class="card-body"><div id="chartMain" class="chart-container"></div></div></div>
+        </div>
+        {% elif data.chart_mode == 'cash_flow' %}
+        <div class="col-12">
+            <div class="card"><div class="card-header"><h6 class="mb-0">资金收支与回款</h6></div>
+            <div class="card-body"><div id="chartMain" class="chart-container"></div></div></div>
+        </div>
+        {% elif data.chart_mode == 'sales_outbound' %}
+        <div class="col-lg-6">
+            <div class="card"><div class="card-header"><h6 class="mb-0">月度销售金额</h6></div>
+            <div class="card-body"><div id="chartMain" class="chart-container"></div></div></div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card"><div class="card-header"><h6 class="mb-0">客户销售 Top10</h6></div>
+            <div class="card-body"><div id="chartSide" class="chart-container"></div></div></div>
+        </div>
+        {% elif data.chart_mode == 'sales_collection' %}
+        <div class="col-12">
+            <div class="card"><div class="card-header"><h6 class="mb-0">月度回款</h6></div>
+            <div class="card-body"><div id="chartMain" class="chart-container"></div></div></div>
+        </div>
+        {% elif data.chart_mode == 'purchase_spend' %}
+        <div class="col-lg-6">
+            <div class="card"><div class="card-header"><h6 class="mb-0">月度采购额</h6></div>
+            <div class="card-body"><div id="chartMain" class="chart-container"></div></div></div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card"><div class="card-header"><h6 class="mb-0">供应商 Top10</h6></div>
+            <div class="card-body"><div id="chartSide" class="chart-container"></div></div></div>
+        </div>
+        {% elif data.chart_mode == 'transport_freight' %}
+        <div class="col-lg-6">
+            <div class="card"><div class="card-header"><h6 class="mb-0">月度运费</h6></div>
+            <div class="card-body"><div id="chartMain" class="chart-container"></div></div></div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card"><div class="card-header"><h6 class="mb-0">项目运费分布</h6></div>
+            <div class="card-body"><div id="chartSide" class="chart-container"></div></div></div>
+        </div>
+        {% elif data.chart_mode == 'contract_funnel' %}
+        <div class="col-lg-6">
+            <div class="card"><div class="card-header"><h6 class="mb-0">合同执行漏斗</h6></div>
+            <div class="card-body"><div id="chartMain" class="chart-container"></div></div></div>
+        </div>
+        {% elif data.chart_mode == 'invoice_summary' %}
+        <div class="col-lg-6">
+            <div class="card"><div class="card-header"><h6 class="mb-0">月度进销项</h6></div>
+            <div class="card-body"><div id="chartMain" class="chart-container"></div></div></div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card"><div class="card-header"><h6 class="mb-0">类型分布</h6></div>
+            <div class="card-body"><div id="chartSide" class="chart-container"></div></div></div>
+        </div>
+        {% elif data.chart_mode == 'reconciliation_summary' %}
+        <div class="col-lg-6">
+            <div class="card"><div class="card-header"><h6 class="mb-0">对账状态分布</h6></div>
+            <div class="card-body"><div id="chartMain" class="chart-container"></div></div></div>
+        </div>
+        {% elif data.chart_mode == 'client_collab_funds' %}
+        <div class="col-12">
+            <div class="card"><div class="card-header"><h6 class="mb-0">期间充值与扣减</h6></div>
+            <div class="card-body"><div id="chartMain" class="chart-container"></div></div></div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if data.table_columns and data.table_rows %}
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0">明细数据</h6></div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            {% for col in data.table_columns %}
+                            <th>{{ col }}</th>
+                            {% endfor %}
+                            {% if data.alert_links %}<th>操作</th>{% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.table_rows %}
+                        <tr>
+                            {% for col in data.table_columns %}
+                            <td>
+                                {% if data.link_column == col and row._project_id %}
+                                <a href="{{ url_for('reports.view', slug='fee-profit', project_id=row._project_id, date_from=filters.date_from, date_to=filters.date_to) }}">{{ row[col] }}</a>
+                                {% elif data.contract_links and col == '合同号' and row._contract_id %}
+                                <a href="{{ url_for('contract_edit', id=row._contract_id) }}">{{ row[col] }}</a>
+                                {% elif data.client_links and col == '公司' and row._customer_id %}
+                                <a href="{{ url_for('admin_client_workspace', customer_id=row._customer_id) }}">{{ row[col] }}</a>
+                                {% elif data.client_links and col == '公司' and row._link_id %}
+                                <a href="{{ url_for('admin_client_accounts') }}">{{ row[col] }}</a>
+                                {% else %}
+                                {{ row[col] }}
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                            {% if data.alert_links %}
+                            <td><a href="{{ row['链接'] }}" class="btn btn-sm btn-outline-primary">{{ row['链接文字'] }}</a></td>
+                            {% endif %}
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="{{ data.table_columns|length + (1 if data.alert_links else 0) }}" class="text-center text-muted py-4">暂无数据</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if data.footnote %}
+    <p class="small text-muted"><i class="bi bi-info-circle"></i> {{ data.footnote }}</p>
+    {% endif %}
+</div>
+
+{% if data.chart_mode and data.chart_mode != 'none' %}
+<script>
+var chartData = {{ chart_data|safe }};
+var mode = {{ data.chart_mode|tojson }};
+
+function initChart(id, option) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var ch = echarts.init(el);
+    ch.setOption(option);
+    window.addEventListener('resize', function() { ch.resize(); });
+}
+
+if (mode === 'executive') {
+    initChart('chartMain', {
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['收入', '支出', '利润'] },
+        xAxis: { type: 'category', data: chartData.monthly_labels || [] },
+        yAxis: { type: 'value' },
+        series: [
+            { name: '收入', type: 'line', data: chartData.monthly_income || [], itemStyle: { color: '#28a745' } },
+            { name: '支出', type: 'line', data: chartData.monthly_expense || [], itemStyle: { color: '#dc3545' } },
+            { name: '利润', type: 'line', data: chartData.monthly_profit || [], itemStyle: { color: '#0d6efd' } }
+        ]
+    });
+    initChart('chartSide', {
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: chartData.project_labels || [], axisLabel: { rotate: 30 } },
+        yAxis: { type: 'value' },
+        series: [{ type: 'bar', data: chartData.project_profit || [], itemStyle: { color: '#0d6efd' } }]
+    });
+} else if (mode === 'project_profit') {
+    initChart('chartMain', {
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['预算', '实际支出'] },
+        xAxis: { type: 'category', data: chartData.project_labels || [], axisLabel: { rotate: 30 } },
+        yAxis: { type: 'value' },
+        series: [
+            { name: '预算', type: 'bar', data: chartData.budget_data || [] },
+            { name: '实际支出', type: 'bar', data: chartData.expense_data || [] }
+        ]
+    });
+} else if (mode === 'cash_flow') {
+    initChart('chartMain', {
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['费用收入', '费用支出', '销售回款'] },
+        xAxis: { type: 'category', data: chartData.monthly_labels || [] },
+        yAxis: { type: 'value' },
+        series: [
+            { name: '费用收入', type: 'bar', data: chartData.monthly_income || [] },
+            { name: '费用支出', type: 'bar', data: chartData.monthly_expense || [] },
+            { name: '销售回款', type: 'line', data: chartData.monthly_payments || [], itemStyle: { color: '#0d6efd' } }
+        ]
+    });
+} else if (mode === 'sales_outbound') {
+    initChart('chartMain', {
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: chartData.monthly_labels || [] },
+        yAxis: { type: 'value' },
+        series: [{ name: '销售金额', type: 'bar', data: chartData.monthly_amount || [] }]
+    });
+    initChart('chartSide', {
+        tooltip: { trigger: 'item' },
+        series: [{ type: 'pie', radius: '60%', data: (chartData.customer_labels || []).map(function(l, i) {
+            return { name: l, value: (chartData.customer_amount || [])[i] || 0 };
+        })}]
+    });
+} else if (mode === 'sales_collection') {
+    initChart('chartMain', {
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: chartData.monthly_labels || [] },
+        yAxis: { type: 'value' },
+        series: [{ name: '回款', type: 'bar', data: chartData.monthly_payments || [], itemStyle: { color: '#28a745' } }]
+    });
+} else if (mode === 'purchase_spend') {
+    initChart('chartMain', {
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: chartData.monthly_labels || [] },
+        yAxis: { type: 'value' },
+        series: [{ name: '采购额', type: 'bar', data: chartData.monthly_amount || [] }]
+    });
+    initChart('chartSide', {
+        tooltip: { trigger: 'item' },
+        series: [{ type: 'pie', radius: '60%', data: (chartData.supplier_labels || []).map(function(l, i) {
+            return { name: l, value: (chartData.supplier_amount || [])[i] || 0 };
+        })}]
+    });
+} else if (mode === 'transport_freight') {
+    initChart('chartMain', {
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: chartData.monthly_labels || [] },
+        yAxis: { type: 'value' },
+        series: [{ name: '运费', type: 'line', data: chartData.monthly_freight || [] }]
+    });
+    initChart('chartSide', {
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: chartData.project_labels || [] },
+        yAxis: { type: 'value' },
+        series: [{ type: 'bar', data: chartData.project_freight || [] }]
+    });
+} else if (mode === 'contract_funnel') {
+    initChart('chartMain', {
+        tooltip: { trigger: 'item' },
+        series: [{
+            type: 'funnel',
+            data: (chartData.funnel_labels || []).map(function(l, i) {
+                return { name: l, value: (chartData.funnel_values || [])[i] || 0 };
+            })
+        }]
+    });
+} else if (mode === 'invoice_summary') {
+    initChart('chartMain', {
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['销项', '进项'] },
+        xAxis: { type: 'category', data: chartData.monthly_labels || [] },
+        yAxis: { type: 'value' },
+        series: [
+            { name: '销项', type: 'bar', data: chartData.monthly_output || [] },
+            { name: '进项', type: 'bar', data: chartData.monthly_input || [] }
+        ]
+    });
+    initChart('chartSide', {
+        tooltip: { trigger: 'item' },
+        series: [{ type: 'pie', radius: '60%', data: (chartData.type_labels || []).map(function(l, i) {
+            return { name: l, value: (chartData.type_amount || [])[i] || 0 };
+        })}]
+    });
+} else if (mode === 'reconciliation_summary') {
+    initChart('chartMain', {
+        tooltip: { trigger: 'item' },
+        series: [{ type: 'pie', radius: '60%', data: (chartData.status_labels || []).map(function(l, i) {
+            return { name: l, value: (chartData.status_values || [])[i] || 0 };
+        })}]
+    });
+} else if (mode === 'client_collab_funds') {
+    initChart('chartMain', {
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['充值', '扣减'] },
+        xAxis: { type: 'category', data: chartData.monthly_labels || [] },
+        yAxis: { type: 'value' },
+        series: [
+            { name: '充值', type: 'bar', data: chartData.monthly_recharge || [], itemStyle: { color: '#28a745' } },
+            { name: '扣减', type: 'bar', data: chartData.monthly_deduct || [], itemStyle: { color: '#dc3545' } }
+        ]
+    });
+}
+</script>
+{% endif %}
+{% endblock %}

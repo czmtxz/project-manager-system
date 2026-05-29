@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}登录 - 项目管理系统{% endblock %}
+{% block body %}
+<div class="login-wrapper">
+    <div class="login-card">
+        <div class="login-header">
+            <i class="bi bi-kanban" style="font-size: 3rem; color: #4361ee;"></i>
+            <h3 class="mt-2">项目管理系统</h3>
+            <p class="text-muted">请登录您的账号</p>
+        </div>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        <form method="POST" action="{{ url_for('login') }}">
+            <div class="mb-3">
+                <label class="form-label">用户名</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-person"></i></span>
+                    <input type="text" name="username" class="form-control" placeholder="请输入用户名" required autofocus>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">密码</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                    <input type="password" name="password" class="form-control" placeholder="请输入密码" required>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-box-arrow-in-right"></i> 登 录
+        </button>
+        </form>
+
+        <div class="text-center mt-2 text-muted small">
+            默认管理员: admin / admin123<br>
+            客户协同专员使用同一登录页，登录后进入客户协同管理
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>客户注册 - 客户协同平台</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 50%, #084298 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 0;
+        }
+
+        .register-container {
+            width: 100%;
+            max-width: 500px;
+            padding: 1rem;
+        }
+
+        .register-card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .register-header {
+            background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .register-header .logo {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .register-header h4 {
+            margin: 0;
+            font-weight: 600;
+        }
+
+        .register-header p {
+            margin: 0.5rem 0 0;
+            opacity: 0.8;
+            font-size: 0.9rem;
+        }
+
+        .register-body {
+            padding: 2rem;
+        }
+
+        .form-floating {
+            margin-bottom: 1rem;
+        }
+
+        .form-floating .form-control {
+            border-radius: 0.5rem;
+            border: 1px solid #dee2e6;
+        }
+
+        .form-floating .form-control:focus {
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+        }
+
+        .btn-register {
+            width: 100%;
+            padding: 0.75rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 0.5rem;
+            background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+            border: none;
+            transition: all 0.3s;
+        }
+
+        .btn-register:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(13, 110, 253, 0.4);
+        }
+
+        .register-footer {
+            text-align: center;
+            padding: 1.5rem 2rem 2rem;
+            border-top: 1px solid #eee;
+        }
+
+        .register-footer a {
+            color: #0d6efd;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .register-footer a:hover {
+            text-decoration: underline;
+        }
+
+        .input-icon {
+            position: relative;
+        }
+
+        .input-icon .form-control {
+            padding-left: 2.5rem;
+        }
+
+        .input-icon .icon {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+            z-index: 10;
+        }
+
+        .section-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .required-label::after {
+            content: " *";
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="register-container">
+        <div class="register-card">
+            <div class="register-header">
+                <div class="logo">
+                    <i class="bi bi-person-plus"></i>
+                </div>
+                <h4>客户注册</h4>
+                <p>创建账户以查看订单和充值</p>
+            </div>
+
+            <div class="register-body">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <form method="POST" action="{{ url_for('portal_register') }}">
+
+                    <div class="section-title">账户信息</div>
+
+                    <div class="input-icon mb-3">
+                        <i class="bi bi-person icon"></i>
+                        <input type="text" class="form-control form-control-lg" id="username" name="username"
+                               placeholder="用户名 *" required autofocus>
+                    </div>
+
+                    <div class="input-icon mb-3">
+                        <i class="bi bi-lock icon"></i>
+                        <input type="password" class="form-control form-control-lg" id="password" name="password"
+                               placeholder="密码 *" required minlength="6">
+                    </div>
+
+                    <div class="input-icon mb-3">
+                        <i class="bi bi-lock-fill icon"></i>
+                        <input type="password" class="form-control form-control-lg" id="confirm_password" name="confirm_password"
+                               placeholder="确认密码 *" required>
+                    </div>
+
+                    <div class="section-title mt-4">联系信息</div>
+
+                    <div class="input-icon mb-3">
+                        <i class="bi bi-telephone icon"></i>
+                        <input type="tel" class="form-control form-control-lg" id="phone" name="phone"
+                               placeholder="手机号 *" required>
+                    </div>
+
+                    <div class="input-icon mb-3">
+                        <i class="bi bi-person-badge icon"></i>
+                        <input type="text" class="form-control form-control-lg" id="contact_name" name="contact_name"
+                               placeholder="联系人 *" required>
+                    </div>
+
+                    <div class="input-icon mb-3">
+                        <i class="bi bi-building icon"></i>
+                        <input type="text" class="form-control form-control-lg" id="company_name" name="company_name"
+                               placeholder="公司名称 *（用于关联销售出库单）" required>
+                    </div>
+
+                    <div class="form-text mb-3">
+                        <i class="bi bi-info-circle"></i>
+                        公司名称将用于关联您的销售出库单，请确保与合同中的公司名称一致。
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-register mt-3">
+                        <i class="bi bi-check-circle"></i> 提交注册
+                    </button>
+                </form>
+            </div>
+
+            <div class="register-footer">
+                <p class="mb-0">
+                    已有账号？
+                    <a href="{{ url_for('portal_login') }}">
+                        <i class="bi bi-box-arrow-in-right"></i> 立即登录
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 密码确认验证
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirm_password').value;
+
+            if (password !== confirmPassword) {
+                e.preventDefault();
+                alert('两次输入的密码不一致！');
+            }
+        });
+    </script>
+</body>
+</html>

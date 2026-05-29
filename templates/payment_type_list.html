@@ -1,0 +1,148 @@
+{% extends "nav_base.html" %}
+{% block title %}付款类型管理 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-list-check"></i> 付款类型管理</h4>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
+            <i class="bi bi-plus-circle"></i> 新增类型
+        </button>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'danger' else 'success' }} alert-dismissible fade show">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 80px;">序号</th>
+                            <th>类型名称</th>
+                            <th>说明</th>
+                            <th>创建时间</th>
+                            <th style="width: 150px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pt in payment_types %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>
+                                <strong>{{ pt.name }}</strong>
+                            </td>
+                            <td>{{ pt.description or '-' }}</td>
+                            <td>{{ pt.created_at[:10] if pt.created_at else '-' }}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" onclick="editPaymentType({{ pt.id }}, '{{ pt.name }}', '{{ pt.description or '' }}')">
+                                    <i class="bi bi-pencil"></i> 编辑
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deletePaymentType({{ pt.id }}, '{{ pt.name }}')">
+                                    <i class="bi bi-trash"></i> 删除
+                                </button>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-4">暂无付款类型，点击上方按钮添加</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 新增弹窗 -->
+<div class="modal fade" id="addModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新增付款类型</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('payment_type_add') }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">类型名称 <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" required placeholder="如：砂石料、运费">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">说明</label>
+                        <textarea name="description" class="form-control" rows="2" placeholder="可选"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑弹窗 -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">编辑付款类型</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('payment_type_edit') }}">
+                <input type="hidden" name="id" id="editId">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">类型名称 <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editName" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">说明</label>
+                        <textarea name="description" id="editDesc" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
+<script>
+function editPaymentType(id, name, description) {
+    document.getElementById('editId').value = id;
+    document.getElementById('editName').value = name;
+    document.getElementById('editDesc').value = description || '';
+    new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+
+function deletePaymentType(id, name) {
+    if (confirm(`确定要删除付款类型"${name}"吗？`)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '{{ url_for("payment_type_delete") }}';
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'id';
+        input.value = id;
+        form.appendChild(input);
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+</script>
+{% endblock %}

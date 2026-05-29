@@ -1,0 +1,64 @@
+{# 单张报表卡片：翻转预览 + 收藏 #}
+<article class="report-card-item {% if card.featured and not is_collab_report_hub %}featured{% endif %}{% if card.favorited %} is-favorite{% endif %}"
+         data-slug="{{ card.slug }}"
+         data-module="{{ card.module }}"
+         data-title="{{ card.title }}"
+         data-search="{{ card.title }} {{ card.description }} {{ card.module_label }}">
+    <div class="report-flip" tabindex="0" aria-label="{{ card.title }}">
+        <div class="report-flip-inner">
+            <div class="report-flip-front">
+                <div class="report-card {% if card.featured %}featured-card{% endif %}"
+                     style="--card-accent: {{ card.accent }};">
+                    <div class="report-card-bar" style="background: {{ card.gradient or card.accent }};"></div>
+                    <div class="report-card-deco"></div>
+                    <div class="report-card-body">
+                        <div class="report-card-module" style="color: {{ card.accent }};">
+                            <i class="bi {{ card.icon }}"></i> {{ card.module_label }}
+                        </div>
+                        <h2 class="report-card-title">{{ card.title }}</h2>
+                        <p class="report-card-desc">{{ card.description }}</p>
+                        <span class="report-card-hint">
+                            <i class="bi bi-arrow-repeat"></i> 点角标翻转看指标
+                        </span>
+                    </div>
+                    <div class="report-card-icon-wrap" style="background: {{ card.gradient or card.accent }};">
+                        <i class="bi {{ card.icon }}"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="report-flip-back">
+                <div class="report-card report-card-back-face"
+                     style="--card-accent: {{ card.accent }};">
+                    <div class="report-card-bar" style="background: {{ card.gradient or card.accent }};"></div>
+                    <div class="report-card-body">
+                        <div class="report-preview-head">
+                            <span class="report-preview-title">{{ card.title }}</span>
+                            <span class="report-preview-period" data-preview-period>{{ preview_period }}</span>
+                        </div>
+                        <ul class="report-preview-metrics" data-preview-metrics>
+                            <li class="report-preview-loading">
+                                <span class="spinner-border spinner-border-sm"></span> 加载中…
+                            </li>
+                        </ul>
+                        <a href="{{ url_for('reports.view', slug=card.slug) }}" class="report-card-cta report-open-link">
+                            进入完整报表 <i class="bi bi-box-arrow-up-right"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="report-card-actions">
+        <button type="button" class="report-action-btn report-fav-btn {% if card.favorited %}active{% endif %}"
+                title="{% if card.favorited %}取消收藏{% else %}收藏常用{% endif %}"
+                data-slug="{{ card.slug }}" aria-pressed="{{ 'true' if card.favorited else 'false' }}">
+            <i class="bi {% if card.favorited %}bi-star-fill{% else %}bi-star{% endif %}"></i>
+        </button>
+        <button type="button" class="report-action-btn report-flip-btn" title="翻转预览" data-slug="{{ card.slug }}">
+            <i class="bi bi-arrow-repeat"></i>
+        </button>
+        <a href="{{ url_for('reports.view', slug=card.slug) }}" class="report-action-btn report-go-btn" title="打开报表">
+            <i class="bi bi-arrow-right"></i>
+        </a>
+    </div>
+</article>

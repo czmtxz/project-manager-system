@@ -1,0 +1,117 @@
+{% extends "portal_base.html" %}
+
+{% block title %}申请充值 - 客户协同平台{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-cash-stack"></i> 申请充值
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('portal_recharge') }}" enctype="multipart/form-data">
+
+                    <!-- 当前余额提示 -->
+                    <div class="alert alert-info mb-4">
+                        <i class="bi bi-info-circle"></i>
+                        当前余额：<strong>{{ "%.2f"|format(current_balance) }}</strong> 元
+                    </div>
+
+                    <!-- 充值金额 -->
+                    <div class="mb-3">
+                        <label for="amount" class="form-label">充值金额 <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text">¥</span>
+                            <input type="number" class="form-control" id="amount" name="amount"
+                                   step="0.01" min="0.01" required placeholder="请输入充值金额">
+                        </div>
+                    </div>
+
+                    <!-- 快捷金额 -->
+                    <div class="mb-3">
+                        <label class="form-label">快捷选择</label>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="button" class="btn btn-outline-primary quick-amount" data-amount="1000">1000元</button>
+                            <button type="button" class="btn btn-outline-primary quick-amount" data-amount="5000">5000元</button>
+                            <button type="button" class="btn btn-outline-primary quick-amount" data-amount="10000">10000元</button>
+                            <button type="button" class="btn btn-outline-primary quick-amount" data-amount="50000">50000元</button>
+                        </div>
+                    </div>
+
+                    <!-- 付款方式 -->
+                    <div class="mb-3">
+                        <label for="payment_method" class="form-label">付款方式 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="payment_method" name="payment_method" required>
+                            <option value="">请选择付款方式</option>
+                            <option value="bank_transfer">银行转账</option>
+                            <option value="alipay">支付宝</option>
+                            <option value="wechat">微信支付</option>
+                            <option value="cash">现金</option>
+                            <option value="other">其他</option>
+                        </select>
+                    </div>
+
+                    <!-- 付款流水号 -->
+                    <div class="mb-3">
+                        <label for="transaction_id" class="form-label">付款流水号</label>
+                        <input type="text" class="form-control" id="transaction_id" name="transaction_id"
+                               placeholder="请输入付款流水号（可选）">
+                    </div>
+
+                    <!-- 付款凭证 -->
+                    <div class="mb-3">
+                        <label for="attachment" class="form-label">付款凭证</label>
+                        <input type="file" class="form-control" id="attachment" name="attachment"
+                               accept="image/*,.pdf">
+                        <div class="form-text">支持上传图片或PDF文件，作为付款凭证</div>
+                    </div>
+
+                    <!-- 备注 -->
+                    <div class="mb-4">
+                        <label for="remark" class="form-label">备注</label>
+                        <textarea class="form-control" id="remark" name="remark" rows="3"
+                                  placeholder="请输入备注信息（可选）"></textarea>
+                    </div>
+
+                    <!-- 提交按钮 -->
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-send"></i> 提交申请
+                        </button>
+                        <a href="{{ url_for('portal_recharges') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> 返回充值记录
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 温馨提示 -->
+        <div class="card mt-3">
+            <div class="card-body">
+                <h6 class="text-muted"><i class="bi bi-lightbulb"></i> 温馨提示</h6>
+                <ul class="text-muted small mb-0">
+                    <li>充值申请提交后，管理员会在1-2个工作日内审核</li>
+                    <li>请确保付款信息准确，以便快速审核</li>
+                    <li>如有疑问，请联系客服</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 快捷金额选择
+    document.querySelectorAll('.quick-amount').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.getElementById('amount').value = this.dataset.amount;
+            // 移除其他按钮的active状态
+            document.querySelectorAll('.quick-amount').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+        });
+    });
+</script>
+{% endblock %}

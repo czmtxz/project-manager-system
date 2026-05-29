@@ -1,0 +1,66 @@
+{% extends "nav_base.html" %}
+{% block title %}图片识别录入 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <h4 class="mb-4"><i class="bi bi-camera"></i> 图片识别录入</h4>
+
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-upload"></i> 上传支付截图</h6>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>支持格式：</strong>JPG、PNG、WEBP（最大8MB）<br>
+                        <strong>识别能力：</strong>使用 RapidOCR 识别金额、日期、商户、支付方式（微信/支付宝账单截图）
+                    </div>
+
+                    <form method="POST" enctype="multipart/form-data" id="ocrForm">
+                        <div class="mb-4">
+                            <label class="form-label">选择图片</label>
+                            <div class="input-group">
+                                <input type="file" name="image" class="form-control" accept=".jpg,.jpeg,.png,.webp" required id="imageInput">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-magic"></i> 开始识别
+                                </button>
+                            </div>
+                            <div class="form-text">支持微信、支付宝、银行账单等支付截图</div>
+                        </div>
+
+                        <!-- 图片预览 -->
+                        <div id="imagePreview" class="text-center mb-3" style="display:none;">
+                            <img id="previewImg" src="" alt="预览" class="img-fluid rounded border" style="max-height: 400px;">
+                        </div>
+                    </form>
+
+                    <div class="mt-4">
+                        <h6><i class="bi bi-lightbulb"></i> 使用提示</h6>
+                        <ul class="small text-muted">
+                            <li>截图尽量清晰，文字可辨认</li>
+                            <li>一张图可包含多笔交易记录</li>
+                            <li>识别结果为草稿，需确认后入账</li>
+                            <li>原图会作为附件随记录保存</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('imageInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('previewImg').src = e.target.result;
+            document.getElementById('imagePreview').style.display = 'block';
+        }
+        reader.readAsDataURL(file);
+    }
+});
+</script>
+{% endblock %}

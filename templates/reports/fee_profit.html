@@ -1,0 +1,103 @@
+{% extends staff_layout|default('nav_base.html') %}
+{% block title %}{{ meta.title }} - 报表中心{% endblock %}
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>.chart-container { height: 300px; }</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{{ url_for('reports.hub') }}">报表中心</a></li>
+            <li class="breadcrumb-item active">{{ meta.title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-3"><i class="bi bi-cash-stack"></i> {{ meta.title }}</h4>
+    {% include 'reports/_filters.html' %}
+
+    <div class="row g-3 mb-4">
+        {% for k in data.kpis %}
+        <div class="col-xl-3 col-md-6">
+            <div class="card text-center p-3 border-start border-4 border-{{ k.border }}">
+                <small class="text-muted">{{ k.label }}</small>
+                <h4 class="mb-0">{{ k.value }}</h4>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header"><h6 class="mb-0 text-success">收入分类分布</h6></div>
+                <div class="card-body"><div id="incomeChart" class="chart-container"></div></div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header"><h6 class="mb-0 text-danger">支出分类分布</h6></div>
+                <div class="card-body"><div id="expenseChart" class="chart-container"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0">月度收支趋势</h6></div>
+        <div class="card-body"><div id="monthlyChart" class="chart-container"></div></div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0">项目汇总</h6></div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            {% for col in data.table_columns %}
+                            <th>{{ col }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.table_rows %}
+                        <tr>
+                            {% for col in data.table_columns %}
+                            <td>{{ row[col] }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <p class="small text-muted">
+        <a href="{{ url_for('reports.view', slug='fee-category', project_id=filters.project_id, date_from=filters.date_from, date_to=filters.date_to) }}">查看费用分类结构报表</a>
+    </p>
+</div>
+<script>
+var chartData = {{ chart_data|safe }};
+function pie(id, title, data, colors) {
+    var ch = echarts.init(document.getElementById(id));
+    ch.setOption({
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        series: [{ type: 'pie', radius: ['40%','70%'], data: data || [], itemStyle: { borderRadius: 8 } }],
+        color: colors
+    });
+    window.addEventListener('resize', function() { ch.resize(); });
+}
+pie('incomeChart', '收入', chartData.income_by_category, ['#28a745','#20c997','#198754']);
+pie('expenseChart', '支出', chartData.expense_by_category, ['#dc3545','#fd7e14','#ffc107']);
+var monthlyChart = echarts.init(document.getElementById('monthlyChart'));
+monthlyChart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['收入', '支出'] },
+    xAxis: { type: 'category', data: chartData.monthly_labels || [] },
+    yAxis: { type: 'value' },
+    series: [
+        { name: '收入', type: 'bar', data: chartData.monthly_income || [], itemStyle: { color: '#28a745' } },
+        { name: '支出', type: 'bar', data: chartData.monthly_expense || [], itemStyle: { color: '#dc3545' } }
+    ]
+});
+</script>
+{% endblock %}

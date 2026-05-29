@@ -1,0 +1,316 @@
+{% extends staff_layout|default('nav_base.html') %}
+{% block title %}公司工作台 - {{ ws.company_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="bi bi-building"></i> {{ ws.company_name }}</h4>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_client_dashboard') }}">返回总览</a>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">当前余额</div><div class="h4 mb-0 text-primary">{{ "%.2f"|format(ws.balance) }}</div></div></div></div>
+        <div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">累计充值</div><div class="h4 mb-0 text-success">{{ "%.2f"|format(ws.total_recharge) }}</div></div></div></div>
+        <div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">累计扣减</div><div class="h4 mb-0 text-danger">{{ "%.2f"|format(ws.total_deduct) }}</div></div></div></div>
+    </div>
+
+    {% set preview = session.get('collab_ocr_preview') %}
+    {% if preview and preview.customer_id == ws.customer_id and preview.rows %}
+    <div class="card mb-3 border-info">
+        <div class="card-header bg-info bg-opacity-10">
+            OCR 预览 — {% if preview.mode == 'outbound' %}出库扣减{% else %}充值{% endif %}（{{ preview.rows|length }} 条）
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            {% if preview.mode == 'outbound' %}
+                            <th>品名</th><th class="text-end">数量</th><th class="text-end">单价</th><th class="text-end">金额</th><th>日期</th>
+                            {% else %}
+                            <th class="text-end">金额</th><th>方式</th><th>备注</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in preview.rows %}
+                        <tr>
+                            {% if preview.mode == 'outbound' %}
+                            <td>{{ r.item_name }}</td>
+                            <td class="text-end">{{ r.quantity or 0 }}</td>
+                            <td class="text-end">{{ "%.2f"|format(r.unit_price or 0) }}</td>
+                            <td class="text-end text-danger">{{ "%.2f"|format(r.amount or 0) }}</td>
+                            <td>{{ r.deduct_date or '-' }}</td>
+                            {% else %}
+                            <td class="text-end text-success">{{ "%.2f"|format(r.amount or 0) }}</td>
+                            <td>{{ r.payment_method or '-' }}</td>
+                            <td>{{ r.remark or '-' }}</td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="p-3 border-top">
+                <form method="POST" action="{{ url_for('admin_client_company_ocr_apply', customer_id=ws.customer_id) }}" class="d-inline">
+                    {% if preview.mode == 'outbound' %}
+                    <label class="form-check form-check-inline me-2">
+                        <input class="form-check-input" type="checkbox" name="split_orders" value="1">
+                        每条明细单独生成一张出库单
+                    </label>
+                    {% endif %}
+                    <button class="btn btn-primary btn-sm" type="submit">
+                        确认导入并{% if preview.mode == 'outbound' %}扣减余额{% else %}充值到账{% endif %}
+                    </button>
+                </form>
+                <span class="text-muted small ms-2">识别有误可重新打开「导入」上传</span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-cash-coin text-success"></i> 充值</span>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin_client_company_recharge', customer_id=ws.customer_id) }}">
+                        <div class="row g-2">
+                            <div class="col-md-6"><input class="form-control form-control-sm" name="amount" type="number" step="0.01" min="0.01" placeholder="金额" required></div>
+                            <div class="col-md-6">
+                                <select class="form-select form-select-sm" name="payment_method">
+                                    {% for code, name in ws.payment_methods.items() %}
+                                    <option value="{{ code }}">{{ name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6"><input class="form-control form-control-sm" name="payment_no" placeholder="流水号"></div>
+                            <div class="col-md-6"><input class="form-control form-control-sm" type="file" name="attachment"></div>
+                            <div class="col-12"><input class="form-control form-control-sm" name="remark" placeholder="备注"></div>
+                            <div class="col-12 d-flex gap-2 flex-wrap">
+                                <button class="btn btn-success btn-sm" type="submit">
+                                    <i class="bi bi-check-lg"></i> 立即充值
+                                </button>
+                                <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#importRechargeModal">
+                                    <i class="bi bi-upload"></i> 导入
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-box-arrow-up text-danger"></i> 出库扣减</span>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('admin_client_company_outbound', customer_id=ws.customer_id) }}">
+                        <div class="row g-2">
+                            <div class="col-md-6"><input class="form-control form-control-sm" name="item_name" placeholder="品名" required></div>
+                            <div class="col-md-3"><input class="form-control form-control-sm" name="quantity" type="number" step="0.01" min="0" placeholder="吨数"></div>
+                            <div class="col-md-3"><input class="form-control form-control-sm" name="unit_price" type="number" step="0.01" min="0" placeholder="单价"></div>
+                            <div class="col-md-6"><input class="form-control form-control-sm" name="amount" type="number" step="0.01" min="0.01" placeholder="金额" required></div>
+                            <div class="col-md-6"><input class="form-control form-control-sm" name="deduct_date" type="date"></div>
+                            <div class="col-12"><input class="form-control form-control-sm" name="remark" placeholder="备注"></div>
+                            <div class="col-12 d-flex gap-2 flex-wrap">
+                                <button class="btn btn-danger btn-sm" type="submit">
+                                    <i class="bi bi-check-lg"></i> 录入扣减
+                                </button>
+                                <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#importOutboundModal">
+                                    <i class="bi bi-upload"></i> 导入
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">最近流水（充值 + 扣减）</div>
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height: 400px;">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                                <tr><th>时间</th><th>类型</th><th class="text-end">金额</th><th class="text-end">余额</th><th>备注</th></tr>
+                            </thead>
+                            <tbody>
+                            {% for t in ws.transactions[:80] %}
+                            <tr>
+                                <td>{{ (t.created_at or '')[:16] }}</td>
+                                <td>{% if t.type == 'recharge' %}<span class="text-success">充值</span>{% else %}<span class="text-danger">扣减</span>{% endif %}</td>
+                                <td class="text-end">{{ "%.2f"|format(t.amount or 0) }}</td>
+                                <td class="text-end">{{ "%.2f"|format(t.balance_after or 0) }}</td>
+                                <td>{{ t.remark or '-' }}</td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center text-muted py-4">暂无流水</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 充值导入 -->
+<div class="modal fade" id="importRechargeModal" tabindex="-1" aria-labelledby="importRechargeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="importRechargeModalLabel"><i class="bi bi-upload"></i> 充值数据导入</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#rechargeTabImage" type="button">
+                            <i class="bi bi-image"></i> 图片识别
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#rechargeTabExcel" type="button">
+                            <i class="bi bi-file-earmark-excel"></i> Excel 导入
+                        </button>
+                    </li>
+                </ul>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="rechargeTabImage">
+                        <p class="small text-muted">上传转账截图、收款凭证等，识别金额后预览确认再充值到账。</p>
+                        <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin_client_company_ocr_upload', customer_id=ws.customer_id) }}">
+                            <input type="hidden" name="mode" value="recharge">
+                            <div class="mb-3">
+                                <input class="form-control" type="file" name="image" accept=".jpg,.jpeg,.png,.webp" required>
+                            </div>
+                            <button class="btn btn-primary btn-sm" type="submit">
+                                <i class="bi bi-eye"></i> 识别并预览
+                            </button>
+                        </form>
+                    </div>
+                    <div class="tab-pane fade" id="rechargeTabExcel">
+                        <p class="small text-muted mb-2">使用标准业务表头，系统按「金额」「收款日期」列自动充值；若表中含销售列，将一并处理出库。</p>
+                        <p class="small mb-2 text-break">
+                            <span class="badge bg-light text-dark">收款日期</span>
+                            <span class="badge bg-light text-dark">金额</span>
+                            <span class="badge bg-light text-dark">销售日期</span>
+                            <span class="badge bg-light text-dark">规格</span>
+                            <span class="badge bg-light text-dark">车数</span>
+                            <span class="badge bg-light text-dark">销售吨数</span>
+                            <span class="badge bg-light text-dark">单价</span>
+                            <span class="badge bg-light text-dark">销售金额</span>
+                            <span class="badge bg-light text-dark">余款</span>
+                            <span class="badge bg-light text-dark">备注</span>
+                        </p>
+                        <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin_client_company_excel_import', customer_id=ws.customer_id) }}">
+                            <input type="hidden" name="mode" value="standard">
+                            <div class="mb-3">
+                                <input class="form-control" type="file" name="excel_file" accept=".xlsx,.xls" required>
+                            </div>
+                            <label class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" name="split_orders" value="1">
+                                <span class="form-check-label small">表中销售明细：每条单独生成出库单</span>
+                            </label>
+                            <button class="btn btn-success btn-sm" type="submit">
+                                <i class="bi bi-file-earmark-arrow-up"></i> 上传并导入
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 出库导入 -->
+<div class="modal fade" id="importOutboundModal" tabindex="-1" aria-labelledby="importOutboundModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="importOutboundModalLabel"><i class="bi bi-upload"></i> 出库数据导入</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#outboundTabImage" type="button">
+                            <i class="bi bi-image"></i> 图片识别
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#outboundTabExcel" type="button">
+                            <i class="bi bi-file-earmark-excel"></i> Excel 导入
+                        </button>
+                    </li>
+                </ul>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="outboundTabImage">
+                        <p class="small text-muted">上传送货单、出库单照片，识别规格、吨数、单价、金额后批量扣减余额。</p>
+                        <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin_client_company_ocr_upload', customer_id=ws.customer_id) }}">
+                            <input type="hidden" name="mode" value="outbound">
+                            <div class="mb-3">
+                                <input class="form-control" type="file" name="image" accept=".jpg,.jpeg,.png,.webp" required>
+                            </div>
+                            <button class="btn btn-danger btn-sm" type="submit">
+                                <i class="bi bi-eye"></i> 识别并预览
+                            </button>
+                        </form>
+                    </div>
+                    <div class="tab-pane fade" id="outboundTabExcel">
+                        <p class="small text-muted mb-2">推荐使用标准表头；也可仅含销售相关列。</p>
+                        <p class="small mb-2 text-break">
+                            <span class="badge bg-light text-dark">销售日期</span>
+                            <span class="badge bg-light text-dark">规格</span>
+                            <span class="badge bg-light text-dark">车数</span>
+                            <span class="badge bg-light text-dark">销售吨数</span>
+                            <span class="badge bg-light text-dark">单价</span>
+                            <span class="badge bg-light text-dark">销售金额</span>
+                            <span class="badge bg-light text-dark">备注</span>
+                        </p>
+                        <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin_client_company_excel_import', customer_id=ws.customer_id) }}">
+                            <input type="hidden" name="mode" value="standard">
+                            <div class="mb-3">
+                                <input class="form-control" type="file" name="excel_file" accept=".xlsx,.xls" required>
+                            </div>
+                            <label class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" name="split_orders" value="1">
+                                <span class="form-check-label small">每条销售明细单独生成一张出库单</span>
+                            </label>
+                            <button class="btn btn-danger btn-sm" type="submit">
+                                <i class="bi bi-file-earmark-arrow-up"></i> 上传并导入
+                            </button>
+                        </form>
+                        <hr class="my-3">
+                        <p class="small text-muted mb-2">仅出库简易表（无收款列）：</p>
+                        <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin_client_company_excel_import', customer_id=ws.customer_id) }}">
+                            <input type="hidden" name="mode" value="outbound">
+                            <div class="input-group input-group-sm">
+                                <input class="form-control" type="file" name="excel_file" accept=".xlsx,.xls" required>
+                                <button class="btn btn-outline-secondary" type="submit">简易导入</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if preview and preview.customer_id == ws.customer_id and preview.rows %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var id = {% if preview.mode == 'outbound' %}'importOutboundModal'{% else %}'importRechargeModal'{% endif %};
+    var el = document.getElementById(id);
+    if (el) new bootstrap.Modal(el).show();
+});
+</script>
+{% endif %}
+{% endblock %}

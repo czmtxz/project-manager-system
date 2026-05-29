@@ -1,0 +1,154 @@
+{% extends "nav_base.html" %}
+{% from 'macros/import_modal.html' import import_btn, import_modal %}
+{% block title %}供应商管理 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-truck"></i> 供应商管理</h4>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('base_data') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left"></i> 返回
+            </a>
+            <a href="{{ url_for('supplier_add') }}" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus-circle"></i> 新增供应商
+            </a>
+            {{ import_btn('importSupplierModal', 'btn-outline-primary btn-sm') }}
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ 'danger' if category == 'danger' else 'success' }} alert-dismissible fade show mb-3">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- 搜索栏 -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="GET" class="row g-3">
+                <div class="col-md-4">
+                    <input type="text" name="keyword" class="form-control" placeholder="搜索名称/联系人/电话" value="{{ request.args.get('keyword', '') }}">
+                </div>
+                <div class="col-md-2">
+                    <select name="is_active" class="form-select">
+                        <option value="">全部状态</option>
+                        <option value="1" {% if request.args.get('is_active') == '1' %}selected{% endif %}>启用</option>
+                        <option value="0" {% if request.args.get('is_active') == '0' %}selected{% endif %}>停用</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-outline-primary w-100">
+                        <i class="bi bi-search"></i> 搜索
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 60px;">序号</th>
+                            <th>供应商名称</th>
+                            <th>联系人</th>
+                            <th>电话</th>
+                            <th>地址</th>
+                            <th>开户银行</th>
+                            <th>银行账号</th>
+                            <th style="width: 80px;">状态</th>
+                            <th style="width: 150px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for supplier in suppliers %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>
+                                <strong>{{ supplier.name }}</strong>
+                                {% if supplier.tax_no %}
+                                <br><small class="text-muted">税号: {{ supplier.tax_no }}</small>
+                                {% endif %}
+                            </td>
+                            <td>{{ supplier.contact or '-' }}</td>
+                            <td>{{ supplier.phone or '-' }}</td>
+                            <td>
+                                {% if supplier.address %}
+                                <span title="{{ supplier.address }}">{{ supplier.address[:20] }}{% if supplier.address|length > 20 %}...{% endif %}</span>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td>{{ supplier.bank_name or '-' }}</td>
+                            <td>{{ supplier.bank_account or '-' }}</td>
+                            <td>
+                                {% if supplier.is_active %}
+                                <span class="badge bg-success">启用</span>
+                                {% else %}
+                                <span class="badge bg-secondary">停用</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{{ url_for('supplier_edit', id=supplier.id) }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-pencil"></i> 编辑
+                                </a>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteSupplier({{ supplier.id }}, '{{ supplier.name }}')">
+                                    <i class="bi bi-trash"></i> 删除
+                                </button>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-4">暂无供应商数据，点击上方按钮添加</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% set partner_check %}
+<div class="mb-2 form-check">
+    <input type="checkbox" class="form-check-input" name="update_existing" id="sup_update_existing" value="1">
+    <label class="form-check-label small" for="sup_update_existing">同名已存在时补充更新空字段</label>
+</div>
+{% endset %}
+{{ import_modal(
+    'importSupplierModal',
+    '供应商数据导入',
+    image_action=url_for('supplier_ocr_import'),
+    excel_action=url_for('supplier_excel_import'),
+    image_field='images',
+    image_multiple=true,
+    image_hint='支持发票、营业执照等，自动识别供应商信息。',
+    excel_hint='<p class="mb-0">表头：名称、联系人、电话、地址、税号、银行账号等。</p>',
+    image_extra=partner_check,
+    excel_extra=partner_check
+) }}
+
+<!-- 删除确认表单 -->
+<form id="deleteForm" method="POST" action="">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token if session.csrf_token else '' }}">
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function deleteSupplier(id, name) {
+    if (confirm(`确定要删除供应商"${name}"吗？\n注意：删除后无法恢复！`)) {
+        const form = document.getElementById('deleteForm');
+        form.action = `{{ url_for('supplier_delete', id=0) }}`.replace('/0', '/' + id);
+        form.submit();
+    }
+}
+</script>
+{% endblock %}

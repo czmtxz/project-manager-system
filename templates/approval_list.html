@@ -1,0 +1,128 @@
+{% extends "nav_base.html" %}
+{% block title %}审批管理 - 项目管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <h4 class="mb-4"><i class="bi bi-clipboard-check"></i> 审批管理</h4>
+
+    <!-- 待审批 -->
+    <div class="card mb-4">
+        <div class="card-header bg-warning bg-opacity-10">
+            <h6 class="mb-0"><i class="bi bi-hourglass-split text-warning"></i> 待审批 ({{ pending|length }})</h6>
+        </div>
+        <div class="card-body p-0">
+            {% if pending %}
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>项目</th>
+                        <th>类型</th>
+                        <th>金额</th>
+                        <th>说明</th>
+                        <th>提交人</th>
+                        <th>当前步骤</th>
+                        <th>提交时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in pending %}
+                    <tr>
+                        <td>{{ item.project_name }}</td>
+                        <td>
+                            {% if item.trans_type == 'income' %}
+                            <span class="badge bg-success">收入</span>
+                            {% else %}
+                            <span class="badge bg-danger">支出</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">{{ "%.2f"|format(item.amount) }}</td>
+                        <td>{{ item.description or '-' }}</td>
+                        <td>{{ item.submitter_name }}</td>
+                        <td><span class="badge bg-secondary">{{ item.step_name }}</span></td>
+                        <td>{{ item.submitted_at[:16] if item.submitted_at else '-' }}</td>
+                        <td>
+                            <form method="POST" action="{{ url_for('approval_process', record_id=item.id) }}" class="d-inline">
+                                <input type="hidden" name="action" value="approve">
+                                <input type="text" name="comment" class="form-control form-control-sm d-inline-block" style="width:120px" placeholder="审批意见">
+                                <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('确认通过？')">
+                                    <i class="bi bi-check-lg"></i> 通过
+                                </button>
+                            </form>
+                            <form method="POST" action="{{ url_for('approval_process', record_id=item.id) }}" class="d-inline">
+                                <input type="hidden" name="action" value="reject">
+                                <input type="text" name="comment" class="form-control form-control-sm d-inline-block" style="width:120px" placeholder="驳回原因">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('确认驳回？')">
+                                    <i class="bi bi-x-lg"></i> 驳回
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="p-4 text-center text-muted">
+                <i class="bi bi-check-circle fs-3"></i>
+                <p class="mb-0">暂无待审批事项</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 已处理 -->
+    <div class="card">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="bi bi-check2-circle"></i> 已处理</h6>
+        </div>
+        <div class="card-body p-0">
+            {% if processed %}
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>项目</th>
+                        <th>类型</th>
+                        <th>金额</th>
+                        <th>说明</th>
+                        <th>提交人</th>
+                        <th>处理结果</th>
+                        <th>处理时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in processed %}
+                    <tr>
+                        <td>{{ item.project_name }}</td>
+                        <td>
+                            {% if item.trans_type == 'income' %}
+                            <span class="badge bg-success">收入</span>
+                            {% else %}
+                            <span class="badge bg-danger">支出</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">{{ "%.2f"|format(item.amount) }}</td>
+                        <td>{{ item.description or '-' }}</td>
+                        <td>{{ item.submitter_name }}</td>
+                        <td>
+                            {% if item.action == 'approve' %}
+                            <span class="badge bg-success"><i class="bi bi-check"></i> 通过</span>
+                            {% else %}
+                            <span class="badge bg-danger"><i class="bi bi-x"></i> 驳回</span>
+                            {% endif %}
+                            {% if item.comment %}
+                            <small class="text-muted d-block">{{ item.comment }}</small>
+                            {% endif %}
+                        </td>
+                        <td>{{ item.submitted_at[:16] if item.submitted_at else '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="p-4 text-center text-muted">
+                <p class="mb-0">暂无已处理记录</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

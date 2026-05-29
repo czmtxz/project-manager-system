@@ -1,0 +1,102 @@
+{% extends staff_layout|default('nav_base.html') %}
+{% block title %}{{ meta.title }} - 报表中心{% endblock %}
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+.category-tree-table tr.level-1 { background-color: #f8f9fa; font-weight: bold; }
+.category-tree-table tr.level-2 { background-color: #fff; }
+.category-tree-table tr.level-3 { background-color: #fafafa; font-size: 0.9em; }
+.category-tree-table td.name-cell { padding-left: 1em; }
+.category-tree-table tr.level-2 td.name-cell { padding-left: 2em; }
+.category-tree-table tr.level-3 td.name-cell { padding-left: 3em; }
+.chart-container { height: 320px; }
+.expand-btn { cursor: pointer; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{{ url_for('reports.hub') }}">报表中心</a></li>
+            <li class="breadcrumb-item active">{{ meta.title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-3"><i class="bi bi-tags"></i> {{ meta.title }}</h4>
+    {% include 'reports/_filters.html' %}
+
+    <div class="row g-3 mb-4">
+        {% for k in data.kpis %}
+        <div class="col-md-4">
+            <div class="card text-center p-3 border-start border-4 border-{{ k.border }}">
+                <small class="text-muted">{{ k.label }}</small>
+                <h5 class="mb-0">{{ k.value }}</h5>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0">支出 Top 科目</h6></div>
+        <div class="card-body"><div id="topExpenseChart" class="chart-container"></div></div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header bg-danger text-white"><h6 class="mb-0">支出分类（三级）</h6></div>
+                <div class="card-body p-0">
+                    {% with roots=data.category_tree.expense, amount_class='text-danger' %}
+                    {% include 'reports/_category_tree.html' %}
+                    {% endwith %}
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header bg-success text-white"><h6 class="mb-0">收入分类（三级）</h6></div>
+                <div class="card-body p-0">
+                    {% with roots=data.category_tree.income, amount_class='text-success' %}
+                    {% include 'reports/_category_tree.html' %}
+                    {% endwith %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+var chartData = {{ chart_data|safe }};
+var ch = echarts.init(document.getElementById('topExpenseChart'));
+ch.setOption({
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'value' },
+    yAxis: { type: 'category', data: (chartData.expense_top_labels || []).slice().reverse() },
+    series: [{ type: 'bar', data: (chartData.expense_top_values || []).slice().reverse(), itemStyle: { color: '#dc3545' } }]
+});
+document.querySelectorAll('.expand-btn[data-l1]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var l1Id = this.getAttribute('data-l1');
+        var rows = document.querySelectorAll('tr.level-2[data-parent="' + l1Id + '"]');
+        var open = this.classList.contains('bi-caret-down-fill');
+        this.classList.toggle('bi-caret-right-fill', open);
+        this.classList.toggle('bi-caret-down-fill', !open);
+        rows.forEach(function(row) {
+            row.style.display = open ? 'none' : '';
+            if (open) {
+                var l2Id = row.getAttribute('data-id');
+                document.querySelectorAll('tr.level-3[data-parent="' + l2Id + '"]').forEach(function(r) { r.style.display = 'none'; });
+            }
+        });
+    });
+});
+document.querySelectorAll('.expand-btn[data-l2]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var l2Id = this.getAttribute('data-l2');
+        var rows = document.querySelectorAll('tr.level-3[data-parent="' + l2Id + '"]');
+        var open = this.classList.contains('bi-caret-down-fill');
+        this.classList.toggle('bi-caret-right-fill', open);
+        this.classList.toggle('bi-caret-down-fill', !open);
+        rows.forEach(function(row) { row.style.display = open ? 'none' : ''; });
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}客户协同平台{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --portal-primary: #0d6efd;
+            --portal-secondary: #6c757d;
+            --portal-success: #198754;
+            --portal-danger: #dc3545;
+            --portal-warning: #ffc107;
+        }
+        
+        body {
+            background-color: #f8f9fa;
+        }
+        
+        /* 侧边栏样式 */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 250px;
+            background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+            color: white;
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        
+        .sidebar-brand {
+            padding: 1.5rem 1rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            text-align: center;
+        }
+        
+        .sidebar-brand h5 {
+            margin: 0;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+        
+        .sidebar-nav {
+            padding: 1rem 0;
+        }
+        
+        .sidebar-nav-item {
+            display: block;
+            padding: 0.75rem 1.5rem;
+            color: rgba(255,255,255,0.85);
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        
+        .sidebar-nav-item:hover {
+            color: white;
+            background: rgba(255,255,255,0.1);
+            text-decoration: none;
+        }
+        
+        .sidebar-nav-item.active {
+            color: white;
+            background: rgba(255,255,255,0.2);
+            border-left: 4px solid white;
+        }
+        
+        .sidebar-nav-item i {
+            width: 20px;
+            margin-right: 10px;
+        }
+        
+        /* 主内容区 */
+        .main-wrapper {
+            margin-left: 250px;
+            min-height: 100vh;
+        }
+        
+        /* 顶部栏 */
+        .topbar {
+            background: white;
+            padding: 0.75rem 1.5rem;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+        
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .balance-display {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        
+        .balance-warning {
+            color: var(--portal-danger);
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        /* 余额预警横幅 */
+        .balance-alert-banner {
+            background: linear-gradient(90deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            text-align: center;
+            font-weight: 500;
+        }
+        
+        .balance-alert-banner i {
+            margin-right: 0.5rem;
+        }
+        
+        /* 消息徽章 */
+        .message-badge {
+            position: relative;
+        }
+        
+        .message-badge .badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            font-size: 0.65rem;
+        }
+        
+        /* 主内容 */
+        .main-content {
+            padding: 1.5rem;
+        }
+        
+        /* 卡片样式 */
+        .card {
+            border: none;
+            box-shadow: 0 0 15px rgba(0,0,0,0.08);
+            border-radius: 0.5rem;
+        }
+        
+        .card-header {
+            background: white;
+            border-bottom: 1px solid #eee;
+            font-weight: 600;
+        }
+        
+        /* 统计卡片 */
+        .stat-card {
+            border-radius: 0.5rem;
+            padding: 1.25rem;
+            color: white;
+        }
+        
+        .stat-card.primary {
+            background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+        }
+        
+        .stat-card.success {
+            background: linear-gradient(135deg, #198754 0%, #146c43 100%);
+        }
+        
+        .stat-card.danger {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        }
+        
+        .stat-card.warning {
+            background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+        }
+        
+        .stat-card .stat-icon {
+            font-size: 2.5rem;
+            opacity: 0.3;
+            position: absolute;
+            right: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        
+        .stat-card .stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+        
+        .stat-card .stat-label {
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+        
+        /* 表格样式 */
+        .table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            border-bottom: 2px solid #dee2e6;
+        }
+        
+        /* 状态徽章 */
+        .status-pending {
+            background: #ffc107;
+            color: #000;
+        }
+        
+        .status-confirmed, .status-approved {
+            background: #198754;
+            color: #fff;
+        }
+        
+        .status-rejected {
+            background: #dc3545;
+            color: #fff;
+        }
+        
+        .status-active {
+            background: #0d6efd;
+            color: #fff;
+        }
+        
+        .status-inactive, .status-disabled {
+            background: #6c757d;
+            color: #fff;
+        }
+        
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 0;
+                transform: translateX(-250px);
+                transition: transform 0.3s;
+            }
+            
+            .sidebar.show {
+                width: 250px;
+                transform: translateX(0);
+            }
+            
+            .main-wrapper {
+                margin-left: 0;
+            }
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- 侧边栏 -->
+    <nav class="sidebar">
+        <div class="sidebar-brand">
+            <i class="bi bi-building" style="font-size: 1.5rem;"></i>
+            <h5>{{ session.client_company_name or '客户协同平台' }}</h5>
+        </div>
+        <div class="sidebar-nav">
+            <a class="sidebar-nav-item {% if request.endpoint == 'portal_index' %}active{% endif %}" href="{{ url_for('portal_index') }}">
+                <i class="bi bi-house-door"></i> 首页
+            </a>
+            <a class="sidebar-nav-item {% if request.endpoint in ['portal_recharge', 'portal_recharges'] %}active{% endif %}" href="{{ url_for('portal_recharges') }}">
+                <i class="bi bi-cash-stack"></i> 储值充值
+            </a>
+            <a class="sidebar-nav-item {% if request.endpoint in ['portal_deliveries', 'portal_delivery_detail'] %}active{% endif %}" href="{{ url_for('portal_deliveries') }}">
+                <i class="bi bi-box-seam"></i> 出库记录
+            </a>
+            <a class="sidebar-nav-item {% if request.endpoint == 'portal_transactions' %}active{% endif %}" href="{{ url_for('portal_transactions') }}">
+                <i class="bi bi-journal-text"></i> 账户明细
+            </a>
+            <a class="sidebar-nav-item {% if request.endpoint == 'portal_messages' %}active{% endif %}" href="{{ url_for('portal_messages') }}">
+                <i class="bi bi-envelope"></i> 消息中心
+            </a>
+            <a class="sidebar-nav-item {% if request.endpoint == 'portal_report' %}active{% endif %}" href="{{ url_for('portal_report') }}">
+                <i class="bi bi-graph-up"></i> 分析报表
+            </a>
+        </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <div class="main-wrapper">
+        <!-- 余额预警横幅 -->
+        {% if session.client_balance is defined and session.client_balance < 1000 %}
+        <div class="balance-alert-banner">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            余额不足预警：当前余额 {{ "%.2f"|format(session.client_balance or 0) }} 元，请及时充值！
+        </div>
+        {% endif %}
+        
+        <!-- 顶部栏 -->
+        <div class="topbar">
+            <div class="topbar-left">
+                <span class="fw-bold text-primary">
+                    <i class="bi bi-building"></i> {{ session.client_company_name or '未设置公司名称' }}
+                </span>
+                <div class="balance-display">
+                    <i class="bi bi-wallet2 text-secondary"></i>
+                    当前余额：
+                    {% if session.client_balance is defined and session.client_balance < 1000 %}
+                    <span class="balance-warning">{{ "%.2f"|format(session.client_balance or 0) }}</span>
+                    {% else %}
+                    <span class="text-success">{{ "%.2f"|format(session.client_balance or 0) }}</span>
+                    {% endif %}
+                    元
+                </div>
+            </div>
+            <div class="topbar-right">
+                <a href="{{ url_for('portal_messages') }}" class="btn btn-outline-primary btn-sm message-badge">
+                    <i class="bi bi-bell"></i>
+                    {% if session.unread_count and session.unread_count > 0 %}
+                    <span class="badge bg-danger">{{ session.unread_count }}</span>
+                    {% endif %}
+                </a>
+                <span class="text-muted">
+                    <i class="bi bi-person-circle"></i> {{ session.username }}
+                </span>
+                <a href="{{ url_for('portal_logout') }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-box-arrow-right"></i> 退出登录
+                </a>
+            </div>
+        </div>
+
+        <!-- Flash 消息 -->
+        <div class="main-content">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- 主内容 -->
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

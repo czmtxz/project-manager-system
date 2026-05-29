@@ -1,0 +1,48 @@
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="GET" class="row g-2 align-items-end">
+            {% if 'date_from' in filter_fields %}
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">开始日期</label>
+                <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">结束日期</label>
+                <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
+            </div>
+            {% endif %}
+            {% if 'project_id' in filter_fields %}
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-0">项目</label>
+                <select name="project_id" class="form-select form-select-sm">
+                    <option value="">全部项目</option>
+                    {% for p in projects %}
+                    <option value="{{ p.id }}" {% if filters.project_id == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            {% if 'customer_name' in filter_fields %}
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">客户</label>
+                <input type="text" name="customer_name" class="form-control form-control-sm" value="{{ filters.customer_name }}" placeholder="客户名称">
+            </div>
+            {% endif %}
+            {% if 'supplier' in filter_fields %}
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">供应商</label>
+                <input type="text" name="supplier" class="form-control form-control-sm" value="{{ filters.supplier }}" placeholder="供应商">
+            </div>
+            {% endif %}
+            <div class="col-md-auto">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> 查询</button>
+                <a href="{{ url_for('reports.view', slug=slug) }}" class="btn btn-outline-secondary btn-sm">重置</a>
+                {% if session.role in ['admin', 'finance'] %}
+                <a href="{{ url_for('reports.export', slug=slug, date_from=filters.date_from, date_to=filters.date_to, project_id=filters.project_id, customer_name=filters.customer_name, supplier=filters.supplier) }}" class="btn btn-success btn-sm">
+                    <i class="bi bi-file-earmark-excel"></i> 导出 Excel
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>

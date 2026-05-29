@@ -1,0 +1,194 @@
+{% extends "nav_base.html" %}
+{% from 'macros/import_modal.html' import import_btn, import_modal %}
+{% block title %}{% if contract_type == '支出合同' %}采购合同管理{% else %}合同管理{% endif %} - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <!-- 页面标题与新增按钮 -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-file-earmark-text"></i> {% if contract_type == '支出合同' %}采购合同管理{% else %}合同管理{% endif %}</h4>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('contract_add') }}{% if contract_type %}?contract_type={{ contract_type }}{% endif %}" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus-circle"></i> 新增合同
+            </a>
+            {{ import_btn('importContractModal', 'btn-outline-primary btn-sm') }}
+        </div>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" action="{{ url_for('contract_list') }}" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label for="project_id" class="form-label">项目</label>
+                    <select name="project_id" id="project_id" class="form-select">
+                        <option value="">全部项目</option>
+                        {% for p in projects %}
+                        <option value="{{ p.id }}" {% if project_id and project_id|string == p.id|string %}selected{% endif %}>
+                            {{ p.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="contract_type" class="form-label">合同类型</label>
+                    <select name="contract_type" id="contract_type" class="form-select">
+                        <option value="">全部类型</option>
+                        <option value="收入合同" {% if contract_type == '收入合同' %}selected{% endif %}>收入合同</option>
+                        <option value="支出合同" {% if contract_type == '支出合同' %}selected{% endif %}>支出合同</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="status" class="form-label">状态</label>
+                    <select name="status" id="status" class="form-select">
+                        <option value="">全部状态</option>
+                        <option value="草稿" {% if status == '草稿' %}selected{% endif %}>草稿</option>
+                        <option value="执行中" {% if status == '执行中' %}selected{% endif %}>执行中</option>
+                        <option value="已完成" {% if status == '已完成' %}selected{% endif %}>已完成</option>
+                        <option value="已终止" {% if status == '已终止' %}selected{% endif %}>已终止</option>
+                        <option value="已驳回" {% if status == '已驳回' %}selected{% endif %}>已驳回</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-funnel"></i> 筛选
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 合同列表 -->
+    {% if contracts %}
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>合同编号</th>
+                            <th>合同名称</th>
+                            <th>类型</th>
+                            <th>项目</th>
+                            <th class="text-end">金额</th>
+                            <th>对方单位</th>
+                            <th>签订日期</th>
+                            <th>状态</th>
+                            <th>附件</th>
+                            <th class="text-center">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in contracts %}
+                        <tr>
+                            <td><code>{{ c.contract_no }}</code></td>
+                            <td>{{ c.name }}</td>
+                            <td>
+                                {% if c.contract_type == '收入合同' %}
+                                <span class="badge bg-success">{{ c.contract_type }}</span>
+                                {% else %}
+                                <span class="badge bg-danger">{{ c.contract_type }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ c.project_name if c.project_name else '-' }}</td>
+                            <td class="text-end">{{ "%.2f"|format(c.amount) }}</td>
+                            <td>{{ c.party_b if c.party_b else '-' }}</td>
+                            <td>{{ c.sign_date[:10] if c.sign_date else '-' }}</td>
+                            <td>
+                                {% if c.status == '草稿' %}
+                                <span class="badge bg-secondary">{{ c.status }}</span>
+                                {% elif c.status == '执行中' %}
+                                <span class="badge bg-primary">{{ c.status }}</span>
+                                {% elif c.status == '已完成' %}
+                                <span class="badge bg-success">{{ c.status }}</span>
+                                {% elif c.status == '已终止' %}
+                                <span class="badge bg-warning text-dark">{{ c.status }}</span>
+                                {% elif c.status == '已驳回' %}
+                                <span class="badge bg-danger">{{ c.status }}</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ c.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if c.attachment %}
+                                <a href="{{ url_for('serve_upload_file', folder='contracts', filename=c.attachment) }}" target="_blank" class="btn btn-sm btn-outline-info" title="查看附件">
+                                    <i class="bi bi-paperclip"></i>
+                                </a>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{{ url_for('contract_edit', id=c.id) }}" class="btn btn-outline-primary" title="编辑">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    {% if c.status == '草稿' %}
+                                    <a href="{{ url_for('contract_submit', id=c.id) }}" class="btn btn-outline-success" title="提交审批"
+                                       onclick="return confirm('确定要提交此合同进行审批吗？')">
+                                        <i class="bi bi-check-circle"></i>
+                                    </a>
+                                    {% endif %}
+                                    {% if c.status == '执行中' %}
+                                    <a href="{{ url_for('contract_complete', id=c.id) }}" class="btn btn-outline-success" title="完成"
+                                       onclick="return confirm('确定要将此合同标记为已完成吗？')">
+                                        <i class="bi bi-check2-all"></i>
+                                    </a>
+                                    <a href="{{ url_for('contract_terminate', id=c.id) }}" class="btn btn-outline-warning" title="终止"
+                                       onclick="return confirm('确定要终止此合同吗？')">
+                                        <i class="bi bi-slash-circle"></i>
+                                    </a>
+                                    {% endif %}
+                                    <a href="{{ url_for('contract_delete', id=c.id) }}" class="btn btn-outline-danger" title="删除"
+                                       onclick="return confirm('确定要删除此合同吗？此操作不可恢复！')">
+                                        <i class="bi bi-trash"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+        <i class="bi bi-file-earmark-text" style="font-size: 4rem;"></i>
+        <p class="mt-3 fs-5">暂无合同记录</p>
+        <a href="{{ url_for('contract_add') }}{% if contract_type %}?contract_type={{ contract_type }}{% endif %}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> 创建第一份合同
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+{% set contract_docx_extra %}
+<div class="mb-3">
+    <label class="form-label">所属项目</label>
+    <select name="project_id" class="form-select form-select-sm">
+        <option value="">不指定</option>
+        {% for p in projects %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+        {% endfor %}
+    </select>
+</div>
+<div class="mb-3">
+    <label class="form-label">合同 Word / 扫描件</label>
+    <input type="file" name="docx_file" class="form-control form-control-sm" accept=".docx,.doc,.jpg,.jpeg,.png,.pdf">
+</div>
+<div class="mb-3">
+    <label class="form-label">扫描件附件（可选）</label>
+    <input type="file" name="scan_image" class="form-control form-control-sm" accept=".jpg,.jpeg,.png,.pdf">
+</div>
+{% endset %}
+{{ import_modal(
+    'importContractModal',
+    '合同数据导入',
+    excel_action=url_for('contract_import'),
+    third_action=url_for('contract_docx_import'),
+    third_title='Word 文档',
+    excel_hint='<p class="mb-0">Excel 列：合同编号、名称、类型、对方、金额、签订日期等。</p>',
+    third_hint='<p class="mb-0">上传 Word 自动解析合同信息，或上传扫描件作为附件。</p>',
+    third_extra=contract_docx_extra
+) }}
+{% endblock %}

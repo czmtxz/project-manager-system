@@ -1,0 +1,144 @@
+{% extends "nav_base.html" %}
+{% block title %}导入采购明细 - {{ purchase.purchase_no }}{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5>
+            <a href="{{ url_for('purchase_detail', id=purchase.id) }}" class="text-decoration-none">
+                <i class="bi bi-arrow-left"></i> {{ purchase.purchase_no }}
+            </a>
+            <span class="ms-2">/ 导入采购明细</span>
+        </h5>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ 'danger' if category == 'danger' else ('warning' if category == 'warning' else 'success') }} alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- 导入方式选择 -->
+    <div class="row">
+        <!-- 图片OCR导入 -->
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-header bg-primary text-white">
+                    <h6 class="mb-0"><i class="bi bi-image"></i> 图片OCR识别导入</h6>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">上传采购明细图片（如采购清单截图），系统自动识别品名、规格、数量、单价等信息。</p>
+                    <form method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="import_type" value="ocr">
+                        <div class="mb-3">
+                            <label class="form-label">选择图片（支持多选）</label>
+                            <input type="file" name="ocr_image" class="form-control" accept=".jpg,.jpeg,.png,.bmp" multiple required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-upload"></i> 上传并识别
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Excel导入 -->
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white">
+                    <h6 class="mb-0"><i class="bi bi-file-earmark-excel"></i> Excel批量导入</h6>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">上传Excel文件，按格式批量导入采购明细数据。</p>
+                    <div class="alert alert-light border">
+                        <small><strong>Excel格式要求（第1行为表头）：</strong></small>
+                        <table class="table table-sm table-bordered mb-0 mt-1">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>品名</th>
+                                    <th>规格型号</th>
+                                    <th>单位</th>
+                                    <th>数量</th>
+                                    <th>单价</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>砂石料</td>
+                                    <td>5-10mm</td>
+                                    <td>吨</td>
+                                    <td>100</td>
+                                    <td>85</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <form method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="import_type" value="excel">
+                        <div class="mb-3">
+                            <label class="form-label">选择Excel文件</label>
+                            <input type="file" name="excel_file" class="form-control" accept=".xlsx,.xls" required>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="bi bi-upload"></i> 上传并导入
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- OCR识别结果 -->
+    {% if results and import_type == 'ocr' %}
+    <div class="card mt-3">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="bi bi-list-check"></i> OCR识别结果</h6>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>文件名</th>
+                            <th>品名</th>
+                            <th>规格型号</th>
+                            <th>单位</th>
+                            <th>数量</th>
+                            <th>单价</th>
+                            <th>金额</th>
+                            <th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in results %}
+                        <tr class="{% if r.error %}table-danger{% elif r.saved %}table-success{% endif %}">
+                            <td>{{ r.filename }}</td>
+                            <td>{{ r.get('item_name', '-') }}</td>
+                            <td>{{ r.get('specification', '-') }}</td>
+                            <td>{{ r.get('unit', '-') }}</td>
+                            <td>{{ r.get('quantity', '-') }}</td>
+                            <td>{{ r.get('unit_price', '-') }}</td>
+                            <td>{{ "%.2f"|format((r.get('quantity',0)|float) * (r.get('unit_price',0)|float)) }}</td>
+                            <td>
+                                {% if r.saved %}
+                                <span class="badge bg-success">已导入</span>
+                                {% elif r.error %}
+                                <span class="badge bg-danger" title="{{ r.error }}">失败</span>
+                                {% else %}
+                                <span class="badge bg-warning">未识别</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

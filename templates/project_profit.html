@@ -1,0 +1,334 @@
+{% extends "nav_base.html" %}
+{% block title %}利润测算 - {{ project.name }}{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-calculator"></i> 利润测算 - {{ project.name }}</h4>
+        <a href="{{ url_for('project_detail', pid=project.id) }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> 返回项目
+        </a>
+    </div>
+
+    <!-- 利润概览卡片 -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-success bg-opacity-10 h-100">
+                <div class="card-body text-center">
+                    <h5 class="text-success">¥{{ "%.2f"|format(profit.total_sales) }}</h5>
+                    <small class="text-muted">销售回款</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-danger bg-opacity-10 h-100">
+                <div class="card-body text-center">
+                    <h5 class="text-danger">¥{{ "%.2f"|format(profit.total_purchase + profit.total_freight + profit.total_expense) }}</h5>
+                    <small class="text-muted">成本费用合计</small>
+                    <div class="small text-muted mt-1">
+                        采购: ¥{{ "%.2f"|format(profit.total_purchase) }}<br>
+                        运费: ¥{{ "%.2f"|format(profit.total_freight) }}<br>
+                        费用: ¥{{ "%.2f"|format(profit.total_expense) }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-primary bg-opacity-10 h-100">
+                <div class="card-body text-center">
+                    <h5 class="text-primary">¥{{ "%.2f"|format(profit.gross_profit) }}</h5>
+                    <small class="text-muted">毛利润</small>
+                    <div class="small text-muted mt-1">
+                        已分红: ¥{{ "%.2f"|format(profit.distributed_dividend) }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card {% if profit.available_profit > 0 %}bg-warning bg-opacity-10{% else %}bg-secondary bg-opacity-10{% endif %} h-100">
+                <div class="card-body text-center">
+                    <h5 class="{% if profit.available_profit > 0 %}text-warning{% else %}text-secondary{% endif %}">¥{{ "%.2f"|format(profit.available_profit) }}</h5>
+                    <small class="text-muted">可分配利润</small>
+                    {% if profit.available_profit <= 0 %}
+                    <div class="small text-danger mt-1">
+                        <i class="bi bi-exclamation-triangle"></i> 利润不足
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 利润计算公式 -->
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <h6 class="mb-0"><i class="bi bi-info-circle"></i> 利润计算公式</h6>
+        </div>
+        <div class="card-body">
+            <div class="row text-center">
+                <div class="col">
+                    <span class="badge bg-success">销售回款</span>
+                    <h5 class="mt-2">¥{{ "%.2f"|format(profit.total_sales) }}</h5>
+                </div>
+                <div class="col-auto d-flex align-items-center">
+                    <span class="fs-4">-</span>
+                </div>
+                <div class="col">
+                    <span class="badge bg-danger">采购成本</span>
+                    <h5 class="mt-2">¥{{ "%.2f"|format(profit.total_purchase) }}</h5>
+                </div>
+                <div class="col-auto d-flex align-items-center">
+                    <span class="fs-4">-</span>
+                </div>
+                <div class="col">
+                    <span class="badge bg-danger">运费</span>
+                    <h5 class="mt-2">¥{{ "%.2f"|format(profit.total_freight) }}</h5>
+                </div>
+                <div class="col-auto d-flex align-items-center">
+                    <span class="fs-4">-</span>
+                </div>
+                <div class="col">
+                    <span class="badge bg-danger">费用</span>
+                    <h5 class="mt-2">¥{{ "%.2f"|format(profit.total_expense) }}</h5>
+                </div>
+                <div class="col-auto d-flex align-items-center">
+                    <span class="fs-4">=</span>
+                </div>
+                <div class="col">
+                    <span class="badge bg-primary">毛利润</span>
+                    <h5 class="mt-2">¥{{ "%.2f"|format(profit.gross_profit) }}</h5>
+                </div>
+                <div class="col-auto d-flex align-items-center">
+                    <span class="fs-4">-</span>
+                </div>
+                <div class="col">
+                    <span class="badge bg-secondary">已分红</span>
+                    <h5 class="mt-2">¥{{ "%.2f"|format(profit.distributed_dividend) }}</h5>
+                </div>
+                <div class="col-auto d-flex align-items-center">
+                    <span class="fs-4">=</span>
+                </div>
+                <div class="col">
+                    <span class="badge {% if profit.available_profit > 0 %}bg-warning{% else %}bg-secondary{% endif %}">可分配利润</span>
+                    <h5 class="mt-2 {% if profit.available_profit <= 0 %}text-danger{% endif %}">¥{{ "%.2f"|format(profit.available_profit) }}</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分红按钮 -->
+    <div class="card mb-4">
+        <div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+                <h6 class="mb-1">分红操作</h6>
+                <small class="text-muted">基于可分配利润进行分红</small>
+            </div>
+            <div>
+                {% if profit.available_profit > 0 %}
+                <a href="{{ url_for('dividend_rules', project_id=project.id) }}" class="btn btn-warning">
+                    <i class="bi bi-cash-stack"></i> 发起分红
+                </a>
+                {% else %}
+                <button class="btn btn-secondary" disabled>
+                    <i class="bi bi-exclamation-triangle"></i> 利润不足，无法分红
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 明细标签页 -->
+    <div class="card">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs" id="profitTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="sales-tab" data-bs-toggle="tab" data-bs-target="#sales" type="button" role="tab">
+                        <i class="bi bi-cash-coin"></i> 销售回款 ({{ sales_payments|length }})
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="purchase-tab" data-bs-toggle="tab" data-bs-target="#purchase" type="button" role="tab">
+                        <i class="bi bi-cart"></i> 采购成本 ({{ purchases|length }})
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="freight-tab" data-bs-toggle="tab" data-bs-target="#freight" type="button" role="tab">
+                        <i class="bi bi-truck"></i> 运费 ({{ freights|length }})
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="expense-tab" data-bs-toggle="tab" data-bs-target="#expense" type="button" role="tab">
+                        <i class="bi bi-receipt"></i> 费用 ({{ expenses|length }})
+                    </button>
+                </li>
+            </ul>
+        </div>
+        <div class="card-body">
+            <div class="tab-content" id="profitTabsContent">
+                <!-- 销售回款 -->
+                <div class="tab-pane fade show active" id="sales" role="tabpanel">
+                    {% if sales_payments %}
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>回款编号</th>
+                                    <th>合同</th>
+                                    <th>回款日期</th>
+                                    <th>付款方</th>
+                                    <th class="text-end">金额</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for sp in sales_payments %}
+                                <tr>
+                                    <td><code>{{ sp.payment_no }}</code></td>
+                                    <td>{{ sp.contract_name or '-' }}</td>
+                                    <td>{{ sp.payment_date }}</td>
+                                    <td>{{ sp.payer or '-' }}</td>
+                                    <td class="text-end text-success">¥{{ "%.2f"|format(sp.amount) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td colspan="4" class="text-end"><strong>合计</strong></td>
+                                    <td class="text-end text-success"><strong>¥{{ "%.2f"|format(profit.total_sales) }}</strong></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4 text-muted">
+                        <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                        <p class="mt-2">暂无销售回款记录</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- 采购成本 -->
+                <div class="tab-pane fade" id="purchase" role="tabpanel">
+                    {% if purchases %}
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>采购单号</th>
+                                    <th>合同</th>
+                                    <th>供应商</th>
+                                    <th>采购日期</th>
+                                    <th class="text-end">金额</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for po in purchases %}
+                                <tr>
+                                    <td><code>{{ po.purchase_no }}</code></td>
+                                    <td>{{ po.contract_name or '-' }}</td>
+                                    <td>{{ po.supplier or '-' }}</td>
+                                    <td>{{ po.purchase_date }}</td>
+                                    <td class="text-end text-danger">¥{{ "%.2f"|format(po.total_amount) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td colspan="4" class="text-end"><strong>合计</strong></td>
+                                    <td class="text-end text-danger"><strong>¥{{ "%.2f"|format(profit.total_purchase) }}</strong></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4 text-muted">
+                        <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                        <p class="mt-2">暂无采购记录</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- 运费 -->
+                <div class="tab-pane fade" id="freight" role="tabpanel">
+                    {% if freights %}
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>批次号</th>
+                                    <th>采购单</th>
+                                    <th>车牌号</th>
+                                    <th>运输日期</th>
+                                    <th class="text-end">运费</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for fr in freights %}
+                                <tr>
+                                    <td>{{ fr.batch_no or '-' }}</td>
+                                    <td>{{ fr.purchase_no or '-' }}</td>
+                                    <td>{{ fr.vehicle_no or '-' }}</td>
+                                    <td>{{ fr.transport_date }}</td>
+                                    <td class="text-end text-danger">¥{{ "%.2f"|format(fr.freight_amount) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td colspan="4" class="text-end"><strong>合计</strong></td>
+                                    <td class="text-end text-danger"><strong>¥{{ "%.2f"|format(profit.total_freight) }}</strong></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4 text-muted">
+                        <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                        <p class="mt-2">暂无运费记录</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- 费用 -->
+                <div class="tab-pane fade" id="expense" role="tabpanel">
+                    {% if expenses %}
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>日期</th>
+                                    <th>分类</th>
+                                    <th>说明</th>
+                                    <th>商户</th>
+                                    <th class="text-end">金额</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for exp in expenses %}
+                                <tr>
+                                    <td>{{ exp.trans_date }}</td>
+                                    <td>{{ exp.category_name or '-' }}</td>
+                                    <td>{{ exp.description or '-' }}</td>
+                                    <td>{{ exp.merchant or '-' }}</td>
+                                    <td class="text-end text-danger">¥{{ "%.2f"|format(exp.amount) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td colspan="4" class="text-end"><strong>合计</strong></td>
+                                    <td class="text-end text-danger"><strong>¥{{ "%.2f"|format(profit.total_expense) }}</strong></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4 text-muted">
+                        <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                        <p class="mt-2">暂无费用记录</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

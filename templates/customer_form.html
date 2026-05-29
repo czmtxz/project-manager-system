@@ -1,0 +1,248 @@
+{% extends "nav_base.html" %}
+{% block title %}{{ '编辑客户' if customer else '新增客户' }} - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4>
+            <i class="bi bi-people"></i> 
+            {{ '编辑客户' if customer else '新增客户' }}
+        </h4>
+        <a href="{{ url_for('customer_list') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> 返回列表
+        </a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ 'danger' if category == 'danger' else 'warning' if category == 'warning' else 'success' }} alert-dismissible fade show mb-3">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-file-earmark-text"></i> 基本信息</h6>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="row g-3">
+                            <!-- 客户名称 -->
+                            <div class="col-md-8">
+                                <label class="form-label">客户名称 <span class="text-danger">*</span></label>
+                                <input type="text" name="name" class="form-control" 
+                                       value="{{ customer.name if customer else '' }}" 
+                                       required placeholder="请输入客户名称">
+                            </div>
+                            
+                            <!-- 统一社会信用代码 -->
+                            <div class="col-md-4">
+                                <label class="form-label">统一社会信用代码</label>
+                                <input type="text" name="tax_no" class="form-control" 
+                                       value="{{ customer.tax_no if customer else '' }}" 
+                                       placeholder="18位社会信用代码">
+                            </div>
+                            
+                            <!-- 联系人 -->
+                            <div class="col-md-4">
+                                <label class="form-label">联系人</label>
+                                <input type="text" name="contact" class="form-control" 
+                                       value="{{ customer.contact if customer else '' }}" 
+                                       placeholder="联系人姓名">
+                            </div>
+                            
+                            <!-- 电话 -->
+                            <div class="col-md-4">
+                                <label class="form-label">联系电话</label>
+                                <input type="text" name="phone" class="form-control" 
+                                       value="{{ customer.phone if customer else '' }}" 
+                                       placeholder="联系电话">
+                            </div>
+                            
+                            <!-- 邮箱 -->
+                            <div class="col-md-4">
+                                <label class="form-label">电子邮箱</label>
+                                <input type="email" name="email" class="form-control" 
+                                       value="{{ customer.email if customer else '' }}" 
+                                       placeholder="电子邮箱">
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+                        <h6 class="mb-3"><i class="bi bi-geo-alt"></i> 地址信息</h6>
+                        
+                        <div class="row g-3">
+                            <!-- 公司地址 -->
+                            <div class="col-md-12">
+                                <label class="form-label">公司地址</label>
+                                <input type="text" name="address" class="form-control" 
+                                       value="{{ customer.address if customer else '' }}" 
+                                       placeholder="请输入公司地址">
+                            </div>
+                            
+                            <!-- 收货地址 -->
+                            <div class="col-md-12">
+                                <label class="form-label">收货地址</label>
+                                <input type="text" name="delivery_address" class="form-control" 
+                                       value="{{ customer.delivery_address if customer else '' }}" 
+                                       placeholder="请输入收货地址">
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+                        <h6 class="mb-3"><i class="bi bi-bank"></i> 往来银行账户</h6>
+                        
+                        <div class="row g-3">
+                            <!-- 开户银行 -->
+                            <div class="col-md-4">
+                                <label class="form-label">开户银行</label>
+                                <input type="text" name="bank_name" class="form-control" 
+                                       value="{{ customer.bank_name if customer else '' }}" 
+                                       placeholder="如：中国工商银行">
+                            </div>
+                            
+                            <!-- 银行账号 -->
+                            <div class="col-md-4">
+                                <label class="form-label">银行账号</label>
+                                <input type="text" name="bank_account" class="form-control" 
+                                       value="{{ customer.bank_account if customer else '' }}" 
+                                       placeholder="银行账号">
+                            </div>
+                            
+                            <!-- 开户行行号 -->
+                            <div class="col-md-4">
+                                <label class="form-label">开户行行号</label>
+                                <input type="text" name="bank_code" class="form-control" 
+                                       value="{{ customer.bank_code if customer else '' }}" 
+                                       placeholder="如：102xxxxxxxxx">
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+                        <h6 class="mb-3"><i class="bi bi-receipt"></i> 开票信息</h6>
+                        
+                        <div class="row g-3">
+                            <!-- 开票抬头 -->
+                            <div class="col-md-6">
+                                <label class="form-label">开票抬头</label>
+                                <input type="text" name="invoice_title" class="form-control" 
+                                       value="{{ customer.invoice_title if customer else '' }}" 
+                                       placeholder="与客户名称相同或不同">
+                            </div>
+                            
+                            <!-- 发票地址电话 -->
+                            <div class="col-md-6">
+                                <label class="form-label">发票地址电话</label>
+                                <input type="text" name="invoice_addr_phone" class="form-control" 
+                                       value="{{ customer.invoice_addr_phone if customer else '' }}" 
+                                       placeholder="开票地址和电话">
+                            </div>
+                            
+                            <!-- 发票开户行账号 -->
+                            <div class="col-md-6">
+                                <label class="form-label">发票开户行账号</label>
+                                <input type="text" name="invoice_bank_account" class="form-control" 
+                                       value="{{ customer.invoice_bank_account if customer else '' }}" 
+                                       placeholder="发票上显示的银行账号">
+                            </div>
+                            
+                            <!-- 税率 -->
+                            <div class="col-md-3">
+                                <label class="form-label">默认税率(%)</label>
+                                <select name="tax_rate" class="form-select">
+                                    <option value="">-- 不限 --</option>
+                                    <option value="3" {% if customer and customer.tax_rate == 3 %}selected{% endif %}>3%</option>
+                                    <option value="6" {% if customer and customer.tax_rate == 6 %}selected{% endif %}>6%</option>
+                                    <option value="9" {% if customer and customer.tax_rate == 9 %}selected{% endif %}>9%</option>
+                                    <option value="13" {% if customer and customer.tax_rate == 13 %}selected{% endif %}>13%</option>
+                                </select>
+                            </div>
+                            
+                            <!-- 是否启用 -->
+                            <div class="col-md-3">
+                                <label class="form-label">状态</label>
+                                <select name="is_active" class="form-select">
+                                    <option value="1" {% if not customer or customer.is_active %}selected{% endif %}>启用</option>
+                                    <option value="0" {% if customer and not customer.is_active %}selected{% endif %}>停用</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+                        <h6 class="mb-3"><i class="bi bi-chat-left-text"></i> 备注</h6>
+                        
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <textarea name="remark" class="form-control" rows="3" 
+                                          placeholder="请输入备注信息">{{ customer.remark if customer else '' }}</textarea>
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-check-circle"></i> 保存
+                            </button>
+                            <a href="{{ url_for('customer_list') }}" class="btn btn-outline-secondary ms-2">
+                                取消
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-info-circle"></i> 填写说明</h6>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled mb-0">
+                        <li class="mb-2">
+                            <i class="bi bi-check2 text-success me-2"></i>
+                            <span class="text-danger">*</span> 标记为必填项
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check2 text-success me-2"></i>
+                            客户名称不能重复
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check2 text-success me-2"></i>
+                            银行信息用于收款和对账
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check2 text-success me-2"></i>
+                            开票信息用于开具发票
+                        </li>
+                        <li>
+                            <i class="bi bi-check2 text-success me-2"></i>
+                            停用的客户不会出现在选择列表中
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            {% if customer %}
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-clock-history"></i> 记录信息</h6>
+                </div>
+                <div class="card-body">
+                    <p class="mb-1 small text-muted">
+                        创建时间: {{ customer.created_at[:19] if customer.created_at else '-' }}
+                    </p>
+                    <p class="mb-0 small text-muted">
+                        更新时间: {{ customer.updated_at[:19] if customer.updated_at else '-' }}
+                    </p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

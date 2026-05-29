@@ -1,0 +1,36 @@
+{% extends "nav_base.html" %}
+{% block title %}分配负责客户 - {{ user.username }}{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('account_manage') }}">账号管理</a></li>
+            <li class="breadcrumb-item active">{{ user.username }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-3"><i class="bi bi-people"></i> 协同专员负责客户：{{ user.username }}</h4>
+    <p class="text-muted small">协同专员只能查看/操作此处勾选的客户公司及对应资金报表。审核通过的客户会自动加入其负责范围。</p>
+    <form method="POST" class="card">
+        <div class="card-body">
+            <div class="row">
+                {% for c in customers %}
+                <div class="col-md-4 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="customer_ids"
+                               value="{{ c.id }}" id="cust{{ c.id }}"
+                               {% if c.id in assigned %}checked{% endif %}>
+                        <label class="form-check-label" for="cust{{ c.id }}">{{ c.name }}</label>
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted">暂无客户主数据，请先在基础资料中维护客户。</p>
+                {% endfor %}
+            </div>
+            <div class="mt-3">
+                <button type="submit" class="btn btn-primary">保存分配</button>
+                <a href="{{ url_for('account_manage') }}" class="btn btn-outline-secondary">返回</a>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

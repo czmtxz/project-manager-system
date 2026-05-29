@@ -1,0 +1,14 @@
+{% extends "portal_base.html" %}
+{% block title %}{{ message.title }} - 消息{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between">
+        <h5 class="mb-0">{{ message.title }}</h5>
+        <a href="{{ url_for('portal_messages') }}" class="btn btn-sm btn-outline-secondary">返回</a>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small">{{ (message.created_at or '')[:19] }}</p>
+        <div>{{ message.content }}</div>
+    </div>
+</div>
+{% endblock %}

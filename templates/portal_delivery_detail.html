@@ -1,0 +1,136 @@
+{% extends "portal_base.html" %}
+
+{% block title %}出库单详情 - 客户协同平台{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">
+        <i class="bi bi-box-seam"></i> 出库单详情
+    </h4>
+    <a href="{{ url_for('portal_deliveries') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> 返回列表
+    </a>
+</div>
+
+<!-- 基本信息 -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-info-circle"></i> 基本信息
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <table class="table table-borderless">
+                    <tr>
+                        <td class="text-muted" width="120">出库单号：</td>
+                        <td><code class="fs-5">{{ delivery.order_no or delivery.order_number }}</code></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">出库日期：</td>
+                        <td>{{ (delivery.order_date or '')[:10] }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">客户名称：</td>
+                        <td>{{ delivery.customer_name or delivery.company_name or '-' }}</td>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <table class="table table-borderless">
+                    <tr>
+                        <td class="text-muted" width="120">明细数量：</td>
+                        <td>{{ items|length }} 项</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">总金额：</td>
+                        <td><strong class="text-danger fs-5">{{ "%.2f"|format(delivery.total_amount) }}</strong> 元</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">状态：</td>
+                        <td>
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-circle"></i> 已完成
+                            </span>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 明细列表 -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-list-ul"></i> 出库明细
+    </div>
+    <div class="card-body p-0">
+        {% if items %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th width="50">#</th>
+                        <th>品名</th>
+                        <th>规格</th>
+                        <th width="100">数量</th>
+                        <th width="120">单价</th>
+                        <th width="120">金额</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ item.product_name }}</td>
+                        <td>{{ item.specification or '-' }}</td>
+                        <td>{{ item.quantity }}</td>
+                        <td>{{ "%.2f"|format(item.unit_price) }}</td>
+                        <td><strong>{{ "%.2f"|format(item.amount) }}</strong></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="table-light">
+                        <td colspan="5" class="text-end"><strong>合计：</strong></td>
+                        <td><strong class="text-danger">{{ "%.2f"|format(delivery.total_amount) }}</strong></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+            <p class="mt-2">暂无明细</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 打印按钮 -->
+<div class="text-center mt-4">
+    <button onclick="window.print()" class="btn btn-outline-primary">
+        <i class="bi bi-printer"></i> 打印
+    </button>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        .sidebar, .topbar, .btn, .balance-alert-banner {
+            display: none !important;
+        }
+        .main-wrapper {
+            margin-left: 0 !important;
+        }
+        .main-content {
+            padding: 0 !important;
+        }
+        .card {
+            box-shadow: none !important;
+            border: 1px solid #dee2e6 !important;
+        }
+    }
+</style>
+{% endblock %}

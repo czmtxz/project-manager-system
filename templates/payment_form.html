@@ -1,0 +1,191 @@
+{% extends "nav_base.html" %}
+{% block title %}{% if payment %}编辑付款{% else %}新增付款{% endif %} - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-cash-stack"></i> {% if payment %}编辑付款记录{% else %}新增付款记录{% endif %}</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data" action="{% if payment %}{{ url_for('payment_edit', pid=pid, payment_id=payment.id) }}{% else %}{{ url_for('payment_add', pid=pid) }}{% endif %}">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">关联合同</label>
+                                <select name="contract_id" class="form-select">
+                                    <option value="">-- 不关联 --</option>
+                                    {% for c in contracts %}
+                                    <option value="{{ c.id }}" {% if payment and payment.contract_id == c.id %}selected{% endif %}>{{ c.contract_no }} - {{ c.contract_name }} ({{ "%.2f"|format(c.amount) }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">付款编号 <span class="text-danger">*</span></label>
+                                <input type="text" name="payment_no" class="form-control" placeholder="如: FK-2024-001" required value="{{ payment.payment_no if payment else '' }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">参与人</label>
+                                <select name="participant_id" class="form-select">
+                                    <option value="">-- 选择参与人 --</option>
+                                    {% for par in participants %}
+                                    <option value="{{ par.id }}" {% if payment and payment.participant_id == par.id %}selected{% endif %}>{{ par.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">付款日期</label>
+                                <input type="date" name="payment_date" class="form-control" value="{{ payment.payment_date if payment else (now.strftime('%Y-%m-%d') if now else '') }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">付款金额</label>
+                                <input type="number" name="amount" class="form-control" step="0.01" placeholder="0.00" value="{{ payment.amount if payment else '' }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">付款类型</label>
+                                <select name="payment_type" class="form-select">
+                                    <option value="">-- 选择付款类型 --</option>
+                                    {% for pt in payment_types %}
+                                    <option value="{{ pt.name }}" {% if payment and payment.payment_type == pt.name %}selected{% endif %}>{{ pt.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">支付方式</label>
+                                <select name="payment_method" class="form-select">
+                                    <option value="">-- 选择 --</option>
+                                    <option value="微信" {% if payment and payment.payment_method == '微信' %}selected{% endif %}>微信</option>
+                                    <option value="支付宝" {% if payment and payment.payment_method == '支付宝' %}selected{% endif %}>支付宝</option>
+                                    <option value="银行卡" {% if payment and payment.payment_method == '银行卡' %}selected{% endif %}>银行卡转账</option>
+                                    <option value="现金" {% if payment and payment.payment_method == '现金' %}selected{% endif %}>现金</option>
+                                    <option value="商业汇票" {% if payment and payment.payment_method == '商业汇票' %}selected{% endif %}>商业汇票</option>
+                                    <option value="其他" {% if payment and payment.payment_method == '其他' %}selected{% endif %}>其他</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">收款方</label>
+                                <input type="text" name="payer" class="form-control" placeholder="收到款项的单位或个人" value="{{ payment.payer if payment else '' }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">付款方</label>
+                                <input type="text" name="payee" class="form-control" placeholder="付出款项的单位或个人" value="{{ payment.payee if payment else '' }}">
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">备注</label>
+                                <textarea name="remark" class="form-control" rows="2" placeholder="备注信息">{{ payment.remark if payment else '' }}</textarea>
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">附件（支持图片）</label>
+                                <input type="file" name="attachment" id="attachmentInput" class="form-control" accept=".jpg,.jpeg,.png,.pdf">
+                                <div class="form-text">支持 JPG、PNG、PDF 格式</div>
+                                {% if payment and payment.attachment %}
+                                <div class="mt-3 p-2 border rounded bg-light">
+                                    <div class="d-flex align-items-center gap-3">
+                                        {% if payment.attachment.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) %}
+                                        <img src="{{ url_for('uploaded_file', filename=payment.attachment) }}" 
+                                             class="img-thumbnail" 
+                                             style="max-width: 150px; max-height: 100px; cursor: pointer;"
+                                             onclick="showImagePreview('{{ url_for('uploaded_file', filename=payment.attachment) }}')"
+                                             alt="当前附件">
+                                        {% else %}
+                                        <div class="text-center p-3">
+                                            <i class="bi bi-file-earmark-text fs-1"></i>
+                                            <div class="small text-muted">{{ payment.attachment }}</div>
+                                        </div>
+                                        {% endif %}
+                                        <div>
+                                            <div class="mb-2">
+                                                <span class="badge bg-info">当前附件</span>
+                                            </div>
+                                            <a href="{{ url_for('uploaded_file', filename=payment.attachment) }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-eye"></i> 查看原图
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deletePaymentAttachment({{ payment.id }})">
+                                                <i class="bi bi-trash"></i> 删除附件
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 mt-4">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> {% if payment %}保存修改{% else %}保存{% endif %}
+                            </button>
+                            <a href="{{ url_for('project_detail', pid=pid) }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> 返回项目
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+// 图片预览放大
+function showImagePreview(imageUrl) {
+    let modal = document.getElementById('imagePreviewModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'imagePreviewModal';
+        modal.className = 'modal fade';
+        modal.tabIndex = -1;
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">图片预览</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body text-center">
+                        <img id="previewImage" src="" class="img-fluid" style="max-height: 80vh;" alt="预览">
+                    </div>
+                    <div class="modal-footer">
+                        <a id="previewDownload" href="" target="_blank" class="btn btn-primary" download>
+                            <i class="bi bi-download"></i> 下载原图
+                        </a>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    document.getElementById('previewImage').src = imageUrl;
+    document.getElementById('previewDownload').href = imageUrl;
+    
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+}
+
+// 删除附件
+function deletePaymentAttachment(paymentId) {
+    if (!confirm('确定要删除此附件吗？删除后不可恢复。')) {
+        return;
+    }
+    
+    fetch(`/api/payment/${paymentId}/delete-attachment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            alert('附件已删除');
+            location.reload();
+        } else {
+            alert('删除失败: ' + (data.error || '未知错误'));
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('删除失败，请重试');
+    });
+}
+</script>
+{% endblock %}

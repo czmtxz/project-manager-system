@@ -1,0 +1,61 @@
+{% extends "portal_base.html" %}
+
+{% block title %}消息中心 - 客户协同平台{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">
+        <i class="bi bi-envelope"></i> 消息中心
+        {% if unread_count > 0 %}
+        <span class="badge bg-danger">{{ unread_count }} 未读</span>
+        {% endif %}
+    </h4>
+    {% if messages and unread_count > 0 %}
+    <form method="POST" action="{{ url_for('portal_messages_read_all') }}">
+        <button type="submit" class="btn btn-outline-primary">
+            <i class="bi bi-check-all"></i> 全部标记已读
+        </button>
+    </form>
+    {% endif %}
+</div>
+
+<!-- 消息列表 -->
+<div class="card">
+    <div class="card-body p-0">
+        {% if messages %}
+        <div class="list-group list-group-flush">
+            {% for msg in messages %}
+            <div class="list-group-item {% if not msg.is_read %}list-group-item-warning{% endif %}">
+                <div class="d-flex w-100 justify-content-between align-items-start">
+                    <div class="flex-grow-1">
+                        <div class="d-flex align-items-center mb-1">
+                            {% if not msg.is_read %}
+                            <span class="badge bg-danger me-2">未读</span>
+                            {% endif %}
+                            <h6 class="mb-0">{{ msg.title }}</h6>
+                        </div>
+                        <p class="mb-1 text-muted">{{ msg.content }}</p>
+                        <small class="text-muted">
+                            <i class="bi bi-clock"></i> {{ (msg.created_at or '')[:19] }}
+                        </small>
+                    </div>
+                    {% if not msg.is_read %}
+                    <form method="POST" action="{{ url_for('portal_message_read', msg_id=msg.id) }}">
+                        <button type="submit" class="btn btn-sm btn-outline-success" title="标记已读">
+                            <i class="bi bi-check"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-envelope-open" style="font-size: 3rem;"></i>
+            <p class="mt-2">暂无消息</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

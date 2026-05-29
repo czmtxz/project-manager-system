@@ -1,0 +1,91 @@
+{% extends staff_layout|default('nav_base.html') %}
+{% block title %}{{ meta.title }} - 报表中心{% endblock %}
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>.chart-container { height: 320px; }</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{{ url_for('reports.hub') }}">报表中心</a></li>
+            <li class="breadcrumb-item active">{{ meta.title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-3"><i class="bi bi-piggy-bank"></i> {{ meta.title }}</h4>
+    {% include 'reports/_filters.html' %}
+
+    <div class="row g-3 mb-4">
+        {% for k in data.kpis %}
+        <div class="col-md-3">
+            <div class="card text-center p-3 border-start border-4 border-{{ k.border }}">
+                <small class="text-muted">{{ k.label }}</small>
+                <h5 class="mb-0">{{ k.value }}</h5>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0">参与人出资与分红</h6></div>
+        <div class="card-body">
+            <div id="chartMain" class="chart-container"></div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0">参与人明细</h6></div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>{% for col in data.table_columns %}<th>{{ col }}</th>{% endfor %}</tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.table_rows %}
+                        <tr>{% for col in data.table_columns %}<td>{{ row[col] }}</td>{% endfor %}</tr>
+                        {% else %}
+                        <tr><td colspan="{{ data.table_columns|length }}" class="text-center text-muted py-4">暂无数据</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if data.project_rows %}
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0">按项目汇总</h6></div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>{% for col in data.project_table_columns %}<th>{{ col }}</th>{% endfor %}</tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.project_rows %}
+                        <tr>{% for col in data.project_table_columns %}<td>{{ row[col] }}</td>{% endfor %}</tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+<script>
+var chartData = {{ chart_data|safe }};
+var ch = echarts.init(document.getElementById('chartMain'));
+ch.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['出资', '分红'] },
+    xAxis: { type: 'category', data: chartData.participant_labels || [], axisLabel: { rotate: 30 } },
+    yAxis: { type: 'value' },
+    series: [
+        { name: '出资', type: 'bar', data: chartData.invest_data || [] },
+        { name: '分红', type: 'bar', data: chartData.dividend_data || [] }
+    ]
+});
+window.addEventListener('resize', function() { ch.resize(); });
+</script>
+{% endblock %}

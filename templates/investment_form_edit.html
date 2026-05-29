@@ -1,0 +1,177 @@
+{% extends "nav_base.html" %}
+{% block title %}编辑投资记录 - 项目投资管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-cash-stack"></i> 编辑投资记录</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">投资人 <span class="text-danger">*</span></label>
+                            <select name="participant_id" class="form-select" required>
+                                <option value="">请选择投资人...</option>
+                                {% for p in participants %}
+                                <option value="{{ p.id }}" {% if investment.participant_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">投资日期 <span class="text-danger">*</span></label>
+                                    <input type="date" name="invest_date" class="form-control"
+                                           value="{{ investment.invest_date or '' }}" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">投资金额 <span class="text-danger">*</span></label>
+                                    <input type="number" name="amount" class="form-control" step="0.01" min="0.01"
+                                           value="{{ investment.amount or '' }}" required>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">投资类型</label>
+                                    <select name="invest_type" class="form-select">
+                                        <option value="现金" {% if investment.invest_type == '现金' %}selected{% endif %}>现金</option>
+                                        <option value="银行转账" {% if investment.invest_type == '银行转账' %}selected{% endif %}>银行转账</option>
+                                        <option value="微信" {% if investment.invest_type == '微信' %}selected{% endif %}>微信</option>
+                                        <option value="支付宝" {% if investment.invest_type == '支付宝' %}selected{% endif %}>支付宝</option>
+                                        <option value="实物" {% if investment.invest_type == '实物' %}selected{% endif %}>实物</option>
+                                        <option value="其他" {% if investment.invest_type == '其他' %}selected{% endif %}>其他</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">支付方式</label>
+                                    <input type="text" name="payment_method" class="form-control"
+                                           value="{{ investment.payment_method or '' }}" placeholder="如：工商银行转账">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">备注</label>
+                            <textarea name="remark" class="form-control" rows="2">{{ investment.remark or '' }}</textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">附件（支持图片）</label>
+                            <input type="file" name="attachment" id="attachmentInput" class="form-control" accept=".jpg,.jpeg,.png,.pdf">
+                            <div class="form-text">支持 JPG、PNG、PDF 格式，留空则保留原附件</div>
+                            {% if investment.attachment %}
+                            <div class="mt-3 p-2 border rounded bg-light">
+                                <div class="d-flex align-items-center gap-3">
+                                    {% if investment.attachment.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) %}
+                                    <img src="{{ url_for('uploaded_file', filename=investment.attachment) }}" 
+                                         class="img-thumbnail" 
+                                         style="max-width: 150px; max-height: 100px; cursor: pointer;"
+                                         onclick="showImagePreview('{{ url_for('uploaded_file', filename=investment.attachment) }}')"
+                                         alt="当前附件">
+                                    {% else %}
+                                    <div class="text-center p-3">
+                                        <i class="bi bi-file-earmark-text fs-1"></i>
+                                        <div class="small text-muted">{{ investment.attachment }}</div>
+                                    </div>
+                                    {% endif %}
+                                    <div>
+                                        <div class="mb-2">
+                                            <span class="badge bg-info">当前附件</span>
+                                        </div>
+                                        <a href="{{ url_for('uploaded_file', filename=investment.attachment) }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-eye"></i> 查看原图
+                                        </a>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteInvestmentAttachment({{ investment.id }})">
+                                            <i class="bi bi-trash"></i> 删除附件
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> 保存修改
+                            </button>
+                            <a href="{{ url_for('project_detail', pid=pid) }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> 返回项目
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+// 图片预览放大
+function showImagePreview(imageUrl) {
+    let modal = document.getElementById('imagePreviewModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'imagePreviewModal';
+        modal.className = 'modal fade';
+        modal.tabIndex = -1;
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">图片预览</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body text-center">
+                        <img id="previewImage" src="" class="img-fluid" style="max-height: 80vh;" alt="预览">
+                    </div>
+                    <div class="modal-footer">
+                        <a id="previewDownload" href="" target="_blank" class="btn btn-primary" download>
+                            <i class="bi bi-download"></i> 下载原图
+                        </a>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    document.getElementById('previewImage').src = imageUrl;
+    document.getElementById('previewDownload').href = imageUrl;
+    
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+}
+
+// 删除附件
+function deleteInvestmentAttachment(investmentId) {
+    if (!confirm('确定要删除此附件吗？删除后不可恢复。')) {
+        return;
+    }
+    
+    fetch(`/api/investment/${investmentId}/delete-attachment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            alert('附件已删除');
+            location.reload();
+        } else {
+            alert('删除失败: ' + (data.error || '未知错误'));
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('删除失败，请重试');
+    });
+}
+</script>
+{% endblock %}

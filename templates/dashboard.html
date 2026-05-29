@@ -1,0 +1,218 @@
+{% extends "nav_base.html" %}
+{% block title %}看板 - 项目管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <!-- 统计卡片 -->
+    <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card stat-card stat-blue">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">项目总数</p>
+                            <h3>{{ total_projects }}</h3>
+                        </div>
+                        <i class="bi bi-folder2-open stat-icon"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card stat-card stat-green">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">收入合同金额</p>
+                            <h3>{{ "%.2f"|format(total_income) }}</h3>
+                        </div>
+                        <i class="bi bi-graph-up-arrow stat-icon"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card stat-card stat-orange">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">支出合同金额</p>
+                            <h3>{{ "%.2f"|format(total_expense) }}</h3>
+                        </div>
+                        <i class="bi bi-graph-down-arrow stat-icon"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card stat-card stat-purple">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">综合毛利率</p>
+                            <h3>{{ "%.2f"|format(profit_rate) }}%</h3>
+                        </div>
+                        <i class="bi bi-percent stat-icon"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if session.role in ['admin', 'finance', 'manager'] %}
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-graph-up"></i> 报表中心快捷入口</h5>
+            <a href="{{ url_for('reports.hub') }}" class="btn btn-outline-primary btn-sm">全部报表</a>
+        </div>
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-2">
+                <a href="{{ url_for('reports.view', slug='executive-overview') }}" class="btn btn-sm btn-outline-primary">经营驾驶舱</a>
+                <a href="{{ url_for('reports.view', slug='business-alerts') }}" class="btn btn-sm btn-outline-danger">经营预警</a>
+                <a href="{{ url_for('reports.view', slug='fee-profit') }}" class="btn btn-sm btn-outline-secondary">费用盈亏</a>
+                <a href="{{ url_for('reports.view', slug='sales-collection') }}" class="btn btn-sm btn-outline-success">销售回款</a>
+                <a href="{{ url_for('reports.view', slug='contract-funnel') }}" class="btn btn-sm btn-outline-info">合同执行</a>
+                {% if session.role in ['admin', 'finance'] %}
+                <a href="{{ url_for('reports.view', slug='client-collab-funds') }}" class="btn btn-sm btn-outline-warning">客户资金</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row g-3">
+        <!-- 项目列表 -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-folder"></i> 项目列表</h5>
+                    <a href="{{ url_for('project_add') }}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-plus-circle"></i> 新增项目
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    {% if projects %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>项目名称</th>
+                                    <th>状态</th>
+                                    <th>创建时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for p in projects %}
+                                <tr>
+                                    <td>
+                                        <a href="{{ url_for('project_detail', pid=p.id) }}" class="text-decoration-none fw-bold">
+                                            {{ p.name }}
+                                        </a>
+                                        {% if p.description %}
+                                        <br><small class="text-muted">{{ p.description[:50] }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if p.status == '进行中' %}
+                                        <span class="badge bg-primary">{{ p.status }}</span>
+                                        {% elif p.status == '已完成' %}
+                                        <span class="badge bg-success">{{ p.status }}</span>
+                                        {% elif p.status == '已暂停' %}
+                                        <span class="badge bg-warning text-dark">{{ p.status }}</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ p.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ p.created_at[:10] if p.created_at else '-' }}</td>
+                                    <td>
+                                        <a href="{{ url_for('project_detail', pid=p.id) }}" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-eye"></i> 详情
+                                        </a>
+                                        {% if session.role == 'admin' %}
+                                        <a href="{{ url_for('project_delete', pid=p.id) }}" class="btn btn-sm btn-outline-danger"
+                                           onclick="return confirm('确定要删除此项目吗？所有关联数据将被删除！')">
+                                            <i class="bi bi-trash"></i>
+                                        </a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                        <p class="mt-2">暂无项目，点击"新增项目"开始</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧面板 -->
+        <div class="col-lg-4">
+            <!-- 项目状态统计 -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-pie-chart"></i> 项目状态</h6>
+                </div>
+                <div class="card-body">
+                    {% if status_counts %}
+                    <canvas id="statusChart" height="200"></canvas>
+                    {% else %}
+                    <p class="text-muted text-center">暂无数据</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- 最近操作 -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-clock-history"></i> 最近操作</h6>
+                </div>
+                <div class="card-body p-0">
+                    {% if logs %}
+                    <div class="list-group list-group-flush">
+                        {% for log in logs %}
+                        <div class="list-group-item px-3 py-2">
+                            <div class="d-flex justify-content-between">
+                                <small class="fw-bold">{{ log.username }}</small>
+                                <small class="text-muted">{{ log.created_at[:16] if log.created_at else '' }}</small>
+                            </div>
+                            <small class="text-muted">{{ log.action }} - {{ log.detail[:30] }}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted text-center p-3">暂无操作记录</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if status_counts %}
+<script>
+    const ctx = document.getElementById('statusChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: {{ status_counts.keys() | list | tojson }},
+            datasets: [{
+                data: {{ status_counts.values() | list | tojson }},
+                backgroundColor: ['#4361ee', '#2ec4b6', '#ff9f1c', '#e71d36', '#6c757d'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' }
+            }
+        }
+    });
+</script>
+{% endif %}
+{% endblock %}

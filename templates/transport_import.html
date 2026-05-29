@@ -1,0 +1,130 @@
+{% extends "nav_base.html" %}
+{% block title %}运费明细导入 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-truck"></i> 运费明细导入</h5>
+                </div>
+                <div class="card-body">
+                    <!-- 导入方式选择 -->
+                    <ul class="nav nav-tabs mb-3" id="importTabs">
+                        <li class="nav-item">
+                            <a class="nav-link {% if not import_type or import_type == 'ocr' %}active{% endif %}" data-bs-toggle="tab" href="#ocrTab">
+                                <i class="bi bi-camera"></i> 图片识别导入
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if import_type == 'excel' %}active{% endif %}" data-bs-toggle="tab" href="#excelTab">
+                                <i class="bi bi-file-earmark-excel"></i> Excel导入
+                            </a>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content">
+                        <!-- 图片OCR导入 -->
+                        <div class="tab-pane fade {% if not import_type or import_type == 'ocr' %}show active{% endif %}" id="ocrTab">
+                            <form method="POST" enctype="multipart/form-data">
+                                <input type="hidden" name="import_type" value="ocr">
+                                <div class="mb-3">
+                                    <label class="form-label">关联采购单</label>
+                                    <select name="purchase_id" class="form-select">
+                                        <option value="">-- 不指定 --</option>
+                                        {% for p in purchases %}
+                                        <option value="{{ p.id }}" {% if purchase_id and purchase_id|string == p.id|string %}selected{% endif %}>{{ p.purchase_no }} - {{ p.supplier or '' }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">选择图片 <span class="text-danger">*</span></label>
+                                    <input type="file" name="ocr_image" class="form-control" accept=".jpg,.jpeg,.png,.bmp" multiple required>
+                                    <small class="text-muted">支持过磅单、运单、运费发票图片，可多选</small>
+                                </div>
+                                <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i> 开始识别导入</button>
+                            </form>
+                        </div>
+                        
+                        <!-- Excel导入 -->
+                        <div class="tab-pane fade {% if import_type == 'excel' %}show active{% endif %}" id="excelTab">
+                            <form method="POST" enctype="multipart/form-data">
+                                <input type="hidden" name="import_type" value="excel">
+                                <div class="mb-3">
+                                    <label class="form-label">关联采购单</label>
+                                    <select name="purchase_id" class="form-select">
+                                        <option value="">-- 不指定 --</option>
+                                        {% for p in purchases %}
+                                        <option value="{{ p.id }}">{{ p.purchase_no }} - {{ p.supplier or '' }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">选择Excel文件 <span class="text-danger">*</span></label>
+                                    <input type="file" name="excel_file" class="form-control" accept=".xlsx,.xls" required>
+                                </div>
+                                <div class="alert alert-info">
+                                    <strong>Excel格式要求：</strong>
+                                    <table class="table table-sm mb-0 mt-2">
+                                        <thead><tr><th>车牌号</th><th>司机</th><th>运输日期</th><th>数量(吨)</th><th>单价运费</th><th>运费金额</th><th>备注</th></tr></thead>
+                                        <tbody><tr><td>京A12345</td><td>张三</td><td>2026-05-10</td><td>32.5</td><td>90</td><td>2925</td><td></td></tr></tbody>
+                                    </table>
+                                </div>
+                                <button type="submit" class="btn btn-primary"><i class="bi bi-upload"></i> 导入</button>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    <!-- OCR识别结果 -->
+                    {% if results %}
+                    <hr>
+                    <h6><i class="bi bi-list-check"></i> 识别结果</h6>
+                    {% for r in results %}
+                    <div class="card mb-3 {% if r.error %}border-danger{% elif r.saved %}border-success{% else %}border-warning{% endif %}">
+                        <div class="card-header py-2 d-flex justify-content-between">
+                            <span>{{ r.filename }}</span>
+                            {% if r.saved %}
+                            <span class="badge bg-success"><i class="bi bi-check-circle"></i> 已导入</span>
+                            {% elif r.error %}
+                            <span class="badge bg-danger">失败</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark">信息不完整</span>
+                            {% endif %}
+                        </div>
+                        <div class="card-body">
+                            {% if r.error %}
+                            <div class="text-danger">{{ r.error }}</div>
+                            {% else %}
+                            <div class="row g-2">
+                                {% if r.type == 'weighbridge' %}
+                                <div class="col-12"><span class="badge bg-info">过磅单</span></div>
+                                {% if r.vehicle_no %}<div class="col-md-3"><small class="text-muted">车牌号</small><div>{{ r.vehicle_no }}</div></div>{% endif %}
+                                {% if r.driver_name %}<div class="col-md-3"><small class="text-muted">司机</small><div>{{ r.driver_name }}</div></div>{% endif %}
+                                {% if r.transport_date %}<div class="col-md-3"><small class="text-muted">日期</small><div>{{ r.transport_date }}</div></div>{% endif %}
+                                {% if r.material_name %}<div class="col-md-3"><small class="text-muted">材料</small><div>{{ r.material_name }}</div></div>{% endif %}
+                                {% if r.gross_weight %}<div class="col-md-3"><small class="text-muted">毛重</small><div>{{ r.gross_weight }} 吨</div></div>{% endif %}
+                                {% if r.tare_weight %}<div class="col-md-3"><small class="text-muted">皮重</small><div>{{ r.tare_weight }} 吨</div></div>{% endif %}
+                                {% if r.net_weight %}<div class="col-md-3"><small class="text-muted">净重</small><div class="fw-bold">{{ r.net_weight }} 吨</div></div>{% endif %}
+                                {% elif r.type == 'freight_invoice' %}
+                                <div class="col-12"><span class="badge bg-warning text-dark">运费发票</span></div>
+                                {% if r.invoice_no %}<div class="col-md-4"><small class="text-muted">发票号</small><div><code>{{ r.invoice_no }}</code></div></div>{% endif %}
+                                {% if r.vehicle_no %}<div class="col-md-4"><small class="text-muted">车牌号</small><div>{{ r.vehicle_no }}</div></div>{% endif %}
+                                {% if r.freight_amount %}<div class="col-md-4"><small class="text-muted">运费金额</small><div class="fw-bold">¥{{ "%.2f"|format(r.freight_amount) }}</div></div>{% endif %}
+                                {% if r.route %}<div class="col-md-6"><small class="text-muted">路线</small><div>{{ r.route }}</div></div>{% endif %}
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+                    
+                    <div class="mt-3">
+                        <a href="{{ url_for('purchase_list') }}" class="btn btn-secondary">返回采购列表</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

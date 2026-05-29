@@ -1,0 +1,256 @@
+{% extends "nav_base.html" %}
+{% block title %}{% if project %}编辑项目{% else %}新增项目{% endif %} - 项目管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row">
+        <div class="col-lg-5">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-{% if project %}pencil{% else %}plus-circle{% endif %}"></i> {% if project %}编辑项目{% else %}新增项目{% endif %}</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" id="projectForm">
+                        <div class="mb-3">
+                            <label class="form-label">项目名称 <span class="text-danger">*</span></label>
+                            <input type="text" name="name" class="form-control" placeholder="请输入项目名称" required value="{{ project.name if project else '' }}">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">项目描述</label>
+                            <textarea name="description" class="form-control" rows="2" placeholder="请输入项目描述">{{ project.description or '' if project else '' }}</textarea>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">预算金额</label>
+                                <input type="number" name="budget" class="form-control" step="0.01" placeholder="0.00" value="{{ project.budget or '' if project else '' }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">项目状态</label>
+                                <select name="status" class="form-select">
+                                    <option value="进行中" {% if project and project.status == '进行中' %}selected{% endif %}>进行中</option>
+                                    <option value="已完成" {% if project and project.status == '已完成' %}selected{% endif %}>已完成</option>
+                                    <option value="已暂停" {% if project and project.status == '已暂停' %}selected{% endif %}>已暂停</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">开始日期</label>
+                                <input type="date" name="start_date" class="form-control" value="{{ project.start_date if project else '' }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">结束日期</label>
+                                <input type="date" name="end_date" class="form-control" value="{{ project.end_date if project else '' }}">
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">项目掌控人</label>
+                                <select name="controller_id" class="form-select">
+                                    <option value="">请选择...</option>
+                                    {% for p in controllers %}
+                                    <option value="{{ p.id }}" {% if project and project.controller_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <small class="text-muted">掌控人拿项目剩余利润</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">项目总吨数</label>
+                                <input type="number" name="total_quantity" class="form-control" step="0.01" value="{{ project.total_quantity if project else '' }}" placeholder="销售合同吨数">
+                                <small class="text-muted">用于分红计算</small>
+                            </div>
+                        </div>
+                        
+                        <!-- 采购运费配置 -->
+                        <div class="card mb-3">
+                            <div class="card-header py-2">
+                                <h6 class="mb-0"><i class="bi bi-truck"></i> 采购运费配置</h6>
+                            </div>
+                            <div class="card-body py-2">
+                                <div class="row">
+                                    <div class="col-md-6 mb-2">
+                                        <label class="form-label small">合理损耗率(%)</label>
+                                        <input type="number" name="loss_rate" class="form-control form-control-sm" step="0.01" value="{{ project.loss_rate if project else '0.5' }}" placeholder="0.5">
+                                        <small class="text-muted">运输量与采购量允许的偏差百分比</small>
+                                    </div>
+                                    <div class="col-md-6 mb-2">
+                                        <label class="form-label small">运费关联</label>
+                                        <div class="form-check form-switch mt-1">
+                                            <input class="form-check-input" type="checkbox" name="freight_link_enabled" id="freightLinkSwitch" value="1" {% if project and project.freight_link_enabled %}checked{% endif %}>
+                                            <label class="form-check-label small" for="freightLinkSwitch">
+                                                启用运费自动关联
+                                            </label>
+                                        </div>
+                                        <small class="text-muted">支出明细中的运费自动同步到运费管理</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> 保存
+                            </button>
+                            <a href="{{ url_for('project_list') }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> 返回
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-diagram-3"></i> 选择费用分类</h5>
+                    <div>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="expandAll()">展开全部</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="collapseAll()">收起全部</button>
+                    </div>
+                </div>
+                <div class="card-body" style="max-height: 500px; overflow-y: auto;">
+                    <p class="text-muted small">勾选本项目需要使用的费用分类，后续交易记录只能选择已关联的分类。</p>
+                    
+                    <!-- 收入分类 -->
+                    <div class="mb-4">
+                        <h6 class="text-success"><i class="bi bi-arrow-down-circle"></i> 收入分类</h6>
+                        <div id="incomeTree" class="tree-container">
+                            {% for level1 in categories.income %}
+                            <div class="tree-level-1">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="cat_{{ level1.id }}" name="categories" value="{{ level1.id }}" onchange="toggleChildren(this, '{{ level1.id }}')" {% if selected_categories and level1.id in selected_categories %}checked{% endif %}>
+                                    <label class="form-check-label fw-bold" for="cat_{{ level1.id }}">
+                                        {{ level1.name }} <small class="text-muted">({{ level1.code }})</small>
+                                    </label>
+                                </div>
+                                <div class="ms-4" id="children_{{ level1.id }}">
+                                    {% for level2 in level1.children %}
+                                    <div class="tree-level-2">
+                                        <div class="form-check">
+                                            <input class="form-check-input cat-child-{{ level1.id }}" type="checkbox" id="cat_{{ level2.id }}" name="categories" value="{{ level2.id }}" data-parent="{{ level1.id }}" onchange="toggleChildren(this, '{{ level2.id }}'); updateParent(this)" {% if selected_categories and level2.id in selected_categories %}checked{% endif %}>
+                                            <label class="form-check-label" for="cat_{{ level2.id }}">
+                                                {{ level2.name }}
+                                            </label>
+                                        </div>
+                                        <div class="ms-4" id="children_{{ level2.id }}">
+                                            {% for level3 in level2.children %}
+                                            <div class="form-check">
+                                                <input class="form-check-input cat-child-{{ level2.id }} cat-child-{{ level1.id }}" type="checkbox" id="cat_{{ level3.id }}" name="categories" value="{{ level3.id }}" data-parent="{{ level2.id }}" onchange="updateParent(this)" {% if selected_categories and level3.id in selected_categories %}checked{% endif %}>
+                                                <label class="form-check-label text-muted" for="cat_{{ level3.id }}">
+                                                    {{ level3.name }}
+                                                </label>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    <!-- 支出分类 -->
+                    <div>
+                        <h6 class="text-danger"><i class="bi bi-arrow-up-circle"></i> 支出分类</h6>
+                        <div id="expenseTree" class="tree-container">
+                            {% for level1 in categories.expense %}
+                            <div class="tree-level-1">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="cat_{{ level1.id }}" name="categories" value="{{ level1.id }}" onchange="toggleChildren(this, '{{ level1.id }}')" {% if selected_categories and level1.id in selected_categories %}checked{% endif %}>
+                                    <label class="form-check-label fw-bold" for="cat_{{ level1.id }}">
+                                        {{ level1.name }} <small class="text-muted">({{ level1.code }})</small>
+                                    </label>
+                                </div>
+                                <div class="ms-4 collapse" id="children_{{ level1.id }}">
+                                    {% for level2 in level1.children %}
+                                    <div class="tree-level-2">
+                                        <div class="form-check">
+                                            <input class="form-check-input cat-child-{{ level1.id }}" type="checkbox" id="cat_{{ level2.id }}" name="categories" value="{{ level2.id }}" data-parent="{{ level1.id }}" onchange="toggleChildren(this, '{{ level2.id }}'); updateParent(this)" {% if selected_categories and level2.id in selected_categories %}checked{% endif %}>
+                                            <label class="form-check-label" for="cat_{{ level2.id }}">
+                                                {{ level2.name }}
+                                            </label>
+                                        </div>
+                                        <div class="ms-4 collapse" id="children_{{ level2.id }}">
+                                            {% for level3 in level2.children %}
+                                            <div class="form-check">
+                                                <input class="form-check-input cat-child-{{ level2.id }} cat-child-{{ level1.id }}" type="checkbox" id="cat_{{ level3.id }}" name="categories" value="{{ level3.id }}" data-parent="{{ level2.id }}" onchange="updateParent(this)" {% if selected_categories and level3.id in selected_categories %}checked{% endif %}>
+                                                <label class="form-check-label text-muted" for="cat_{{ level3.id }}">
+                                                    {{ level3.name }}
+                                                </label>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.tree-level-1 { margin-bottom: 0.5rem; }
+.tree-level-2 { margin-bottom: 0.25rem; }
+.tree-container .form-check-label { cursor: pointer; }
+.tree-container .form-check-input:checked + label { color: #0d6efd; font-weight: 500; }
+</style>
+
+<script>
+function toggleChildren(checkbox, parentId) {
+    const childrenContainer = document.getElementById('children_' + parentId);
+    if (childrenContainer) {
+        // 展开子节点
+        if (checkbox.checked) {
+            childrenContainer.classList.remove('collapse');
+        }
+        // 联动选中所有子节点
+        const children = childrenContainer.querySelectorAll('input[type="checkbox"]');
+        children.forEach(child => {
+            child.checked = checkbox.checked;
+            // 递归处理
+            if (child.id) {
+                const subChildren = document.getElementById('children_' + child.id.replace('cat_', ''));
+                if (subChildren) {
+                    subChildren.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = checkbox.checked);
+                }
+            }
+        });
+    }
+}
+
+function updateParent(checkbox) {
+    const parentId = checkbox.dataset.parent;
+    if (!parentId) return;
+    
+    const parentCheckbox = document.getElementById('cat_' + parentId);
+    if (!parentCheckbox) return;
+    
+    // 检查同级是否有选中的
+    const siblings = document.querySelectorAll('.cat-child-' + parentId);
+    const anyChecked = Array.from(siblings).some(s => s.checked);
+    
+    // 如果有任意子节点选中，父节点也要选中
+    parentCheckbox.checked = anyChecked;
+    
+    // 递归更新上级
+    if (parentCheckbox.dataset.parent) {
+        updateParent(parentCheckbox);
+    }
+}
+
+function expandAll() {
+    document.querySelectorAll('.collapse').forEach(el => el.classList.remove('collapse'));
+}
+
+function collapseAll() {
+    document.querySelectorAll('[id^="children_"]').forEach(el => el.classList.add('collapse'));
+}
+</script>
+{% endblock %}

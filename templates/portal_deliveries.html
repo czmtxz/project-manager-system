@@ -1,0 +1,152 @@
+{% extends "portal_base.html" %}
+
+{% block title %}出库记录 - 客户协同平台{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0"><i class="bi bi-box-seam"></i> 出库记录</h4>
+</div>
+
+<!-- 筛选条件 -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">出库单号</label>
+                <input type="text" class="form-control" name="order_number" 
+                       value="{{ request.args.get('order_number', '') }}" placeholder="请输入出库单号">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">开始日期</label>
+                <input type="date" class="form-control" name="start_date" value="{{ request.args.get('start_date', '') }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">结束日期</label>
+                <input type="date" class="form-control" name="end_date" value="{{ request.args.get('end_date', '') }}">
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">
+                    <i class="bi bi-search"></i> 筛选
+                </button>
+                <a href="{{ url_for('portal_deliveries') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise"></i> 重置
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 出库记录表格 -->
+<div class="card">
+    <div class="card-body p-0">
+        {% if deliveries %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>出库单号</th>
+                        <th>日期</th>
+                        <th>明细数量</th>
+                        <th>总金额</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in deliveries %}
+                    <tr>
+                        <td><code>{{ d.order_number }}</code></td>
+                        <td>{{ (d.order_date or '')[:10] }}</td>
+                        <td>{{ d.item_count }}</td>
+                        <td><strong class="text-danger">{{ "%.2f"|format(d.total_amount) }}</strong></td>
+                        <td>
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-circle"></i> 已完成
+                            </span>
+                        </td>
+                        <td>
+                            <a href="{{ url_for('portal_delivery_detail', id=d.id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-eye"></i> 查看详情
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-box" style="font-size: 3rem;"></i>
+            <p class="mt-2">暂无出库记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 分页 -->
+{% if pagination and pagination.pages > 1 %}
+<nav class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ pagination.prev_num }}&{{ request.args|exclude('page')|urlencode }}">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled">
+            <span class="page-link"><i class="bi bi-chevron-left"></i></span>
+        </li>
+        {% endif %}
+        
+        {% for p in pagination.iter_pages() %}
+            {% if p %}
+                {% if p == pagination.page %}
+                <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                {% else %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ p }}&{{ request.args|exclude('page')|urlencode }}">{{ p }}</a>
+                </li>
+                {% endif %}
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ pagination.next_num }}&{{ request.args|exclude('page')|urlencode }}">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled">
+            <span class="page-link"><i class="bi bi-chevron-right"></i></span>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<!-- 汇总信息 -->
+{% if deliveries %}
+<div class="card mt-4">
+    <div class="card-body">
+        <div class="row text-center">
+            <div class="col-md-4">
+                <div class="text-muted">出库单数量</div>
+                <div class="h4 mb-0 text-primary">{{ total_count }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">明细总数量</div>
+                <div class="h4 mb-0 text-primary">{{ total_items }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">总金额</div>
+                <div class="h4 mb-0 text-danger">{{ "%.2f"|format(total_amount) }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

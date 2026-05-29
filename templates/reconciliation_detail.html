@@ -1,0 +1,209 @@
+{% extends "nav_base.html" %}
+{% block title %}{{ recon.reconciliation_no }} - 对账详情{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="{{ url_for('reconciliation_list') }}" class="text-muted me-2"><i class="bi bi-arrow-left"></i></a>
+            <h4 class="d-inline">{{ recon.reconciliation_no }}</h4>
+            {% if recon.status == 'matched' %}
+            <span class="badge bg-success ms-2">对账一致</span>
+            {% elif recon.status == 'discrepancy' %}
+            <span class="badge bg-danger ms-2">存在差异</span>
+            {% elif recon.status == 'confirmed' %}
+            <span class="badge bg-info ms-2">已确认</span>
+            {% else %}
+            <span class="badge bg-secondary ms-2">待确认</span>
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2">
+            {% if recon.status in ['matched', 'discrepancy', 'pending'] %}
+            <form method="POST" action="{{ url_for('reconciliation_confirm', id=recon.id) }}">
+                <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('确认对账结果？')">
+                    <i class="bi bi-check-circle"></i> 确认对账
+                </button>
+            </form>
+            {% endif %}
+            <a href="{{ url_for('purchase_detail', id=recon.purchase_id) }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-cart3"></i> 查看采购单
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 左侧：对账汇总 -->
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header py-2">
+                    <h6 class="mb-0"><i class="bi bi-info-circle"></i> 基本信息</h6>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm table-borderless mb-0">
+                        <tr><td class="text-muted" style="width: 80px;">采购单号</td><td>{{ recon.purchase_no }}</td></tr>
+                        <tr><td class="text-muted">项目</td><td>{{ recon.project_name or '-' }}</td></tr>
+                        <tr><td class="text-muted">供应商</td><td>{{ recon.supplier or '-' }}</td></tr>
+                        <tr><td class="text-muted">对账日期</td><td>{{ recon.reconciliation_date or '-' }}</td></tr>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 数量对账 -->
+            <div class="card mb-3">
+                <div class="card-header py-2 {% if recon.qty_diff_rate|abs > recon.allowed_loss_rate %}bg-danger text-white{% else %}bg-success text-white{% endif %}">
+                    <h6 class="mb-0"><i class="bi bi-bullseye"></i> 数量对账</h6>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">采购总量</span>
+                        <span class="fw-bold">{{ "%.2f"|format(recon.purchase_quantity) }} 吨</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">运输总量</span>
+                        <span class="fw-bold">{{ "%.2f"|format(recon.total_transport_qty) }} 吨</span>
+                    </div>
+                    <hr>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">数量差异</span>
+                        <span class="fw-bold {% if recon.qty_diff_rate|abs > recon.allowed_loss_rate %}text-danger{% else %}text-success{% endif %}">
+                            {{ "%.2f"|format(recon.qty_diff) }} 吨
+                        </span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">差异率</span>
+                        <span class="fw-bold {% if recon.qty_diff_rate|abs > recon.allowed_loss_rate %}text-danger{% else %}text-success{% endif %}">
+                            {{ "%.2f"|format(recon.qty_diff_rate) }}%
+                        </span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">合理损耗率</span>
+                        <span>{{ recon.allowed_loss_rate }}%</span>
+                    </div>
+                    <div class="mt-3 text-center">
+                        {% if recon.qty_diff_rate|abs <= recon.allowed_loss_rate %}
+                        <span class="badge bg-success fs-6"><i class="bi bi-check-circle"></i> 数量正常</span>
+                        {% else %}
+                        <span class="badge bg-danger fs-6"><i class="bi bi-exclamation-triangle"></i> 数量异常</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- 费用对账 -->
+            <div class="card mb-3">
+                <div class="card-header py-2 {% if recon.freight_diff != 0 %}bg-warning text-dark{% else %}bg-success text-white{% endif %}">
+                    <h6 class="mb-0"><i class="bi bi-currency-yen"></i> 费用对账</h6>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">运费总额</span>
+                        <span class="fw-bold">¥{{ "%.2f"|format(recon.total_freight) }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">发票总额</span>
+                        <span class="fw-bold">¥{{ "%.2f"|format(recon.total_invoice_amount) }}</span>
+                    </div>
+                    <hr>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">费用差异</span>
+                        <span class="fw-bold {% if recon.freight_diff != 0 %}text-warning{% else %}text-success{% endif %}">
+                            ¥{{ "%.2f"|format(recon.freight_diff) }}
+                        </span>
+                    </div>
+                    <div class="mt-3 text-center">
+                        {% if recon.freight_diff == 0 %}
+                        <span class="badge bg-success fs-6"><i class="bi bi-check-circle"></i> 费用一致</span>
+                        {% else %}
+                        <span class="badge bg-warning text-dark fs-6"><i class="bi bi-exclamation-triangle"></i> 费用有差异</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：明细 -->
+        <div class="col-lg-8">
+            <!-- 采购明细 -->
+            <div class="card mb-3">
+                <div class="card-header py-2">
+                    <h6 class="mb-0"><i class="bi bi-list-ul"></i> 采购明细</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>品名</th>
+                                    <th>规格</th>
+                                    <th>单位</th>
+                                    <th class="text-end">数量</th>
+                                    <th class="text-end">单价</th>
+                                    <th class="text-end">金额</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in items %}
+                                <tr>
+                                    <td>{{ item.item_name }}</td>
+                                    <td>{{ item.specification or '-' }}</td>
+                                    <td>{{ item.unit }}</td>
+                                    <td class="text-end">{{ "%.2f"|format(item.quantity) }}</td>
+                                    <td class="text-end">{{ "%.2f"|format(item.unit_price) }}</td>
+                                    <td class="text-end">{{ "%.2f"|format(item.amount) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 运输明细 -->
+            <div class="card">
+                <div class="card-header py-2">
+                    <h6 class="mb-0"><i class="bi bi-truck"></i> 运输明细 ({{ transports|length }}车)</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>车次</th>
+                                    <th>车牌号</th>
+                                    <th>司机</th>
+                                    <th>日期</th>
+                                    <th>关联品名</th>
+                                    <th class="text-end">数量</th>
+                                    <th class="text-end">运费</th>
+                                    <th>发票</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for t in transports %}
+                                <tr>
+                                    <td>{{ t.batch_no }}</td>
+                                    <td>{{ t.vehicle_no or '-' }}</td>
+                                    <td>{{ t.driver_name or '-' }}</td>
+                                    <td>{{ t.transport_date or '-' }}</td>
+                                    <td>{{ t.item_name or '-' }}</td>
+                                    <td class="text-end">{{ "%.2f"|format(t.quantity) }}</td>
+                                    <td class="text-end">{{ "%.2f"|format(t.freight_amount) }}</td>
+                                    <td>{{ t.invoice_no or '-' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td colspan="5" class="text-end fw-bold">合计</td>
+                                    <td class="text-end fw-bold">{{ "%.2f"|format(recon.total_transport_qty) }}</td>
+                                    <td class="text-end fw-bold">¥{{ "%.2f"|format(recon.total_freight) }}</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

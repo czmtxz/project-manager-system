@@ -1,0 +1,275 @@
+{% extends "nav_base.html" %}
+{% block title %}确认识别结果 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <h4 class="mb-4"><i class="bi bi-check-circle"></i> 确认识别结果</h4>
+
+    <div class="row">
+        <!-- 左侧：原图预览 -->
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-image"></i> 原图</h6>
+                </div>
+                <div class="card-body text-center">
+                    <img src="{{ url_for('serve_ocr_image', filename=draft.image_path) }}"
+                         alt="原图" class="img-fluid rounded border" style="max-height: 400px;">
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-file-text"></i> 原始文本</h6>
+                </div>
+                <div class="card-body">
+                    <pre class="small text-muted" style="white-space: pre-wrap;">{{ draft.raw_text }}</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：识别结果 -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="bi bi-list-check"></i> 识别出的交易记录</h6>
+                    <div>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="selectAll(true)">
+                            全选
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll(false)">
+                            取消
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    {% if draft.transactions %}
+                    <div class="alert alert-warning" id="hintBox">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        请核对每条记录的日期、金额、类型是否正确，选择要入账的记录后点击确认。
+                    </div>
+
+                    <form id="confirmForm">
+                        <div id="transactionsList">
+                            {% for trans in draft.transactions %}
+                            <div class="card mb-3 border {% if trans.amount > 0 %}border-info{% else %}border-secondary{% endif %}">
+                                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                    <div class="form-check">
+                                        <input class="form-check-input trans-select" type="checkbox"
+                                               id="trans_{{ loop.index }}" data-index="{{ loop.index0 }}">
+                                        <label class="form-check-label" for="trans_{{ loop.index }}">
+                                            <strong>记录 #{{ loop.index }}</strong>
+                                        </label>
+                                    </div>
+                                    <span class="badge {% if trans.trans_type == 'income' %}bg-success{% else %}bg-danger{% endif %}">
+                                        {{ '收入' if trans.trans_type == 'income' else '支出' }}
+                                    </span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row g-2">
+                                        <div class="col-md-4">
+                                            <label class="form-label small">日期</label>
+                                            <input type="date" class="form-control form-control-sm trans-date"
+                                                   value="{{ trans.date[:10] if trans.date else '' }}">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">金额</label>
+                                            <input type="number" class="form-control form-control-sm trans-amount"
+                                                   step="0.01" value="{{ trans.amount }}">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">类型</label>
+                                            <select class="form-select form-select-sm trans-type">
+                                                <option value="expense" {% if trans.trans_type == 'expense' %}selected{% endif %}>支出</option>
+                                                <option value="income" {% if trans.trans_type == 'income' %}selected{% endif %}>收入</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">说明/商户</label>
+                                            <input type="text" class="form-control form-control-sm trans-merchant"
+                                                   value="{{ trans.merchant }}">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">支付方式</label>
+                                            <input type="text" class="form-control form-control-sm trans-payment"
+                                                   value="{{ trans.payment_method }}" placeholder="如：微信、支付宝、银行卡">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">项目</label>
+                                            <select class="form-select form-select-sm trans-project">
+                                                <option value="">-- 选择项目 --</option>
+                                                {% for p in projects %}
+                                                <option value="{{ p.id }}">{{ p.name }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">参与人</label>
+                                            <select class="form-select form-select-sm trans-participant">
+                                                <option value="">-- 选择参与人 --</option>
+                                                {% for par in participants %}
+                                                <option value="{{ par.id }}">{{ par.name }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label small">分类</label>
+                                            <select class="form-select form-select-sm trans-category">
+                                                <option value="">-- 选择分类 --</option>
+                                                <optgroup label="收入分类">
+                                                    {% for cat in categories if cat.type == 'income' %}
+                                                    <option value="{{ cat.id }}">{{ cat.name }}</option>
+                                                    {% endfor %}
+                                                </optgroup>
+                                                <optgroup label="支出分类">
+                                                    {% for cat in categories if cat.type == 'expense' %}
+                                                    <option value="{{ cat.id }}">{{ cat.name }}</option>
+                                                    {% endfor %}
+                                                </optgroup>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <!-- 批量设置 -->
+                        <div class="card mb-3 bg-light">
+                            <div class="card-body">
+                                <h6 class="mb-2"><i class="bi bi-magic"></i> 批量应用到已选记录</h6>
+                                <div class="row g-2">
+                                    <div class="col-md-4">
+                                        <select class="form-select form-select-sm" id="batchProject">
+                                            <option value="">批量设置项目</option>
+                                            {% for p in projects %}
+                                            <option value="{{ p.id }}">{{ p.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <select class="form-select form-select-sm" id="batchParticipant">
+                                            <option value="">批量设置参与人</option>
+                                            {% for par in participants %}
+                                            <option value="{{ par.id }}">{{ par.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <select class="form-select form-select-sm" id="batchCategory">
+                                            <option value="">批量设置分类</option>
+                                            {% for cat in categories %}
+                                            <option value="{{ cat.id }}">{{ cat.name }} ({{ '收入' if cat.type == 'income' else '支出' }})</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="applyBatch()">
+                                        <i class="bi bi-check2-all"></i> 应用批量设置
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-primary" onclick="confirmRecords()">
+                                <i class="bi bi-check-circle"></i> 确认入账
+                            </button>
+                            <a href="{{ url_for('ocr_upload') }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> 重新上传
+                            </a>
+                        </div>
+                    </form>
+                    {% else %}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        未识别出有效的交易记录，请检查图片是否包含金额、日期等信息。
+                    </div>
+                    <a href="{{ url_for('ocr_upload') }}" class="btn btn-primary">
+                        <i class="bi bi-arrow-left"></i> 返回重新上传
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function selectAll(select) {
+    document.querySelectorAll('.trans-select').forEach(cb => {
+        cb.checked = select;
+    });
+}
+
+function applyBatch() {
+    const projectId = document.getElementById('batchProject').value;
+    const participantId = document.getElementById('batchParticipant').value;
+    const categoryId = document.getElementById('batchCategory').value;
+
+    document.querySelectorAll('.trans-select:checked').forEach(cb => {
+        const card = cb.closest('.card');
+        if (projectId) card.querySelector('.trans-project').value = projectId;
+        if (participantId) card.querySelector('.trans-participant').value = participantId;
+        if (categoryId) card.querySelector('.trans-category').value = categoryId;
+    });
+
+    alert('批量设置已应用到选中的记录');
+}
+
+function confirmRecords() {
+    const records = [];
+    document.querySelectorAll('.trans-select:checked').forEach(cb => {
+        const card = cb.closest('.card');
+        records.push({
+            selected: true,
+            date: card.querySelector('.trans-date').value,
+            amount: card.querySelector('.trans-amount').value,
+            trans_type: card.querySelector('.trans-type').value,
+            merchant: card.querySelector('.trans-merchant').value,
+            payment_method: card.querySelector('.trans-payment').value,
+            project_id: card.querySelector('.trans-project').value,
+            participant_id: card.querySelector('.trans-participant').value,
+            category_id: card.querySelector('.trans-category').value,
+            description: card.querySelector('.trans-merchant').value
+        });
+    });
+
+    if (records.length === 0) {
+        alert('请至少选择一条记录');
+        return;
+    }
+
+    // 检查必填项
+    for (let i = 0; i < records.length; i++) {
+        if (!records[i].project_id) {
+            alert(`第 ${i+1} 条记录未选择项目`);
+            return;
+        }
+        if (!records[i].date || !records[i].amount) {
+            alert(`第 ${i+1} 条记录日期或金额不能为空`);
+            return;
+        }
+    }
+
+    // 提交
+    fetch('{{ url_for("ocr_confirm", draft_id=draft_id) }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({records: records})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(`成功保存 ${data.saved} 条记录`);
+            window.location.href = '{{ url_for("transaction_records") }}';
+        } else {
+            alert('保存失败: ' + data.message);
+        }
+    })
+    .catch(e => {
+        alert('提交失败: ' + e);
+    });
+}
+</script>
+{% endblock %}

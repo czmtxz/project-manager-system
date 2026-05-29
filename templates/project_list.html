@@ -1,0 +1,124 @@
+{% extends "nav_base.html" %}
+{% block title %}项目列表 - 项目管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-folder"></i> 项目列表</h4>
+        <a href="{{ url_for('project_add') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> 新增项目
+        </a>
+    </div>
+
+    {% if project_data %}
+    <div class="row g-3">
+        {% for item in project_data %}
+        <div class="col-xl-4 col-md-6">
+            <div class="card project-card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">
+                        <a href="{{ url_for('project_detail', pid=item.project.id) }}" class="text-decoration-none">
+                            {{ item.project.name }}
+                        </a>
+                    </h6>
+                    {% if item.project.status == '进行中' %}
+                    <span class="badge bg-primary">{{ item.project.status }}</span>
+                    {% elif item.project.status == '已完成' %}
+                    <span class="badge bg-success">{{ item.project.status }}</span>
+                    {% elif item.project.status == '已暂停' %}
+                    <span class="badge bg-warning text-dark">{{ item.project.status }}</span>
+                    {% else %}
+                    <span class="badge bg-secondary">{{ item.project.status }}</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if item.project.description %}
+                    <p class="text-muted small">{{ item.project.description[:80] }}</p>
+                    {% endif %}
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <div class="p-2 bg-light rounded text-center">
+                                <small class="text-muted d-block">收入合同</small>
+                                <strong class="text-success">{{ "%.2f"|format(item.income) }}</strong>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-2 bg-light rounded text-center">
+                                <small class="text-muted d-block">支出合同</small>
+                                <strong class="text-danger">{{ "%.2f"|format(item.expense) }}</strong>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2 p-2 rounded text-center {% if item.balance >= 0 %}bg-success-subtle{% else %}bg-danger-subtle{% endif %}">
+                        <small class="text-muted d-block">利润</small>
+                        <strong class="{% if item.balance >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            {{ "%.2f"|format(item.balance) }}
+                        </strong>
+                    </div>
+                </div>
+                <div class="card-footer text-muted small">
+                    <i class="bi bi-calendar3"></i> {{ item.project.created_at[:10] if item.project.created_at else '-' }}
+                    <div class="float-end">
+                        <a href="{{ url_for('project_detail', pid=item.project.id) }}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye"></i> 详情
+                        </a>
+                        {% if session.role == 'admin' %}
+                        <a href="{{ url_for('project_delete', pid=item.project.id) }}" class="btn btn-sm btn-outline-danger"
+                           onclick="return confirmDeleteProject(this)">
+                            <i class="bi bi-trash"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+        <i class="bi bi-inbox" style="font-size: 4rem;"></i>
+        <p class="mt-3 fs-5">暂无项目</p>
+        <a href="{{ url_for('project_add') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> 创建第一个项目
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function confirmDeleteProject(link) {
+    // 第一步：确认删除
+    if (!confirm('确定要删除此项目吗？此操作不可恢复！')) {
+        return false;
+    }
+    
+    // 第二步：输入管理员密码
+    const password = prompt('请输入管理员密码以确认删除：');
+    if (!password) {
+        return false;
+    }
+    
+    // 第三步：验证密码（使用AJAX）
+    fetch('/api/verify-admin-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: password })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            // 密码正确，继续删除
+            window.location.href = link.href;
+        } else {
+            alert('密码错误，删除已取消');
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('验证失败，请重试');
+    });
+    
+    return false;
+}
+</script>
+{% endblock %}

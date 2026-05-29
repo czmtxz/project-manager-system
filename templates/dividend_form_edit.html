@@ -1,0 +1,72 @@
+{% extends "nav_base.html" %}
+{% block title %}编辑分红记录 - 项目投资管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-piggy-bank"></i> 编辑分红记录</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label class="form-label">参与人 <span class="text-danger">*</span></label>
+                            <select name="participant_id" class="form-select" required>
+                                <option value="">请选择参与人...</option>
+                                {% for p in participants %}
+                                <option value="{{ p.id }}" {% if dividend.participant_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">分红日期 <span class="text-danger">*</span></label>
+                                    <input type="date" name="dividend_date" class="form-control"
+                                           value="{{ dividend.dividend_date or '' }}" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">分红金额 <span class="text-danger">*</span></label>
+                                    <input type="number" name="amount" class="form-control" step="0.01" min="0.01"
+                                           value="{{ dividend.amount or '' }}" required>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">分红周期</label>
+                                    <input type="text" name="period" class="form-control"
+                                           value="{{ dividend.period or '' }}" placeholder="如：2024年第一季度">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">支付方式</label>
+                                    <input type="text" name="payment_method" class="form-control"
+                                           value="{{ dividend.payment_method or '' }}" placeholder="如：银行转账">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">备注</label>
+                            <textarea name="remark" class="form-control" rows="2">{{ dividend.remark or '' }}</textarea>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> 保存修改
+                            </button>
+                            <a href="{{ url_for('project_detail', pid=pid) }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> 返回项目
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

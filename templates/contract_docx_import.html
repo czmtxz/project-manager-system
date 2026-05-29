@@ -1,0 +1,121 @@
+{% extends "nav_base.html" %}
+{% block title %}合同文档导入 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-file-earmark-word"></i> 合同文档导入</h5>
+                    <small class="text-muted">上传Word合同文档自动解析，或上传扫描件作为附件</small>
+                </div>
+                <div class="card-body">
+                    {% if not contract_data %}
+                    <!-- 上传表单 -->
+                    <form method="POST" enctype="multipart/form-data" id="uploadForm">
+                        <div class="mb-3">
+                            <label class="form-label">所属项目</label>
+                            <select name="project_id" class="form-select">
+                                <option value="">-- 不指定 --</option>
+                                {% for p in projects %}
+                                <option value="{{ p.id }}">{{ p.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">合同Word文档</label>
+                            <input type="file" name="docx_file" class="form-control" accept=".docx,.doc,.jpg,.jpeg,.png,.pdf">
+                            <small class="text-muted">支持 .docx/.doc Word文档（自动解析）或图片/PDF扫描件（作为附件）</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">扫描件附件（可选）</label>
+                            <input type="file" name="scan_image" class="form-control" accept=".jpg,.jpeg,.png,.pdf">
+                            <small class="text-muted">如有签字盖章的扫描件，可额外上传</small>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload"></i> 上传并解析
+                        </button>
+                    </form>
+                    {% else %}
+                    <!-- 解析结果确认 -->
+                    <form method="POST" action="{{ url_for('contract_docx_save') }}">
+                        <input type="hidden" name="attachment" value="{{ attachment }}">
+                        <input type="hidden" name="project_id" value="{{ project_id }}">
+                        
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> 以下信息已从Word文档中自动提取，请核对并修改
+                        </div>
+                        
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">合同编号 <span class="text-danger">*</span></label>
+                                <input type="text" name="contract_no" class="form-control" value="{{ contract_data.contract_no }}" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">合同名称</label>
+                                <input type="text" name="contract_name" class="form-control" value="{{ contract_data.contract_name }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">合同类型</label>
+                                <select name="contract_type" class="form-select">
+                                    <option value="支出合同" {% if contract_data.contract_type == '支出合同' %}selected{% endif %}>支出合同</option>
+                                    <option value="收入合同" {% if contract_data.contract_type == '收入合同' %}selected{% endif %}>收入合同</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">对方单位</label>
+                                <input type="text" name="party" class="form-control" value="{{ contract_data.party }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">合同金额</label>
+                                <input type="number" name="amount" class="form-control" step="0.01" value="{{ contract_data.amount }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">税率(%)</label>
+                                <input type="number" name="tax_rate" class="form-control" step="0.01" value="{{ contract_data.tax_rate }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">签订日期</label>
+                                <input type="date" name="sign_date" class="form-control" value="{{ contract_data.sign_date }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">生效日期</label>
+                                <input type="date" name="start_date" class="form-control" value="{{ contract_data.start_date }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">到期日期</label>
+                                <input type="date" name="end_date" class="form-control" value="{{ contract_data.end_date }}">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">合同摘要</label>
+                                <textarea name="description" class="form-control" rows="2">{{ contract_data.description }}</textarea>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">备注</label>
+                                <input type="text" name="remark" class="form-control" placeholder="补充说明">
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex gap-2 mt-3">
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-check-circle"></i> 确认保存
+                            </button>
+                            <a href="{{ url_for('contract_docx_import') }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> 重新上传
+                            </a>
+                        </div>
+                    </form>
+                    {% endif %}
+                    
+                    <div class="mt-3">
+                        <a href="{{ url_for('contract_list') }}" class="btn btn-outline-secondary btn-sm">返回合同列表</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

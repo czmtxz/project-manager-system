@@ -1,0 +1,792 @@
+{% extends "nav_base.html" %}
+{% from 'macros/import_modal.html' import import_btn, import_modal %}
+{% block title %}{{ order.order_no }} - 销售出库单详情{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <!-- 页面标题 -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="{{ url_for('sales_order_list') }}" class="text-muted me-2"><i class="bi bi-arrow-left"></i></a>
+            <h4 class="d-inline">{{ order.order_no }}</h4>
+            {% if order.status == 'pending' %}
+            <span class="badge bg-secondary ms-2">待处理</span>
+            {% elif order.status == 'partial' %}
+            <span class="badge bg-primary ms-2">运输中</span>
+            {% elif order.status == 'delivered' %}
+            <span class="badge bg-warning text-dark ms-2">已送达</span>
+            {% elif order.status == 'completed' %}
+            <span class="badge bg-success ms-2">已完成</span>
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2">
+            {% if order.status == 'pending' %}
+            <a href="{{ url_for('sales_order_edit', id=order.id) }}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-pencil"></i> 编辑
+            </a>
+            <a href="{{ url_for('sales_order_delete', id=order.id) }}" class="btn btn-outline-danger btn-sm"
+               onclick="return confirm('确定要删除此出库单吗？')">
+                <i class="bi bi-trash"></i> 删除
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 左侧：基本信息 -->
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header py-2">
+                    <h6 class="mb-0"><i class="bi bi-info-circle"></i> 基本信息</h6>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm table-borderless mb-0">
+                        <tr><td class="text-muted" style="width: 80px;">项目</td><td>{{ order.project_name or '-' }}</td></tr>
+                        <tr><td class="text-muted">客户名称</td><td>{{ order.customer_name or '-' }}</td></tr>
+                        <tr><td class="text-muted">下单日期</td><td>{{ order.order_date or '-' }}</td></tr>
+                        <tr><td class="text-muted">交货日期</td><td>{{ order.delivery_date or '-' }}</td></tr>
+                        <tr><td class="text-muted">销售金额</td><td class="fw-bold">{{ "%.2f"|format(order.total_amount or 0) }}</td></tr>
+                        <tr><td class="text-muted">关联合同</td><td>{{ order.contract_name or '-' }}</td></tr>
+                        {% if order.attachment %}
+                        <tr><td class="text-muted">附件</td><td><a href="{{ url_for('serve_upload_file', folder='sales_orders', filename=order.attachment) }}" target="_blank">查看附件</a></td></tr>
+                        {% endif %}
+                        <tr><td class="text-muted">备注</td><td>{{ order.remark or '-' }}</td></tr>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 汇总信息 -->
+            <div class="card mb-3">
+                <div class="card-header py-2 bg-info text-white">
+                    <h6 class="mb-0"><i class="bi bi-calculator"></i> 汇总信息</h6>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm mb-0">
+                        <tr>
+                            <td class="text-muted">销售总量</td>
+                            <td class="text-end fw-bold">{{ "%.2f"|format(total_item_qty) }} 吨</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">运输总量</td>
+                            <td class="text-end fw-bold">{{ "%.2f"|format(total_transport_qty) }} 吨</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">数量差异</td>
+                            <td class="text-end {% if total_item_qty > 0 and (total_transport_qty - total_item_qty)|abs / total_item_qty * 100 > 0.5 %}text-danger{% else %}text-success{% endif %}">
+                                {{ "%.2f"|format(total_transport_qty - total_item_qty) }} 吨
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">运费总额</td>
+                            <td class="text-end fw-bold">¥{{ "%.2f"|format(total_freight) }}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：明细和运输记录 -->
+        <div class="col-lg-8">
+            <!-- 销售明细 -->
+            <div class="card mb-3">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="bi bi-list-ul"></i> 销售明细</h6>
+                    <div class="d-flex gap-2">
+                        <a href="{{ url_for('sales_order_reconciliation', order_id=order.id) }}" class="btn btn-sm btn-success" title="对账差异分析">
+                            <i class="bi bi-calculator"></i> 对账差异
+                        </a>
+                        <button class="btn btn-sm btn-warning" id="batchLinkTransportBtn" style="display:none" onclick="batchLinkTransport()">
+                            <i class="bi bi-link"></i> 关联运输 (<span id="selectedItemCount">0</span>)
+                        </button>
+                        {{ import_btn('importSalesItemsModal', 'btn-sm btn-outline-primary', '导入') }}
+                        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addItemModal">
+                            <i class="bi bi-plus-circle"></i> 新增明细
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    {% if items %}
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width:40px"><input type="checkbox" class="form-check-input" id="itemSelectAll" onchange="toggleItemSelectAll()"></th>
+                                    <th>品名</th>
+                                    <th>规格型号</th>
+                                    <th>单位</th>
+                                    <th class="text-end">数量</th>
+                                    <th class="text-end">单价</th>
+                                    <th class="text-end">金额</th>
+                                    <th style="width:100px">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in items %}
+                                <tr data-item-id="{{ item.id }}">
+                                    <td>
+                                        <input type="checkbox" class="form-check-input item-select-check" value="{{ item.id }}" data-item-name="{{ item.item_name }}">
+                                    </td>
+                                    <td>{{ item.item_name }}</td>
+                                    <td>{{ item.specification or '-' }}</td>
+                                    <td>{{ item.unit }}</td>
+                                    <td class="text-end">{{ "%.2f"|format(item.quantity) }}</td>
+                                    <td class="text-end">{{ "%.2f"|format(item.unit_price) }}</td>
+                                    <td class="text-end">{{ "%.2f"|format(item.amount) }}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary" onclick="editSalesItem({{ item.id }})" title="编辑">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" onclick="deleteSalesItem({{ item.id }})" title="删除">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td colspan="3" class="text-end fw-bold">合计</td>
+                                    <td class="text-end fw-bold">{{ "%.2f"|format(total_item_qty) }}</td>
+                                    <td></td>
+                                    <td class="text-end fw-bold">{{ "%.2f"|format(order.total_amount or 0) }}</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="p-3 text-center text-muted">暂无销售明细</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- 运输记录 -->
+            <div class="card">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="bi bi-truck"></i> 运输记录 ({{ transports|length }}车)</h6>
+                    <button type="button" class="btn btn-outline-success btn-sm" onclick="showTransportModal()">
+                        <i class="bi bi-plus"></i> 添加运输记录
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    {% if transports %}
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>车次</th>
+                                    <th>车牌号</th>
+                                    <th>司机</th>
+                                    <th>运输日期</th>
+                                    <th class="text-end">数量</th>
+                                    <th class="text-end">运费</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for t in transports %}
+                                <tr data-id="{{ t.id }}">
+                                    <td>{{ t.batch_no }}</td>
+                                    <td>{{ t.vehicle_no or '-' }}</td>
+                                    <td>{{ t.driver_name or '-' }}</td>
+                                    <td>{{ t.transport_date or '-' }}</td>
+                                    <td class="text-end">{{ "%.2f"|format(t.quantity) }}</td>
+                                    <td class="text-end">{{ "%.2f"|format(t.freight_amount) }}</td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-outline-secondary" onclick="editTransport({{ t.id }})" title="编辑">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-danger" onclick="deleteTransport({{ t.id }})" title="删除">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td colspan="4" class="text-end fw-bold">合计</td>
+                                    <td class="text-end fw-bold">{{ "%.2f"|format(total_transport_qty) }}</td>
+                                    <td class="text-end fw-bold">¥{{ "%.2f"|format(total_freight) }}</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="p-4 text-center text-muted">
+                        <i class="bi bi-truck fs-1"></i>
+                        <p class="mt-2 mb-0">暂无运输记录</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 运输记录弹窗 -->
+<div class="modal fade" id="transportModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="transportModalTitle">添加运输记录</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="transportForm" method="POST" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <input type="hidden" name="transport_id" id="transport_id">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">车次编号</label>
+                                <input type="text" name="batch_no" id="batch_no" class="form-control" placeholder="如: 第1车">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">车牌号</label>
+                                <input type="text" name="vehicle_no" id="vehicle_no" class="form-control" placeholder="车牌号">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">运输日期</label>
+                                <input type="date" name="transport_date" id="transport_date" class="form-control">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">司机姓名</label>
+                                <input type="text" name="driver_name" id="driver_name" class="form-control" placeholder="司机姓名">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">司机电话</label>
+                                <input type="text" name="driver_phone" id="driver_phone" class="form-control" placeholder="司机电话">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">运输数量</label>
+                                <input type="number" name="quantity" id="quantity" class="form-control" step="0.01" placeholder="0.00">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">单价运费</label>
+                                <input type="number" name="unit_price" id="unit_price" class="form-control" step="0.01" placeholder="元/吨">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">运费金额</label>
+                                <input type="number" name="freight_amount" id="freight_amount" class="form-control" step="0.01" placeholder="0.00">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">附件（过磅单等）</label>
+                        <input type="file" name="attachment" class="form-control" accept=".jpg,.jpeg,.png,.pdf">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">备注</label>
+                        <input type="text" name="remark" id="remark" class="form-control" placeholder="备注">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+let transportModal;
+const ORDER_ID = {{ order.id }};
+
+document.addEventListener('DOMContentLoaded', function() {
+    transportModal = new bootstrap.Modal(document.getElementById('transportModal'));
+
+    // 自动计算运费
+    document.getElementById('quantity').addEventListener('input', calcFreight);
+    document.getElementById('unit_price').addEventListener('input', calcFreight);
+
+    // 表单提交
+    document.getElementById('transportForm').addEventListener('submit', saveTransport);
+});
+
+function calcFreight() {
+    const qty = parseFloat(document.getElementById('quantity').value) || 0;
+    const price = parseFloat(document.getElementById('unit_price').value) || 0;
+    document.getElementById('freight_amount').value = (qty * price).toFixed(2);
+}
+
+function showTransportModal() {
+    document.getElementById('transportForm').reset();
+    document.getElementById('transport_id').value = '';
+    document.getElementById('transportModalTitle').textContent = '添加运输记录';
+
+    // 设置默认车次编号
+    const currentCount = {{ transports|length }};
+    document.getElementById('batch_no').value = '第' + (currentCount + 1) + '车';
+
+    // 设置默认日期
+    document.getElementById('transport_date').value = new Date().toISOString().split('T')[0];
+
+    transportModal.show();
+}
+
+function editTransport(id) {
+    // 加载运输记录数据并显示弹窗
+    fetch(`/api/sales/transport/${id}`)
+        .then(res => res.json())
+        .then(data => {
+            document.getElementById('transport_id').value = data.id;
+            document.getElementById('batch_no').value = data.batch_no;
+            document.getElementById('vehicle_no').value = data.vehicle_no || '';
+            document.getElementById('driver_name').value = data.driver_name || '';
+            document.getElementById('driver_phone').value = data.driver_phone || '';
+            document.getElementById('transport_date').value = data.transport_date || '';
+            document.getElementById('quantity').value = data.quantity;
+            document.getElementById('unit_price').value = data.unit_price;
+            document.getElementById('freight_amount').value = data.freight_amount;
+            document.getElementById('remark').value = data.remark || '';
+
+            document.getElementById('transportModalTitle').textContent = '编辑运输记录';
+            transportModal.show();
+        });
+}
+
+function saveTransport(e) {
+    e.preventDefault();
+
+    const formData = new FormData(document.getElementById('transportForm'));
+    formData.append('order_id', ORDER_ID);
+
+    fetch('/api/sales/transport/save', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message || '保存失败');
+        }
+    });
+}
+
+function deleteTransport(id) {
+    if (!confirm('确定要删除此运输记录吗？')) return;
+
+    fetch(`/api/sales/transport/${id}/delete`, { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.message || '删除失败');
+            }
+        });
+}
+
+// 计算明细金额
+function calcItemAmount() {
+    const qty = parseFloat(document.getElementById('item_qty').value) || 0;
+    const price = parseFloat(document.getElementById('item_price').value) || 0;
+    document.getElementById('item_amount_display').textContent = (qty * price).toFixed(2);
+}
+
+// 保存销售明细
+function saveSalesItem() {
+    const item_name = document.getElementById('item_name').value.trim();
+    if (!item_name) { alert('请输入品名'); return; }
+
+    const btn = document.getElementById('saveItemBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 保存中...';
+
+    fetch('/api/sales/order/item/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            order_id: ORDER_ID,
+            item_name: item_name,
+            specification: document.getElementById('item_spec').value.trim(),
+            unit: document.getElementById('item_unit').value.trim() || '吨',
+            quantity: parseFloat(document.getElementById('item_qty').value) || 0,
+            unit_price: parseFloat(document.getElementById('item_price').value) || 0
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('addItemModal')).hide();
+            location.reload();
+        } else {
+            alert('保存失败: ' + (data.error || '未知错误'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle"></i> 保存';
+        }
+    })
+    .catch(err => {
+        alert('保存失败，请重试');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-circle"></i> 保存';
+    });
+}
+
+// 删除销售明细
+function deleteSalesItem(itemId) {
+    if (!confirm('确定删除该条明细？')) return;
+
+    fetch(`/api/sales/order/item/${itemId}/delete`, { method: 'POST' })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('删除失败: ' + (data.error || '未知错误'));
+        }
+    })
+    .catch(err => alert('删除失败，请重试'));
+}
+
+// 编辑销售明细
+let currentEditItemId = null;
+
+function editSalesItem(itemId) {
+    currentEditItemId = itemId;
+
+    // 从表格行获取数据
+    const row = document.querySelector(`tr[data-item-id="${itemId}"]`);
+    if (!row) return;
+
+    const cells = row.querySelectorAll('td');
+    document.getElementById('edit_item_name').value = cells[0].textContent.trim();
+    document.getElementById('edit_item_spec').value = cells[1].textContent.trim() === '-' ? '' : cells[1].textContent.trim();
+    document.getElementById('edit_item_unit').value = cells[2].textContent.trim();
+    document.getElementById('edit_item_qty').value = cells[3].textContent.trim();
+    document.getElementById('edit_item_price').value = cells[4].textContent.trim();
+    calcEditItemAmount();
+
+    new bootstrap.Modal(document.getElementById('editItemModal')).show();
+}
+
+function calcEditItemAmount() {
+    const qty = parseFloat(document.getElementById('edit_item_qty').value) || 0;
+    const price = parseFloat(document.getElementById('edit_item_price').value) || 0;
+    document.getElementById('edit_item_amount_display').textContent = (qty * price).toFixed(2);
+}
+
+function saveEditSalesItem() {
+    const item_name = document.getElementById('edit_item_name').value.trim();
+    if (!item_name) { alert('请输入品名'); return; }
+    if (!currentEditItemId) { alert('未选择明细'); return; }
+
+    const btn = document.getElementById('saveEditItemBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 保存中...';
+
+    fetch(`/api/sales/order/item/${currentEditItemId}/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            item_name: item_name,
+            specification: document.getElementById('edit_item_spec').value.trim(),
+            unit: document.getElementById('edit_item_unit').value.trim() || '吨',
+            quantity: parseFloat(document.getElementById('edit_item_qty').value) || 0,
+            unit_price: parseFloat(document.getElementById('edit_item_price').value) || 0
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('editItemModal')).hide();
+            location.reload();
+        } else {
+            alert('保存失败: ' + (data.error || '未知错误'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle"></i> 保存';
+        }
+    })
+    .catch(err => {
+        alert('保存失败，请重试');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-circle"></i> 保存';
+    });
+}
+</script>
+
+<!-- 新增销售明细弹窗 -->
+<div class="modal fade" id="addItemModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新增销售明细</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">品名 <span class="text-danger">*</span></label>
+                        <input type="text" id="item_name" class="form-control" placeholder="如：砂石料">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">规格型号</label>
+                        <input type="text" id="item_spec" class="form-control" placeholder="如：5-10mm">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">单位</label>
+                        <input type="text" id="item_unit" class="form-control" value="吨" placeholder="吨">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">数量</label>
+                        <input type="number" id="item_qty" class="form-control" step="0.01" value="0" oninput="calcItemAmount()">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">单价（元）</label>
+                        <input type="number" id="item_price" class="form-control" step="0.01" value="0" oninput="calcItemAmount()">
+                    </div>
+                    <div class="col-12">
+                        <div class="alert alert-info py-2 mb-0">
+                            金额：<strong id="item_amount_display">0.00</strong> 元
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="saveItemBtn" onclick="saveSalesItem()">
+                    <i class="bi bi-check-circle"></i> 保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑销售明细弹窗 -->
+<div class="modal fade" id="editItemModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">编辑销售明细</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">品名 <span class="text-danger">*</span></label>
+                        <input type="text" id="edit_item_name" class="form-control" placeholder="如：砂石料">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">规格型号</label>
+                        <input type="text" id="edit_item_spec" class="form-control" placeholder="如：5-10mm">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">单位</label>
+                        <input type="text" id="edit_item_unit" class="form-control" value="吨" placeholder="吨">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">数量</label>
+                        <input type="number" id="edit_item_qty" class="form-control" step="0.01" value="0" oninput="calcEditItemAmount()">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">单价（元）</label>
+                        <input type="number" id="edit_item_price" class="form-control" step="0.01" value="0" oninput="calcEditItemAmount()">
+                    </div>
+                    <div class="col-12">
+                        <div class="alert alert-info py-2 mb-0">
+                            金额：<strong id="edit_item_amount_display">0.00</strong> 元
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="saveEditItemBtn" onclick="saveEditSalesItem()">
+                    <i class="bi bi-check-circle"></i> 保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 批量关联运输记录弹窗 -->
+<div class="modal fade" id="batchLinkModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">批量关联运输记录</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">已选销售明细</label>
+                    <div id="selectedItemsDisplay" class="p-2 border rounded bg-light"></div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0">选择运输记录（可多选）</label>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="selectAllTransports()">
+                            <i class="bi bi-check-all"></i> 一键全选
+                        </button>
+                    </div>
+                    <div id="transportCheckboxes" style="max-height:200px; overflow-y:auto; border:1px solid #dee2e6; border-radius:4px; padding:10px;">
+                        <!-- 动态加载 -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="confirmBatchLinkBtn" onclick="confirmBatchLink()">
+                    <i class="bi bi-check-circle"></i> 确认关联
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% set si_ocr_hidden %}<input type="hidden" name="import_type" value="ocr">{% endset %}
+{% set si_xls_hidden %}<input type="hidden" name="import_type" value="excel">{% endset %}
+{{ import_modal(
+    'importSalesItemsModal',
+    '销售明细导入',
+    image_action=url_for('sales_order_item_import', order_id=order.id),
+    excel_action=url_for('sales_order_item_import', order_id=order.id),
+    image_field='ocr_image',
+    image_multiple=true,
+    excel_field='excel_file',
+    image_hint='上传出库单截图，识别品名、规格、数量、单价。',
+    excel_hint='<p class="mb-0">表头：品名、规格型号、单位、数量、单价。</p>',
+    image_extra=si_ocr_hidden,
+    excel_extra=si_xls_hidden
+) }}
+
+<script>
+// 全选/取消全选销售明细
+function toggleItemSelectAll() {
+    const checked = document.getElementById('itemSelectAll').checked;
+    document.querySelectorAll('.item-select-check').forEach(cb => { cb.checked = checked; });
+    updateItemSelection();
+}
+
+function updateItemSelection() {
+    const checked = document.querySelectorAll('.item-select-check:checked');
+    const btn = document.getElementById('batchLinkTransportBtn');
+    const countSpan = document.getElementById('selectedItemCount');
+    if (checked.length > 0) {
+        btn.style.display = '';
+        countSpan.textContent = checked.length;
+    } else {
+        btn.style.display = 'none';
+    }
+}
+
+// 批量关联运输记录
+function batchLinkTransport() {
+    const checked = document.querySelectorAll('.item-select-check:checked');
+    if (checked.length === 0) { alert('请先选择销售明细'); return; }
+    
+    let itemListHtml = '';
+    checked.forEach(cb => {
+        itemListHtml += `<span class="badge bg-primary me-1">${cb.dataset.itemName}</span>`;
+    });
+    document.getElementById('selectedItemsDisplay').innerHTML = itemListHtml;
+    
+    const transportList = document.getElementById('transportCheckboxes');
+    transportList.innerHTML = '<div class="text-center"><span class="spinner-border spinner-border-sm"></span> 加载中...</div>';
+    
+    // 获取运输记录
+    fetch('/api/transport/list?limit=100')
+    .then(res => res.json())
+    .then(data => {
+        transportList.innerHTML = '';
+        if (data.records && data.records.length > 0) {
+            data.records.forEach(t => {
+                transportList.innerHTML += `
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input transport-link-check" value="${t.id}" id="link_t_${t.id}">
+                        <label class="form-check-label" for="link_t_${t.id}">${t.batch_no || '-'} - ${t.vehicle_no || '-'} (${t.transport_date || '-'})</label>
+                    </div>
+                `;
+            });
+        } else {
+            transportList.innerHTML = '<div class="text-muted">暂无运输记录</div>';
+        }
+    })
+    .catch(err => {
+        transportList.innerHTML = '<div class="text-danger">加载失败</div>';
+    });
+    
+    new bootstrap.Modal(document.getElementById('batchLinkModal')).show();
+}
+
+// 一键全选/取消全选运输记录
+function selectAllTransports() {
+    const checkboxes = document.querySelectorAll('.transport-link-check');
+    if (checkboxes.length === 0) return;
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    checkboxes.forEach(cb => { cb.checked = !allChecked; });
+}
+
+// 确认批量关联
+function confirmBatchLink() {
+    const itemIds = [];
+    document.querySelectorAll('.item-select-check:checked').forEach(cb => {
+        itemIds.push(parseInt(cb.value));
+    });
+    
+    const transportIds = [];
+    document.querySelectorAll('.transport-link-check:checked').forEach(cb => {
+        transportIds.push(parseInt(cb.value));
+    });
+    
+    if (transportIds.length === 0) { alert('请选择要关联的运输记录'); return; }
+    
+    const btn = document.getElementById('confirmBatchLinkBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 关联中...';
+    
+    fetch('/api/sales/batch-link-transport', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_ids: itemIds, transport_ids: transportIds })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            alert(`成功关联 ${data.linked} 条记录`);
+            location.reload();
+        } else {
+            alert('关联失败: ' + (data.error || '未知错误'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle"></i> 确认关联';
+        }
+    })
+    .catch(err => {
+        alert('关联失败，请重试');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-circle"></i> 确认关联';
+    });
+}
+
+// 监听复选框变化
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('item-select-check')) {
+        updateItemSelection();
+    }
+});
+</script>
+
+{% endblock %}

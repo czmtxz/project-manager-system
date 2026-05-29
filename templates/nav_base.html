@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}项目投资管理系统{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{% if session.role == 'client_collab' %}{{ url_for('admin_client_accounts') }}{% else %}{{ url_for('dashboard') }}{% endif %}">
+                <i class="bi bi-kanban"></i> {% if session.role == 'client_collab' %}客户协同管理{% else %}项目投资管理系统{% endif %}
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    {% if session.role != 'client_collab' %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+                            <i class="bi bi-speedometer2"></i> 看板
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'project_list' %}active{% endif %}" href="{{ url_for('project_list') }}">
+                            <i class="bi bi-folder"></i> 项目列表
+                        </a>
+                    </li>
+                    <!-- 投资管理 -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['investment_list', 'investment_import', 'excel_import'] %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                            <i class="bi bi-cash-stack"></i> 投资管理
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('participant_list') }}">
+                                <i class="bi bi-people"></i> 投资人管理
+                            </a></li>
+                        </ul>
+                    </li>
+                    <!-- 销售管理 -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['sales_contract_list', 'sales_payment_list', 'sales_order_list', 'sales_order_add', 'sales_order_detail', 'sales_order_edit'] %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                            <i class="bi bi-graph-up-arrow"></i> 销售管理
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('sales_contract_list') }}">
+                                <i class="bi bi-file-earmark-text"></i> 销售合同
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('sales_payment_list') }}">
+                                <i class="bi bi-cash"></i> 销售回款
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('sales_order_list') }}">
+                                <i class="bi bi-box-seam"></i> 销售出库单
+                            </a></li>
+                        </ul>
+                    </li>
+                    <!-- 采购管理 -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['purchase_list', 'purchase_add', 'purchase_detail', 'reconciliation_list', 'reconciliation_detail', 'transport_import'] or (request.endpoint == 'contract_list' and request.args.get('contract_type') == '支出合同') %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                            <i class="bi bi-cart3"></i> 采购管理
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('purchase_list') }}">
+                                <i class="bi bi-list-ul"></i> 采购单列表
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('purchase_add') }}">
+                                <i class="bi bi-plus-circle"></i> 新增采购单
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('contract_list', contract_type='支出合同') }}">
+                                <i class="bi bi-file-earmark-text"></i> 采购合同
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('reconciliation_list') }}">
+                                <i class="bi bi-calculator"></i> 对账中心
+                            </a></li>
+                        </ul>
+                    </li>
+                    <!-- 费用管理 -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['transaction_records', 'ocr_upload', 'excel_import'] %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                            <i class="bi bi-receipt"></i> 费用管理
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('transaction_records') }}">
+                                <i class="bi bi-list-ul"></i> 项目费用
+                            </a></li>
+                        </ul>
+                    </li>
+                    <!-- 分红管理（开发中） -->
+                    <!-- 合同发票 -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['contract_list', 'invoice_list'] %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                            <i class="bi bi-file-earmark"></i> 合同发票
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('contract_list') }}">
+                                <i class="bi bi-file-earmark-text"></i> 合同列表
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('invoice_list') }}">
+                                <i class="bi bi-receipt"></i> 发票列表
+                            </a></li>
+                        </ul>
+                    </li>
+                    <!-- 参与人 -->
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'participant_list' %}active{% endif %}" href="{{ url_for('participant_list') }}">
+                            <i class="bi bi-people"></i> 参与人
+                        </a>
+                    </li>
+                    <!-- 报表分析 -->
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('reports.') %}active{% endif %}" href="{{ url_for('reports.hub') }}">
+                            <i class="bi bi-graph-up"></i> 报表
+                        </a>
+                    </li>
+                    <!-- 基础资料 -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['base_data', 'supplier_list', 'supplier_add', 'supplier_edit', 'customer_list', 'customer_add', 'customer_edit', 'category_list', 'payment_type_list'] %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                            <i class="bi bi-database"></i> 基础资料
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('base_data') }}">
+                                <i class="bi bi-house"></i> 基础资料首页
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('supplier_list') }}">
+                                <i class="bi bi-truck"></i> 供应商管理
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('customer_list') }}">
+                                <i class="bi bi-people"></i> 客户管理
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('category_list') }}">
+                                <i class="bi bi-tags"></i> 费用分类
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('payment_type_list') }}">
+                                <i class="bi bi-currency-exchange"></i> 付款类型管理
+                            </a></li>
+                        </ul>
+                    </li>
+                    {% endif %}
+                    {% if session.role in ['admin', 'client_collab'] %}
+                    <!-- 客户协同 -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.endpoint and request.endpoint.startswith('admin_client') %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                            <i class="bi bi-person-lines-fill"></i> 客户协同
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('admin_client_accounts') }}">
+                                <i class="bi bi-person-badge"></i> 客户账户管理
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('admin_client_recharges') }}">
+                                <i class="bi bi-cash-stack"></i> 充值审核
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('admin_client_deductions_sync') }}">
+                                <i class="bi bi-arrow-repeat"></i> 同步扣减
+                            </a></li>
+                        </ul>
+                    </li>
+                    {% endif %}
+                    {% if session.role == 'admin' %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
+                            <i class="bi bi-gear"></i> 管理
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('account_manage') }}">
+                                <i class="bi bi-people"></i> 账号管理
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('backup_manage') }}">
+                                <i class="bi bi-cloud-arrow-up"></i> 备份管理
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('log_list') }}">
+                                <i class="bi bi-journal-text"></i> 操作日志
+                            </a></li>
+                        </ul>
+                    </li>
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <span class="nav-link text-light">
+                            <i class="bi bi-person-circle"></i>
+                            {{ session.username }}
+                            <span class="badge bg-light text-dark">{{ role_display|default(session.role) }}</span>
+                        </span>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('logout') }}">
+                            <i class="bi bi-box-arrow-right"></i> 退出
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Flash 消息 -->
+    <div class="container-fluid mt-3">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <!-- 主内容区 -->
+    {% block content %}{% endblock %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,60 @@
+{% extends "nav_base.html" %}
+{% block title %}{{ entity_label }}图片识别导入 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-9">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-camera"></i> {{ entity_label }}图片识别导入</h5>
+                    <small class="text-muted">支持增值税发票、营业执照、名片、开户资料等，自动提取单位名称、税号、银行账号等</small>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">选择图片 <span class="text-danger">*</span></label>
+                            <input type="file" name="images" class="form-control" accept=".jpg,.jpeg,.png,.bmp,.webp" multiple required>
+                            <small class="text-muted">可多选；发票请尽量上传清晰完整票面</small>
+                        </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" name="update_existing" id="update_existing" value="1">
+                            <label class="form-check-label" for="update_existing">同名记录已存在时，用识别结果补充更新空字段</label>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i> 开始识别并导入</button>
+                            <a href="{{ back_url }}" class="btn btn-secondary">返回列表</a>
+                        </div>
+                    </form>
+
+                    {% if results %}
+                    <hr>
+                    <h6><i class="bi bi-list-check"></i> 处理结果</h6>
+                    <p class="text-muted small">成功 {{ stats.created }} 条新增，{{ stats.updated }} 条更新，{{ stats.skipped }} 条跳过，{{ stats.failed }} 条失败</p>
+                    {% for r in results %}
+                    <div class="card mb-2 {% if r.status == 'failed' %}border-danger{% elif r.status == 'created' %}border-success{% elif r.status == 'updated' %}border-info{% else %}border-warning{% endif %}">
+                        <div class="card-body py-2">
+                            <div class="d-flex justify-content-between">
+                                <strong>{{ r.filename }}</strong>
+                                <span class="badge {% if r.status == 'created' %}bg-success{% elif r.status == 'updated' %}bg-info{% elif r.status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">{{ r.message }}</span>
+                            </div>
+                            {% if r.data and r.data.name %}
+                            <div class="row g-1 mt-2 small">
+                                <div class="col-md-6"><span class="text-muted">名称：</span>{{ r.data.name }}</div>
+                                {% if r.data.tax_no %}<div class="col-md-6"><span class="text-muted">税号：</span>{{ r.data.tax_no }}</div>{% endif %}
+                                {% if r.data.phone %}<div class="col-md-6"><span class="text-muted">电话：</span>{{ r.data.phone }}</div>{% endif %}
+                                {% if r.data.bank_name %}<div class="col-md-6"><span class="text-muted">开户行：</span>{{ r.data.bank_name }}</div>{% endif %}
+                                {% if r.data.bank_account %}<div class="col-md-6"><span class="text-muted">账号：</span>{{ r.data.bank_account }}</div>{% endif %}
+                            </div>
+                            {% elif r.error %}
+                            <div class="text-danger small mt-1">{{ r.error }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

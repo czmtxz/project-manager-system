@@ -1,0 +1,93 @@
+{# 统一「导入」按钮 + 弹窗（图片 / Excel / 可选第三项） #}
+{% macro import_btn(modal_id, btn_class='btn-outline-primary btn-sm', label='导入', icon='bi-upload') %}
+<button type="button" class="btn {{ btn_class }}" data-bs-toggle="modal" data-bs-target="#{{ modal_id }}">
+    <i class="bi {{ icon }}"></i> {{ label }}
+</button>
+{% endmacro %}
+
+{% macro import_modal(modal_id, title, image_action='', excel_action='', third_action='',
+    image_field='image', image_multiple=false, image_accept='.jpg,.jpeg,.png,.webp',
+    excel_field='file', excel_accept='.xlsx,.xls',
+    image_hint='', excel_hint='', third_title='', third_hint='',
+    image_extra='', excel_extra='', third_extra='') %}
+<div class="modal fade" id="{{ modal_id }}" tabindex="-1" aria-labelledby="{{ modal_id }}Label" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="{{ modal_id }}Label"><i class="bi bi-upload"></i> {{ title }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                    {% if image_action %}
+                    <li class="nav-item">
+                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#{{ modal_id }}_img" type="button">
+                            <i class="bi bi-image"></i> 图片识别
+                        </button>
+                    </li>
+                    {% endif %}
+                    {% if excel_action %}
+                    <li class="nav-item">
+                        <button class="nav-link {% if not image_action %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#{{ modal_id }}_xls" type="button">
+                            <i class="bi bi-file-earmark-excel"></i> Excel 导入
+                        </button>
+                    </li>
+                    {% endif %}
+                    {% if third_action %}
+                    <li class="nav-item">
+                        <button class="nav-link {% if not image_action and not excel_action %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#{{ modal_id }}_third" type="button">
+                            {{ third_title or '其他' }}
+                        </button>
+                    </li>
+                    {% endif %}
+                </ul>
+                <div class="tab-content">
+                    {% if image_action %}
+                    <div class="tab-pane fade show active" id="{{ modal_id }}_img">
+                        {% if image_hint %}<p class="small text-muted">{{ image_hint }}</p>{% endif %}
+                        <form method="POST" action="{{ image_action }}" enctype="multipart/form-data">
+                            {{ image_extra|safe }}
+                            <div class="mb-3">
+                                <label class="form-label">选择图片</label>
+                                <input type="file" name="{{ image_field }}" class="form-control"
+                                       accept="{{ image_accept }}" {% if image_multiple %}multiple{% endif %} required>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i class="bi bi-eye"></i> 上传并识别
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
+                    {% if excel_action %}
+                    <div class="tab-pane fade {% if not image_action %}show active{% endif %}" id="{{ modal_id }}_xls">
+                        {% if excel_hint %}<div class="small text-muted mb-2">{{ excel_hint|safe }}</div>{% endif %}
+                        <form method="POST" action="{{ excel_action }}" enctype="multipart/form-data">
+                            {{ excel_extra|safe }}
+                            <div class="mb-3">
+                                <label class="form-label">选择 Excel 文件</label>
+                                <input type="file" name="{{ excel_field }}" class="form-control"
+                                       accept="{{ excel_accept }}" required>
+                            </div>
+                            <button type="submit" class="btn btn-success btn-sm">
+                                <i class="bi bi-file-earmark-arrow-up"></i> 上传并导入
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
+                    {% if third_action %}
+                    <div class="tab-pane fade {% if not image_action and not excel_action %}show active{% endif %}" id="{{ modal_id }}_third">
+                        {% if third_hint %}<div class="small text-muted mb-2">{{ third_hint|safe }}</div>{% endif %}
+                        <form method="POST" action="{{ third_action }}" enctype="multipart/form-data">
+                            {{ third_extra|safe }}
+                            <button type="submit" class="btn btn-primary btn-sm mt-2">
+                                <i class="bi bi-upload"></i> 开始导入
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endmacro %}

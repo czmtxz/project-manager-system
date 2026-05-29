@@ -1,0 +1,45 @@
+{% extends "nav_base.html" %}
+{% block title %}{{ entity_label }}Excel批量导入 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-file-earmark-excel"></i> {{ entity_label }}Excel批量导入</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">选择 Excel 文件 <span class="text-danger">*</span></label>
+                            <input type="file" name="file" class="form-control" accept=".xlsx,.xls" required>
+                        </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" name="update_existing" id="update_existing" value="1">
+                            <label class="form-check-label" for="update_existing">同名记录已存在时更新（补充非空字段）</label>
+                        </div>
+                        <div class="alert alert-info small">
+                            <strong>表头列名（第一行，支持以下任意一种写法）：</strong>
+                            <div class="mt-2">名称*、联系人、电话、邮箱、地址、送货地址、开户银行、银行账号、联行号、税号、发票抬头、税率、备注</div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-upload"></i> 开始导入</button>
+                            <a href="{{ back_url }}" class="btn btn-secondary">返回列表</a>
+                        </div>
+                    </form>
+                    {% if stats %}
+                    <hr>
+                    <div class="alert alert-success">
+                        导入完成：新增 {{ stats.created }} 条，更新 {{ stats.updated }} 条，跳过 {{ stats.skipped }} 条
+                        {% if stats.errors %}<br><span class="text-danger">错误 {{ stats.errors|length }} 条</span>{% endif %}
+                    </div>
+                    {% if stats.errors %}
+                    <ul class="small text-danger">{% for e in stats.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+                    {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

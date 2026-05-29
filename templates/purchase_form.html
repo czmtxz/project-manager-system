@@ -1,0 +1,259 @@
+{% extends "nav_base.html" %}
+{% block title %}{% if purchase %}编辑采购单{% else %}新增采购单{% endif %} - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-{% if purchase %}pencil{% else %}plus-circle{% endif %}"></i> {% if purchase %}编辑采购单{% else %}新增采购单{% endif %}</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" enctype="multipart/form-data" id="purchaseForm">
+                <!-- 基本信息 -->
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">采购单号 <span class="text-danger">*</span></label>
+                            <input type="text" name="purchase_no" class="form-control" placeholder="如: CG-2026-001" required value="{{ purchase.purchase_no if purchase else '' }}">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">所属项目</label>
+                            <select name="project_id" id="project_id" class="form-select" onchange="loadContracts()">
+                                <option value="">-- 请选择项目 --</option>
+                                {% for p in projects %}
+                                <option value="{{ p.id }}" {% if purchase and purchase.project_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label class="form-label">采购类型</label>
+                            <select name="purchase_type" class="form-select">
+                                <option value="材料采购" {% if purchase and purchase.purchase_type == '材料采购' %}selected{% endif %}>材料采购</option>
+                                <option value="设备采购" {% if purchase and purchase.purchase_type == '设备采购' %}selected{% endif %}>设备采购</option>
+                                <option value="办公用品" {% if purchase and purchase.purchase_type == '办公用品' %}selected{% endif %}>办公用品</option>
+                                <option value="其他" {% if purchase and purchase.purchase_type == '其他' %}selected{% endif %}>其他</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label class="form-label">供应商</label>
+                            <select name="supplier" id="supplier" class="form-select">
+                                <option value="">-- 请选择 --</option>
+                                {% for s in suppliers %}
+                                <option value="{{ s.name }}" {% if purchase and purchase.supplier == s.name %}selected{% endif %}>{{ s.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted"><a href="{{ url_for('supplier_add') }}" target="_blank">+ 新增供应商</a></small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label class="form-label">关联合同</label>
+                            <select name="contract_id" id="contract_id" class="form-select">
+                                <option value="">-- 无 --</option>
+                                {% for c in contracts %}
+                                <option value="{{ c.id }}" {% if purchase and purchase.contract_id == c.id %}selected{% endif %}>{{ c.contract_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label class="form-label">采购日期</label>
+                            <input type="date" name="purchase_date" class="form-control" value="{{ purchase.purchase_date if purchase else '' }}">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label class="form-label">采购金额</label>
+                            <input type="number" name="total_amount" class="form-control" step="0.01" placeholder="0.00" value="{{ purchase.total_amount if purchase else '' }}">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label class="form-label">送货地址</label>
+                            <input type="text" name="delivery_address" class="form-control" placeholder="送货地址" value="{{ purchase.delivery_address if purchase else '' }}">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">采购摘要</label>
+                    <textarea name="description" class="form-control" rows="2" placeholder="采购内容摘要">{{ purchase.description if purchase else '' }}</textarea>
+                </div>
+                
+                <!-- 采购明细 -->
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center py-2">
+                        <h6 class="mb-0"><i class="bi bi-list-ul"></i> 采购明细</h6>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addItem()">
+                            <i class="bi bi-plus"></i> 添加明细
+                        </button>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0" id="itemsTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 25%">品名</th>
+                                        <th style="width: 15%">规格型号</th>
+                                        <th style="width: 10%">单位</th>
+                                        <th style="width: 12%">数量</th>
+                                        <th style="width: 12%">单价</th>
+                                        <th style="width: 12%">金额</th>
+                                        <th style="width: 14%">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="itemsBody">
+                                    {% if items %}
+                                    {% for item in items %}
+                                    <tr>
+                                        <td><input type="text" name="item_name[]" class="form-control form-control-sm" value="{{ item.item_name }}" required></td>
+                                        <td><input type="text" name="specification[]" class="form-control form-control-sm" value="{{ item.specification }}"></td>
+                                        <td>
+                                            <select name="unit[]" class="form-select form-select-sm">
+                                                <option value="吨" {% if item.unit == '吨' %}selected{% endif %}>吨</option>
+                                                <option value="方" {% if item.unit == '方' %}selected{% endif %}>方</option>
+                                                <option value="件" {% if item.unit == '件' %}selected{% endif %}>件</option>
+                                                <option value="台" {% if item.unit == '台' %}selected{% endif %}>台</option>
+                                                <option value="套" {% if item.unit == '套' %}selected{% endif %}>套</option>
+                                                <option value="米" {% if item.unit == '米' %}selected{% endif %}>米</option>
+                                                <option value="公斤" {% if item.unit == '公斤' %}selected{% endif %}>公斤</option>
+                                            </select>
+                                        </td>
+                                        <td><input type="number" name="quantity[]" class="form-control form-control-sm qty-input" step="0.01" value="{{ item.quantity }}" onchange="calcRow(this)"></td>
+                                        <td><input type="number" name="unit_price[]" class="form-control form-control-sm price-input" step="0.01" value="{{ item.unit_price }}" onchange="calcRow(this)"></td>
+                                        <td class="align-middle"><span class="row-amount">{{ "%.2f"|format(item.amount) }}</span></td>
+                                        <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItem(this)"><i class="bi bi-trash"></i></button></td>
+                                    </tr>
+                                    {% endfor %}
+                                    {% else %}
+                                    <tr>
+                                        <td><input type="text" name="item_name[]" class="form-control form-control-sm" placeholder="品名"></td>
+                                        <td><input type="text" name="specification[]" class="form-control form-control-sm" placeholder="规格"></td>
+                                        <td>
+                                            <select name="unit[]" class="form-select form-select-sm">
+                                                <option value="吨">吨</option>
+                                                <option value="方">方</option>
+                                                <option value="件">件</option>
+                                                <option value="台">台</option>
+                                                <option value="套">套</option>
+                                                <option value="米">米</option>
+                                                <option value="公斤">公斤</option>
+                                            </select>
+                                        </td>
+                                        <td><input type="number" name="quantity[]" class="form-control form-control-sm qty-input" step="0.01" placeholder="0" onchange="calcRow(this)"></td>
+                                        <td><input type="number" name="unit_price[]" class="form-control form-control-sm price-input" step="0.01" placeholder="0" onchange="calcRow(this)"></td>
+                                        <td class="align-middle"><span class="row-amount">0.00</span></td>
+                                        <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItem(this)"><i class="bi bi-trash"></i></button></td>
+                                    </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">附件</label>
+                            <input type="file" name="attachment" class="form-control" accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx">
+                            {% if purchase and purchase.attachment %}
+                            <small class="text-muted">当前附件: <a href="{{ url_for('serve_upload_file', folder='purchases', filename=purchase.attachment) }}" target="_blank">查看</a></small>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">备注</label>
+                            <input type="text" name="remark" class="form-control" placeholder="备注信息" value="{{ purchase.remark if purchase else '' }}">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle"></i> 保存
+                    </button>
+                    <a href="{{ url_for('purchase_list') }}" class="btn btn-secondary">
+                        <i class="bi bi-arrow-left"></i> 返回
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function addItem() {
+    const tbody = document.getElementById('itemsBody');
+    const row = document.createElement('tr');
+    row.innerHTML = `
+        <td><input type="text" name="item_name[]" class="form-control form-control-sm" placeholder="品名"></td>
+        <td><input type="text" name="specification[]" class="form-control form-control-sm" placeholder="规格"></td>
+        <td>
+            <select name="unit[]" class="form-select form-select-sm">
+                <option value="吨">吨</option>
+                <option value="方">方</option>
+                <option value="件">件</option>
+                <option value="台">台</option>
+                <option value="套">套</option>
+                <option value="米">米</option>
+                <option value="公斤">公斤</option>
+            </select>
+        </td>
+        <td><input type="number" name="quantity[]" class="form-control form-control-sm qty-input" step="0.01" placeholder="0" onchange="calcRow(this)"></td>
+        <td><input type="number" name="unit_price[]" class="form-control form-control-sm price-input" step="0.01" placeholder="0" onchange="calcRow(this)"></td>
+        <td class="align-middle"><span class="row-amount">0.00</span></td>
+        <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItem(this)"><i class="bi bi-trash"></i></button></td>
+    `;
+    tbody.appendChild(row);
+}
+
+function removeItem(btn) {
+    const tbody = document.getElementById('itemsBody');
+    if (tbody.children.length > 1) {
+        btn.closest('tr').remove();
+    } else {
+        alert('至少保留一条明细');
+    }
+}
+
+function calcRow(input) {
+    const row = input.closest('tr');
+    const qty = parseFloat(row.querySelector('.qty-input').value) || 0;
+    const price = parseFloat(row.querySelector('.price-input').value) || 0;
+    row.querySelector('.row-amount').textContent = (qty * price).toFixed(2);
+}
+
+function loadContracts() {
+    const projectId = document.getElementById('project_id').value;
+    const contractSelect = document.getElementById('contract_id');
+    contractSelect.innerHTML = '<option value="">-- 无 --</option>';
+    
+    if (projectId) {
+        fetch(`/api/project/${projectId}/contracts`)
+            .then(res => res.json())
+            .then(contracts => {
+                contracts.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.contract_name;
+                    contractSelect.appendChild(opt);
+                });
+            });
+    }
+}
+</script>
+{% endblock %}

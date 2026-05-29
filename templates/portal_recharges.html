@@ -1,0 +1,178 @@
+{% extends "portal_base.html" %}
+
+{% block title %}充值记录 - 客户协同平台{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0"><i class="bi bi-cash-stack"></i> 充值记录</h4>
+    <a href="{{ url_for('portal_recharge') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> 申请充值
+    </a>
+</div>
+
+<!-- 筛选条件 -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">状态</label>
+                <select class="form-select" name="status">
+                    <option value="">全部</option>
+                    <option value="pending" {% if request.args.get('status') == 'pending' %}selected{% endif %}>待审核</option>
+                    <option value="confirmed" {% if request.args.get('status') == 'confirmed' %}selected{% endif %}>已确认</option>
+                    <option value="rejected" {% if request.args.get('status') == 'rejected' %}selected{% endif %}>已拒绝</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">开始日期</label>
+                <input type="date" class="form-control" name="start_date" value="{{ request.args.get('start_date', '') }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">结束日期</label>
+                <input type="date" class="form-control" name="end_date" value="{{ request.args.get('end_date', '') }}">
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">
+                    <i class="bi bi-search"></i> 筛选
+                </button>
+                <a href="{{ url_for('portal_recharges') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise"></i> 重置
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 充值记录表格 -->
+<div class="card">
+    <div class="card-body p-0">
+        {% if recharges %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>申请时间</th>
+                        <th>金额</th>
+                        <th>付款方式</th>
+                        <th>付款流水号</th>
+                        <th>状态</th>
+                        <th>审核人</th>
+                        <th>审核时间</th>
+                        <th>备注</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in recharges %}
+                    <tr>
+                        <td>{{ (r.created_at or '')[:16] }}</td>
+                        <td><strong class="text-primary">{{ "%.2f"|format(r.amount) }}</strong></td>
+                        <td>
+                            {% if r.payment_method == 'bank_transfer' %}
+                            银行转账
+                            {% elif r.payment_method == 'alipay' %}
+                            支付宝
+                            {% elif r.payment_method == 'wechat' %}
+                            微信支付
+                            {% elif r.payment_method == 'cash' %}
+                            现金
+                            {% else %}
+                            {{ r.payment_method or '-' }}
+                            {% endif %}
+                        </td>
+                        <td>{{ r.transaction_id or '-' }}</td>
+                        <td>
+                            {% if r.status == 'pending' %}
+                            <span class="badge status-pending">
+                                <i class="bi bi-clock"></i> 待审核
+                            </span>
+                            {% elif r.status == 'confirmed' %}
+                            <span class="badge status-confirmed">
+                                <i class="bi bi-check-circle"></i> 已确认
+                            </span>
+                            {% elif r.status == 'rejected' %}
+                            <span class="badge status-rejected">
+                                <i class="bi bi-x-circle"></i> 已拒绝
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td>{{ r.reviewer_name or '-' }}</td>
+                        <td>{{ r.reviewed_at.strftime('%Y-%m-%d %H:%M') if r.reviewed_at else '-' }}</td>
+                        <td>
+                            {% if r.remark %}
+                            <span data-bs-toggle="tooltip" title="{{ r.remark }}">{{ r.remark[:20] }}{% if r.remark|length > 20 %}...{% endif %}</span>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+            <p class="mt-2">暂无充值记录</p>
+            <a href="{{ url_for('portal_recharge') }}" class="btn btn-primary mt-2">
+                <i class="bi bi-plus-circle"></i> 申请充值
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 分页 -->
+{% if pagination and pagination.pages > 1 %}
+<nav class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ pagination.prev_num }}&{{ request.args|exclude('page')|urlencode }}">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled">
+            <span class="page-link"><i class="bi bi-chevron-left"></i></span>
+        </li>
+        {% endif %}
+        
+        {% for p in pagination.iter_pages() %}
+            {% if p %}
+                {% if p == pagination.page %}
+                <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                {% else %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ p }}&{{ request.args|exclude('page')|urlencode }}">{{ p }}</a>
+                </li>
+                {% endif %}
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ pagination.next_num }}&{{ request.args|exclude('page')|urlencode }}">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled">
+            <span class="page-link"><i class="bi bi-chevron-right"></i></span>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 初始化工具提示
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+</script>
+{% endblock %}

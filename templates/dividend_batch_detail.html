@@ -1,0 +1,313 @@
+{% extends "nav_base.html" %}
+{% block title %}分红批次详情 - 项目投资管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4>
+            <a href="{{ url_for('dividend_batches') }}" class="text-muted me-2"><i class="bi bi-arrow-left"></i></a>
+            分红批次 {{ batch.batch_no }}
+        </h4>
+        <div>
+            {% if batch.status == 'confirmed' %}
+            <span class="badge bg-primary me-2">已确认</span>
+            {% elif batch.status == 'paid' %}
+            <span class="badge bg-success me-2">已发放完毕</span>
+            {% else %}
+            <span class="badge bg-secondary me-2">{{ batch.status }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 批次概览 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <small class="text-muted">项目</small>
+                    <h6>{{ batch.project_name or '-' }}</h6>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-muted">期间</small>
+                    <h6>{{ batch.period or '-' }}</h6>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-muted">分红吨数</small>
+                    <h6>{{ "%.2f"|format(batch.quantity) }} 吨</h6>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-muted">创建时间</small>
+                    <h6>{{ batch.created_at[:10] if batch.created_at else '-' }}</h6>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-muted">备注</small>
+                    <h6>{{ batch.remark or '-' }}</h6>
+                </div>
+            </div>
+            <hr>
+            <div class="row text-center">
+                <div class="col-md-2">
+                    <small class="text-muted">毛利润</small>
+                    <h5 class="text-primary">¥{{ "%.2f"|format(batch.total_profit) }}</h5>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-muted">投资人池</small>
+                    <h5 class="text-success">¥{{ "%.2f"|format(batch.investor_pool) }}</h5>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-muted">关系人池</small>
+                    <h5 class="text-info">¥{{ "%.2f"|format(batch.connector_pool) }}</h5>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-muted">掌控人池</small>
+                    <h5 class="text-warning">¥{{ "%.2f"|format(batch.controller_pool) }}</h5>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-muted">应发总额</small>
+                    <h5>¥{{ "%.2f"|format(total_expected) }}</h5>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-muted">已发放</small>
+                    <h5 class="text-primary">¥{{ "%.2f"|format(total_paid) }}</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分红分配明细 -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-people"></i> 分红分配明细</h6>
+            <div>
+                <span class="badge bg-success">应发: ¥{{ "%.2f"|format(total_expected) }}</span>
+                <span class="badge bg-primary ms-1">已发: ¥{{ "%.2f"|format(total_paid) }}</span>
+                <span class="badge bg-warning ms-1">未发: ¥{{ "%.2f"|format(total_unpaid) }}</span>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>姓名</th>
+                            <th>角色</th>
+                            <th>分红池</th>
+                            <th class="text-end">分配比例</th>
+                            <th class="text-end">应发金额</th>
+                            <th class="text-end">已发金额</th>
+                            <th class="text-end">未发金额</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in details %}
+                        <tr id="detail-row-{{ d.id }}">
+                            <td><strong>{{ d.name }}</strong></td>
+                            <td>
+                                {% if d.role == 'controller' %}
+                                <span class="badge bg-danger">掌控人</span>
+                                {% elif d.role == 'investor' %}
+                                <span class="badge bg-success">投资人</span>
+                                {% elif d.role == 'connector' %}
+                                <span class="badge bg-info">关系人</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ d.role }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if d.pool_type == 'investor_pool' %}
+                                <span class="text-success">投资人池</span>
+                                {% elif d.pool_type == 'connector_pool' %}
+                                <span class="text-info">关系人池</span>
+                                {% elif d.pool_type == 'controller_pool' %}
+                                <span class="text-warning">掌控人池</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">{{ "%.1f"|format(d.investment_ratio or d.pool_ratio) }}%</td>
+                            <td class="text-end">¥{{ "%.2f"|format(d.expected_amount) }}</td>
+                            <td class="text-end text-primary">¥{{ "%.2f"|format(d.paid_amount) }}</td>
+                            <td class="text-end text-warning">¥{{ "%.2f"|format(d.unpaid_amount) }}</td>
+                            <td>
+                                {% if d.status == 'paid' %}
+                                <span class="badge bg-success">已发完</span>
+                                {% elif d.status == 'partial' %}
+                                <span class="badge bg-info">部分发放</span>
+                                {% else %}
+                                <span class="badge bg-secondary">待发放</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if d.unpaid_amount > 0.01 %}
+                                <button class="btn btn-sm btn-outline-primary" onclick="showPayModal({{ d.id }}, '{{ d.name }}', {{ d.unpaid_amount }})">
+                                    <i class="bi bi-cash"></i> 发放
+                                </button>
+                                {% else %}
+                                <span class="text-muted small">-</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <td colspan="4"><strong>合计</strong></td>
+                            <td class="text-end"><strong>¥{{ "%.2f"|format(total_expected) }}</strong></td>
+                            <td class="text-end text-primary"><strong>¥{{ "%.2f"|format(total_paid) }}</strong></td>
+                            <td class="text-end text-warning"><strong>¥{{ "%.2f"|format(total_unpaid) }}</strong></td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 发放记录 -->
+    <div class="card">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="bi bi-clock-history"></i> 发放记录</h6>
+        </div>
+        <div class="card-body p-0">
+            {% if payments %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>发放日期</th>
+                            <th>发放对象</th>
+                            <th class="text-end">金额</th>
+                            <th>支付方式</th>
+                            <th>凭证号</th>
+                            <th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in payments %}
+                        <tr>
+                            <td>{{ p.payment_date }}</td>
+                            <td>{{ p.participant_name }}</td>
+                            <td class="text-end text-success">¥{{ "%.2f"|format(p.amount) }}</td>
+                            <td>{{ p.payment_method or '-' }}</td>
+                            <td><code>{{ p.voucher_no or '-' }}</code></td>
+                            <td>{{ p.remark or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4 text-muted">
+                <p>暂无发放记录</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 发放弹窗 -->
+<div class="modal fade" id="payModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h6 class="modal-title"><i class="bi bi-cash"></i> 发放分红</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">发放对象</label>
+                    <input type="text" class="form-control" id="payName" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">未发金额</label>
+                    <input type="text" class="form-control text-warning" id="payUnpaid" readonly>
+                </div>
+                <form id="payForm">
+                    <input type="hidden" id="payDetailId">
+                    <div class="mb-3">
+                        <label class="form-label">发放金额 <span class="text-danger">*</span></label>
+                        <input type="number" name="amount" class="form-control" step="0.01" min="0.01" id="payAmount" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">发放日期 <span class="text-danger">*</span></label>
+                        <input type="date" name="payment_date" class="form-control" id="payDate" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">支付方式</label>
+                        <select name="payment_method" class="form-select">
+                            <option value="银行转账">银行转账</option>
+                            <option value="微信">微信</option>
+                            <option value="支付宝">支付宝</option>
+                            <option value="现金">现金</option>
+                            <option value="承兑汇票">承兑汇票</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">凭证号</label>
+                        <input type="text" name="voucher_no" class="form-control" placeholder="付款凭证号">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">备注</label>
+                        <textarea name="remark" class="form-control" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="confirmPayBtn" onclick="submitPay()">
+                    <i class="bi bi-check-circle"></i> 确认发放
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let payModal;
+document.addEventListener('DOMContentLoaded', function() {
+    payModal = new bootstrap.Modal(document.getElementById('payModal'));
+    // 默认日期为今天
+    document.getElementById('payDate').value = new Date().toISOString().split('T')[0];
+});
+
+function showPayModal(detailId, name, unpaid) {
+    document.getElementById('payDetailId').value = detailId;
+    document.getElementById('payName').value = name;
+    document.getElementById('payUnpaid').value = '¥' + unpaid.toFixed(2);
+    document.getElementById('payAmount').value = unpaid.toFixed(2);
+    document.getElementById('payAmount').max = unpaid;
+    payModal.show();
+}
+
+function submitPay() {
+    const detailId = document.getElementById('payDetailId').value;
+    const formData = new FormData(document.getElementById('payForm'));
+    
+    const btn = document.getElementById('confirmPayBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 发放中...';
+    
+    fetch('/dividend/detail/' + detailId + '/pay', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            payModal.hide();
+            location.reload();
+        } else {
+            alert(data.message || '发放失败');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle"></i> 确认发放';
+        }
+    })
+    .catch(err => {
+        alert('网络错误');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-circle"></i> 确认发放';
+    });
+}
+</script>
+{% endblock %}
