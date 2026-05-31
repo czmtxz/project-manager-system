@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}登录 - 项目投资管理系统{% endblock %}
 {% block body %}
-<div class="login-wrapper" style="background-image: linear-gradient(120deg, rgba(13,18,58,0.92) 0%, rgba(26,21,82,0.62) 45%, rgba(58,12,163,0.18) 100%), url('{{ url_for('static', filename='img/login-bg.png') }}');">
+<div class="login-wrapper" style="background-image: linear-gradient(120deg, rgba(13,18,58,0.92) 0%, rgba(26,21,82,0.62) 45%, rgba(58,12,163,0.18) 100%), url('{{ url_for('static', filename=login_bg|default('img/login-bg.png')) }}');">
     <div class="login-stage">
         <!-- 左侧品牌宣传区 -->
         <div class="login-hero">
