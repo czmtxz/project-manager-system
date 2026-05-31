@@ -578,6 +578,46 @@ def parse_collab_excel(file_path, mode='recharge', sheet=None):
     }
 
 
+def summarize_collab_excel_sheets(file_path, mode='standard'):
+    """汇总每个页签的可导入内容，供用户勾选：返回 [{sheet, ok, recharge_count, recharge_amount,
+    outbound_count, outbound_amount, date_min, date_max, error}]。"""
+    try:
+        import pandas as pd
+    except ImportError:
+        return {'error': '服务器未安装 pandas，无法导入 Excel'}
+    try:
+        xl = pd.ExcelFile(file_path)
+    except Exception as e:
+        return {'error': str(e)}
+
+    summaries = []
+    for sn in xl.sheet_names:
+        df = _load_sheet_df(pd, file_path, sn)
+        if df is None or df.empty:
+            continue
+        res = _parse_df_rows(df, mode)
+        if res.get('error'):
+            continue
+        rch = res.get('recharge_rows') or []
+        obd = res.get('outbound_rows') or []
+        if not rch and not obd:
+            continue
+        dates = [r.get('recharge_date') for r in rch if r.get('recharge_date')]
+        dates += [r.get('deduct_date') for r in obd if r.get('deduct_date')]
+        dates = [d for d in dates if d]
+        summaries.append({
+            'sheet': sn,
+            'ok': True,
+            'recharge_count': len(rch),
+            'recharge_amount': round(sum(float(r.get('amount') or 0) for r in rch), 2),
+            'outbound_count': len(obd),
+            'outbound_amount': round(sum(float(r.get('amount') or 0) for r in obd), 2),
+            'date_min': min(dates) if dates else '',
+            'date_max': max(dates) if dates else '',
+        })
+    return {'sheets': summaries, 'all_sheets': list(xl.sheet_names)}
+
+
 def _parse_df_rows(df, mode):
     """对单个已规范化表头的 DataFrame 解析为可导入记录。"""
     if df is None or df.empty:

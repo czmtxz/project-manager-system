@@ -76,6 +76,7 @@ from client_collab_ops import (
     record_client_recharge,
     record_client_outbound,
     parse_collab_excel,
+    summarize_collab_excel_sheets,
     import_recharge_rows,
     import_outbound_rows,
     import_standard_excel_bundle,
