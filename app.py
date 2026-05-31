@@ -4319,8 +4319,13 @@ def admin_client_account_approve(id):
 @app.route('/admin/client-accounts/<int:id>/reject')
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)
+@collab_authorize_required
 def admin_client_account_reject(id):
     db = get_db()
+    denied = assert_client_account_access(
+        db, session.get('user_id'), session.get('role'), id)
+    if denied:
+        return denied
     account = db.execute("SELECT * FROM client_accounts WHERE id=?", (id,)).fetchone()
     if not account:
         flash('账户不存在', 'danger')

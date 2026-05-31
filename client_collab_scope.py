@@ -99,7 +99,12 @@ def can_access_client_account(db, user_id, role, account_id):
     ).fetchone()
     if not row:
         return False
-    return can_access_customer(db, user_id, role, row['customer_id'])
+    if collab_sees_all_customers(role):
+        return True
+    cid = row['customer_id']
+    if not cid:
+        return False
+    return can_access_customer(db, user_id, role, cid)
 
 
 def assert_client_account_access(db, user_id, role, account_id):

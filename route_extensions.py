@@ -982,14 +982,20 @@ def register_missing_routes(app, ctx):
         return redirect(url_for('contract_list'))
 
     # ---------- 客户协同扩展 ----------
-    from auth_utils import module_required, MODULE_CLIENT_PORTAL
+    from auth_utils import module_required, MODULE_CLIENT_PORTAL, collab_authorize_required
     from client_portal_utils import CLIENT_STATUS_APPROVED, CLIENT_STATUS_DISABLED
 
     @app.route('/admin/client-accounts/<int:id>/enable', methods=['POST'])
     @login_required
     @module_required(MODULE_CLIENT_PORTAL)
+    @collab_authorize_required
     def admin_client_account_enable(id):
         db = get_db()
+        from client_collab_scope import assert_client_account_access
+        denied = assert_client_account_access(
+            db, session.get('user_id'), session.get('role'), id)
+        if denied:
+            return denied
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         db.execute(
             "UPDATE client_accounts SET status=?, updated_at=? WHERE id=?",
@@ -1002,8 +1008,14 @@ def register_missing_routes(app, ctx):
     @app.route('/admin/client-accounts/<int:id>/disable', methods=['POST'])
     @login_required
     @module_required(MODULE_CLIENT_PORTAL)
+    @collab_authorize_required
     def admin_client_account_disable(id):
         db = get_db()
+        from client_collab_scope import assert_client_account_access
+        denied = assert_client_account_access(
+            db, session.get('user_id'), session.get('role'), id)
+        if denied:
+            return denied
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         db.execute(
             "UPDATE client_accounts SET status=?, updated_at=? WHERE id=?",
