@@ -191,3 +191,25 @@
 </div>
 {% endfor %}
 {% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll('.copy-login').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        var text = '客户登录地址：' + this.dataset.url + '\n登录账号：' + this.dataset.user;
+        var done = () => {
+            var icon = this.querySelector('i');
+            if (icon) { icon.className = 'bi bi-check-lg text-success'; setTimeout(() => icon.className = 'bi bi-clipboard', 1500); }
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(done);
+        } else {
+            var ta = document.createElement('textarea');
+            ta.value = text; document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            document.body.removeChild(ta); done();
+        }
+    });
+});
+</script>
+{% endblock %}
