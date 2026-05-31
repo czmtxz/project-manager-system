@@ -130,32 +130,146 @@
             </div>
         </div>
 
-        <div class="col-12">
+        <!-- 充值记录管理 -->
+        <div class="col-lg-6">
             <div class="card">
-                <div class="card-header">最近流水（充值 + 扣减）</div>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-cash-coin text-success"></i> 充值记录（可维护）</span>
+                    <span class="badge bg-light text-dark">{{ ws.recharges|length }} 条</span>
+                </div>
                 <div class="card-body p-0">
-                    <div class="table-responsive" style="max-height: 400px;">
+                    <div class="table-responsive" style="max-height: 360px;">
                         <table class="table table-sm table-hover mb-0">
                             <thead class="table-light sticky-top">
-                                <tr><th>时间</th><th>类型</th><th class="text-end">金额</th><th class="text-end">余额</th><th>备注</th></tr>
+                                <tr><th>时间</th><th class="text-end">金额</th><th>方式</th><th>备注</th><th class="text-nowrap">操作</th></tr>
                             </thead>
                             <tbody>
-                            {% for t in ws.transactions[:80] %}
+                            {% for r in ws.recharges %}
                             <tr>
-                                <td>{{ (t.created_at or '')[:16] }}</td>
-                                <td>{% if t.type == 'recharge' %}<span class="text-success">充值</span>{% else %}<span class="text-danger">扣减</span>{% endif %}</td>
-                                <td class="text-end">{{ "%.2f"|format(t.amount or 0) }}</td>
-                                <td class="text-end">{{ "%.2f"|format(t.balance_after or 0) }}</td>
-                                <td>{{ t.remark or '-' }}</td>
+                                <td class="small">{{ (r.created_at or '')[:16] }}</td>
+                                <td class="text-end text-success">{{ "%.2f"|format(r.amount or 0) }}</td>
+                                <td class="small">{{ r.payment_method or '-' }}</td>
+                                <td class="small">{{ r.remark or '-' }}</td>
+                                <td class="text-nowrap">
+                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 edit-recharge"
+                                            data-id="{{ r.id }}" data-amount="{{ r.amount or 0 }}"
+                                            data-method="{{ r.payment_method or '' }}" data-no="{{ r.payment_no or '' }}"
+                                            data-remark="{{ r.remark or '' }}" data-date="{{ (r.created_at or '')[:10] }}">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <form method="POST" action="{{ url_for('admin_client_recharge_delete', customer_id=ws.customer_id, rid=r.id) }}"
+                                          class="d-inline" onsubmit="return confirm('确定删除此充值记录？余额将自动重算。')">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                </td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="5" class="text-center text-muted py-4">暂无流水</td></tr>
+                            <tr><td colspan="5" class="text-center text-muted py-4">暂无充值记录</td></tr>
                             {% endfor %}
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- 出库扣减记录管理 -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-box-arrow-up text-danger"></i> 出库扣减记录（可维护）</span>
+                    <span class="badge bg-light text-dark">{{ ws.deductions|length }} 条</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height: 360px;">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                                <tr><th>日期</th><th>品名</th><th class="text-end">吨数</th><th class="text-end">单价</th><th class="text-end">金额</th><th class="text-nowrap">操作</th></tr>
+                            </thead>
+                            <tbody>
+                            {% for d in ws.deductions %}
+                            <tr>
+                                <td class="small">{{ (d.deduct_date or d.created_at or '')[:10] }}</td>
+                                <td class="small">{{ d.item_name or '-' }}</td>
+                                <td class="text-end">{{ "%g"|format(d.quantity or 0) }}</td>
+                                <td class="text-end">{{ "%g"|format(d.unit_price or 0) }}</td>
+                                <td class="text-end text-danger">{{ "%.2f"|format(d.amount or 0) }}</td>
+                                <td class="text-nowrap">
+                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 edit-deduction"
+                                            data-id="{{ d.id }}" data-amount="{{ d.amount or 0 }}"
+                                            data-qty="{{ d.quantity or 0 }}" data-price="{{ d.unit_price or 0 }}"
+                                            data-item="{{ d.item_name or '' }}" data-date="{{ (d.deduct_date or '')[:10] }}"
+                                            data-remark="{{ d.remark or '' }}">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <form method="POST" action="{{ url_for('admin_client_deduction_delete', customer_id=ws.customer_id, did=d.id) }}"
+                                          class="d-inline" onsubmit="return confirm('确定删除此扣减记录？余额将自动重算，关联出库明细同步删除。')">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="6" class="text-center text-muted py-4">暂无扣减记录</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑充值 -->
+<div class="modal fade" id="editRechargeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="editRechargeForm">
+                <div class="modal-header"><h6 class="modal-title">编辑充值记录</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-2"><label class="form-label small">充值日期</label>
+                        <input type="date" name="recharge_date" id="er_date" class="form-control form-control-sm"></div>
+                    <div class="mb-2"><label class="form-label small">金额 *</label>
+                        <input type="number" step="0.01" min="0.01" name="amount" id="er_amount" class="form-control form-control-sm" required></div>
+                    <div class="mb-2"><label class="form-label small">付款方式</label>
+                        <input type="text" name="payment_method" id="er_method" class="form-control form-control-sm"></div>
+                    <div class="mb-2"><label class="form-label small">流水号</label>
+                        <input type="text" name="payment_no" id="er_no" class="form-control form-control-sm"></div>
+                    <div class="mb-2"><label class="form-label small">备注</label>
+                        <input type="text" name="remark" id="er_remark" class="form-control form-control-sm"></div>
+                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">保存</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑扣减 -->
+<div class="modal fade" id="editDeductionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="editDeductionForm">
+                <div class="modal-header"><h6 class="modal-title">编辑出库扣减记录</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-2"><label class="form-label small">出库日期</label>
+                        <input type="date" name="deduct_date" id="ed_date" class="form-control form-control-sm"></div>
+                    <div class="mb-2"><label class="form-label small">品名/规格</label>
+                        <input type="text" name="item_name" id="ed_item" class="form-control form-control-sm"></div>
+                    <div class="row g-2">
+                        <div class="col-6 mb-2"><label class="form-label small">吨数</label>
+                            <input type="number" step="0.01" name="quantity" id="ed_qty" class="form-control form-control-sm"></div>
+                        <div class="col-6 mb-2"><label class="form-label small">单价</label>
+                            <input type="number" step="0.01" name="unit_price" id="ed_price" class="form-control form-control-sm"></div>
+                    </div>
+                    <div class="mb-2"><label class="form-label small">金额 *</label>
+                        <input type="number" step="0.01" min="0.01" name="amount" id="ed_amount" class="form-control form-control-sm" required></div>
+                    <div class="mb-2"><label class="form-label small">备注</label>
+                        <input type="text" name="remark" id="ed_remark" class="form-control form-control-sm"></div>
+                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">保存</button></div>
+            </form>
         </div>
     </div>
 </div>
@@ -313,4 +427,37 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endif %}
+<script>
+(function () {
+    var rBase = "{{ url_for('admin_client_recharge_update', customer_id=ws.customer_id, rid=0) }}";
+    var dBase = "{{ url_for('admin_client_deduction_update', customer_id=ws.customer_id, did=0) }}";
+    var rModal = document.getElementById('editRechargeModal');
+    var dModal = document.getElementById('editDeductionModal');
+    document.querySelectorAll('.edit-recharge').forEach(function (b) {
+        b.addEventListener('click', function () {
+            var d = this.dataset;
+            document.getElementById('editRechargeForm').action = rBase.replace(/0$/, d.id);
+            document.getElementById('er_amount').value = d.amount;
+            document.getElementById('er_method').value = d.method;
+            document.getElementById('er_no').value = d.no;
+            document.getElementById('er_remark').value = d.remark;
+            document.getElementById('er_date').value = d.date;
+            new bootstrap.Modal(rModal).show();
+        });
+    });
+    document.querySelectorAll('.edit-deduction').forEach(function (b) {
+        b.addEventListener('click', function () {
+            var d = this.dataset;
+            document.getElementById('editDeductionForm').action = dBase.replace(/0$/, d.id);
+            document.getElementById('ed_amount').value = d.amount;
+            document.getElementById('ed_qty').value = d.qty;
+            document.getElementById('ed_price').value = d.price;
+            document.getElementById('ed_item').value = d.item;
+            document.getElementById('ed_date').value = d.date;
+            document.getElementById('ed_remark').value = d.remark;
+            new bootstrap.Modal(dModal).show();
+        });
+    });
+})();
+</script>
 {% endblock %}
