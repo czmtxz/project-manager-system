@@ -761,14 +761,6 @@
 {% endblock %}
 
 {% block extra_js %}
-{% if preview and preview.customer_id == ws.customer_id and preview.rows %}
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    var tab = {% if preview.mode == 'outbound' %}'deduction'{% else %}'recharge'{% endif %};
-    if (window.wsActivateTab) window.wsActivateTab(tab);
-});
-</script>
-{% endif %}
 <script>
 (function () {
     var root = document.getElementById('clientWorkspace');
@@ -807,11 +799,15 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     document.addEventListener('DOMContentLoaded', function () {
+        {% if preview and preview.customer_id == ws.customer_id and preview.rows %}
+        activateTab({% if preview.mode == 'outbound' %}'deduction'{% else %}'recharge'{% endif %});
+        {% else %}
         var hash = (location.hash || '').replace('#', '');
         var saved = '';
         try { saved = localStorage.getItem(storageKey) || ''; } catch (e) {}
         var initial = hash || saved || 'overview';
         if (tabMap[initial]) activateTab(initial);
+        {% endif %}
     });
 
     var rBase = "{{ url_for('admin_client_recharge_update', customer_id=ws.customer_id, rid=0) }}";
