@@ -3462,6 +3462,167 @@ def admin_client_company_outbound(customer_id):
     return redirect(url_for('admin_client_workspace', customer_id=customer_id))
 
 
+def _recompute_client_balance(db, client_id):
+    """按实际充值/扣减记录重算账户余额、累计充值、累计扣减。"""
+    rech = db.execute(
+        "SELECT COALESCE(SUM(amount),0) FROM client_recharges WHERE client_id=? AND status='confirmed'",
+        (client_id,)).fetchone()[0] or 0
+    ded = db.execute(
+        "SELECT COALESCE(SUM(amount),0) FROM client_deductions WHERE client_id=?",
+        (client_id,)).fetchone()[0] or 0
+    db.execute(
+        "UPDATE client_accounts SET total_recharge=?, total_deduct=?, balance=?, updated_at=? WHERE id=?",
+        (rech, ded, rech - ded, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), client_id))
+
+
+def _recompute_sales_order_totals(db, order_id):
+    """重算出库单合计；无明细则删除该单。"""
+    if not order_id:
+        return
+    row = db.execute(
+        "SELECT COALESCE(SUM(amount),0) a, COALESCE(SUM(quantity),0) q, COUNT(*) c "
+        "FROM sales_order_items WHERE order_id=?", (order_id,)).fetchone()
+    if row['c'] == 0:
+        db.execute("DELETE FROM sales_orders WHERE id=?", (order_id,))
+    else:
+        db.execute("UPDATE sales_orders SET total_amount=?, total_quantity=? WHERE id=?",
+                   (row['a'], row['q'], order_id))
+
+
+def _load_scoped_recharge(db, customer_id, rid):
+    return db.execute(
+        "SELECT cr.*, ca.customer_id AS acc_customer_id FROM client_recharges cr "
+        "JOIN client_accounts ca ON cr.client_id=ca.id WHERE cr.id=?", (rid,)).fetchone()
+
+
+def _load_scoped_deduction(db, customer_id, did):
+    return db.execute(
+        "SELECT cd.*, ca.customer_id AS acc_customer_id FROM client_deductions cd "
+        "JOIN client_accounts ca ON cd.client_id=ca.id WHERE cd.id=?", (did,)).fetchone()
+
+
+@app.route('/admin/client-company/<int:customer_id>/recharge/<int:rid>/update', methods=['POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_recharge_update(customer_id, rid):
+    db = get_db()
+    denied = assert_customer_access(db, session.get('user_id'), session.get('role'), customer_id)
+    if denied:
+        return denied
+    r = _load_scoped_recharge(db, customer_id, rid)
+    if not r or (r['acc_customer_id'] and r['acc_customer_id'] != customer_id):
+        flash('充值记录不存在或无权限', 'danger')
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    try:
+        amount = float(request.form.get('amount', 0) or 0)
+        if amount <= 0:
+            raise ValueError('金额须大于 0')
+    except ValueError as e:
+        flash(f'金额无效：{e}', 'warning')
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    method = request.form.get('payment_method', '').strip() or (r['payment_method'] or 'bank_transfer')
+    payment_no = request.form.get('payment_no', '').strip()
+    remark = request.form.get('remark', '').strip()
+    rdate = request.form.get('recharge_date', '').strip()
+    created_at = r['created_at']
+    if rdate:
+        created_at = rdate + ' 00:00:00'
+    db.execute(
+        "UPDATE client_recharges SET amount=?, payment_method=?, payment_no=?, remark=?, created_at=? WHERE id=?",
+        (amount, method, payment_no, remark, created_at, rid))
+    _recompute_client_balance(db, r['client_id'])
+    db.commit()
+    add_log(session.get('user_id'), session.get('username', ''), '编辑客户充值',
+            f'recharge#{rid} -> {amount}', request.remote_addr)
+    flash('充值记录已更新', 'success')
+    return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+
+
+@app.route('/admin/client-company/<int:customer_id>/recharge/<int:rid>/delete', methods=['POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_recharge_delete(customer_id, rid):
+    db = get_db()
+    denied = assert_customer_access(db, session.get('user_id'), session.get('role'), customer_id)
+    if denied:
+        return denied
+    r = _load_scoped_recharge(db, customer_id, rid)
+    if not r or (r['acc_customer_id'] and r['acc_customer_id'] != customer_id):
+        flash('充值记录不存在或无权限', 'danger')
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    db.execute("DELETE FROM client_recharges WHERE id=?", (rid,))
+    _recompute_client_balance(db, r['client_id'])
+    db.commit()
+    add_log(session.get('user_id'), session.get('username', ''), '删除客户充值',
+            f'recharge#{rid}', request.remote_addr)
+    flash('充值记录已删除', 'success')
+    return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+
+
+@app.route('/admin/client-company/<int:customer_id>/deduction/<int:did>/update', methods=['POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_deduction_update(customer_id, did):
+    db = get_db()
+    denied = assert_customer_access(db, session.get('user_id'), session.get('role'), customer_id)
+    if denied:
+        return denied
+    r = _load_scoped_deduction(db, customer_id, did)
+    if not r or (r['acc_customer_id'] and r['acc_customer_id'] != customer_id):
+        flash('扣减记录不存在或无权限', 'danger')
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    try:
+        amount = float(request.form.get('amount', 0) or 0)
+        qty = float(request.form.get('quantity', 0) or 0)
+        price = float(request.form.get('unit_price', 0) or 0)
+        if amount <= 0:
+            raise ValueError('金额须大于 0')
+    except ValueError as e:
+        flash(f'数值无效：{e}', 'warning')
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    item_name = request.form.get('item_name', '').strip() or (r['item_name'] or '出库商品')
+    ddate = request.form.get('deduct_date', '').strip() or r['deduct_date']
+    remark = request.form.get('remark', '').strip()
+    db.execute(
+        "UPDATE client_deductions SET amount=?, quantity=?, unit_price=?, item_name=?, deduct_date=?, remark=? WHERE id=?",
+        (amount, qty, price, item_name, ddate, remark, did))
+    if r['sales_item_id']:
+        db.execute(
+            "UPDATE sales_order_items SET item_name=?, quantity=?, unit_price=?, amount=? WHERE id=?",
+            (item_name, qty, price, amount, r['sales_item_id']))
+        _recompute_sales_order_totals(db, r['sales_order_id'])
+    _recompute_client_balance(db, r['client_id'])
+    db.commit()
+    add_log(session.get('user_id'), session.get('username', ''), '编辑客户扣减',
+            f'deduction#{did} -> {amount}', request.remote_addr)
+    flash('扣减记录已更新', 'success')
+    return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+
+
+@app.route('/admin/client-company/<int:customer_id>/deduction/<int:did>/delete', methods=['POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_deduction_delete(customer_id, did):
+    db = get_db()
+    denied = assert_customer_access(db, session.get('user_id'), session.get('role'), customer_id)
+    if denied:
+        return denied
+    r = _load_scoped_deduction(db, customer_id, did)
+    if not r or (r['acc_customer_id'] and r['acc_customer_id'] != customer_id):
+        flash('扣减记录不存在或无权限', 'danger')
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    if r['sales_item_id']:
+        db.execute("DELETE FROM sales_order_items WHERE id=?", (r['sales_item_id'],))
+        _recompute_sales_order_totals(db, r['sales_order_id'])
+    db.execute("DELETE FROM client_deductions WHERE id=?", (did,))
+    _recompute_client_balance(db, r['client_id'])
+    db.commit()
+    add_log(session.get('user_id'), session.get('username', ''), '删除客户扣减',
+            f'deduction#{did}', request.remote_addr)
+    flash('扣减记录已删除', 'success')
+    return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+
+
 @app.route('/admin/client-company/<int:customer_id>/excel-import', methods=['POST'])
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)
