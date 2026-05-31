@@ -188,6 +188,11 @@ def init_db():
             FOREIGN KEY (participant_id) REFERENCES participants(id)
         )
     ''')
+    # 同一项目下同一参与人唯一，保证 INSERT OR REPLACE 正常工作、避免重复行
+    cursor.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_pp_project_participant
+        ON project_participants(project_id, participant_id)
+    ''')
 
     # 参与人账户表（用于OCR匹配）
     cursor.execute('''
