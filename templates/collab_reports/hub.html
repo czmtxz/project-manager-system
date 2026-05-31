@@ -1,0 +1,73 @@
+{% extends staff_layout|default('nav_base.html') %}
+{% block title %}协同报表中心{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <div>
+            <h4 class="mb-1"><i class="bi bi-graph-up"></i> 客户协同报表</h4>
+            <p class="text-muted small mb-0">仅基于充值与扣减数据，与其它业务模块隔离</p>
+        </div>
+        {% if companies|length == 1 %}
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+            {{ companies[0].company_name }}
+        </span>
+        {% endif %}
+    </div>
+
+    {% if companies %}
+    <div class="card mb-4">
+        <div class="card-body py-3">
+            <form method="GET" class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small text-muted mb-1">选择客户</label>
+                    <select class="form-select form-select-sm" name="customer_id" onchange="this.form.submit()">
+                        {% for c in companies %}
+                        <option value="{{ c.customer_id }}" {% if c.customer_id == selected_customer_id %}selected{% endif %}>
+                            {{ c.company_name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-8 small text-muted">
+                    余额 ¥{{ "%.2f"|format(selected_company.balance) }} ·
+                    充值 ¥{{ "%.2f"|format(selected_company.total_recharge) }} ·
+                    扣减 ¥{{ "%.2f"|format(selected_company.total_deduct) }}
+                    {% if is_low_balance(selected_company.balance) %}
+                    <span class="badge bg-danger ms-1">余额预警</span>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        {% for r in reports %}
+        <div class="col-md-6 col-lg-4">
+            <a href="{{ url_for('admin_client_reports_view', slug=r.slug, customer_id=selected_customer_id) }}"
+               class="text-decoration-none">
+                <div class="card h-100 report-card-hover border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start gap-3">
+                            <div class="rounded-3 bg-primary bg-opacity-10 p-3">
+                                <i class="bi {{ r.icon }} fs-4 text-primary"></i>
+                            </div>
+                            <div>
+                                <h6 class="mb-1 text-dark">{{ r.title }}</h6>
+                                <p class="text-muted small mb-0">{{ r.description }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info">暂无可见客户，请联系管理员分配客户权限。</div>
+    {% endif %}
+</div>
+<style>
+.report-card-hover { transition: transform .15s, box-shadow .15s; }
+.report-card-hover:hover { transform: translateY(-2px); box-shadow: 0 .5rem 1rem rgba(0,0,0,.08)!important; }
+</style>
+{% endblock %}

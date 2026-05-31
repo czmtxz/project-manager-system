@@ -1,0 +1,35 @@
+<form method="GET" class="row g-2 align-items-end mb-3" id="reportFilterForm">
+    {% if show_customer_select %}
+    <div class="col-md-3">
+        <label class="form-label small text-muted mb-1">客户</label>
+        <select class="form-select form-select-sm" name="customer_id">
+            {% for c in companies %}
+            <option value="{{ c.customer_id }}" {% if c.customer_id == customer_id %}selected{% endif %}>
+                {{ c.company_name }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+    <div class="col-md-2">
+        <label class="form-label small text-muted mb-1">开始日期</label>
+        <input type="date" class="form-control form-control-sm" name="start_date" value="{{ start_date }}">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label small text-muted mb-1">结束日期</label>
+        <input type="date" class="form-control form-control-sm" name="end_date" value="{{ end_date }}">
+    </div>
+    {% if show_granularity %}
+    <div class="col-md-2">
+        <label class="form-label small text-muted mb-1">粒度</label>
+        <select class="form-select form-select-sm" name="granularity">
+            <option value="day" {% if granularity == 'day' %}selected{% endif %}>按日</option>
+            <option value="month" {% if granularity == 'month' %}selected{% endif %}>按月</option>
+        </select>
+    </div>
+    {% endif %}
+    <div class="col-md-auto">
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> 查询</button>
+        <a href="{{ reset_url }}" class="btn btn-outline-secondary btn-sm">重置</a>
+    </div>
+</form>
