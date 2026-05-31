@@ -1,46 +1,74 @@
 {% extends "base.html" %}
-{% block title %}登录 - 项目管理系统{% endblock %}
+{% block title %}登录 - 项目投资管理系统{% endblock %}
 {% block body %}
-<div class="login-wrapper">
-    <div class="login-card">
-        <div class="login-header">
-            <i class="bi bi-kanban" style="font-size: 3rem; color: #4361ee;"></i>
-            <h3 class="mt-2">项目管理系统</h3>
-            <p class="text-muted">请登录您的账号</p>
+<div class="login-wrapper" style="background-image: linear-gradient(120deg, rgba(13,18,58,0.92) 0%, rgba(26,21,82,0.62) 45%, rgba(58,12,163,0.18) 100%), url('{{ url_for('static', filename='img/login-bg.png') }}');">
+    <div class="login-stage">
+        <!-- 左侧品牌宣传区 -->
+        <div class="login-hero">
+            <div class="login-hero-badge">
+                <i class="bi bi-shield-check"></i> 企业级 · 安全可信
+            </div>
+            <h1 class="login-hero-title">
+                项目投资管理系统
+            </h1>
+            <p class="login-hero-subtitle">
+                一站式打通 <b>项目 · 投资 · 销售 · 采购 · 财务 · 报表</b><br>
+                让每一笔资金都看得清，让每一分利润都算得准。
+            </p>
+            <ul class="login-hero-features">
+                <li><i class="bi bi-graph-up-arrow"></i> 经营驾驶舱，毛利实时可视</li>
+                <li><i class="bi bi-magic"></i> 发票/合同 OCR 智能识别录入</li>
+                <li><i class="bi bi-people-fill"></i> 客户协同门户，资金对账透明</li>
+                <li><i class="bi bi-clipboard-data"></i> 多维报表分析，决策一目了然</li>
+            </ul>
+            <div class="login-hero-stats">
+                <div><span>10+</span><small>业务模块</small></div>
+                <div><span>OCR</span><small>智能录入</small></div>
+                <div><span>实时</span><small>报表分析</small></div>
+            </div>
         </div>
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-        <form method="POST" action="{{ url_for('login') }}">
-            <div class="mb-3">
-                <label class="form-label">用户名</label>
-                <div class="input-group">
-                    <span class="input-group-text"><i class="bi bi-person"></i></span>
-                    <input type="text" name="username" class="form-control" placeholder="请输入用户名" required autofocus>
-                </div>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">密码</label>
-                <div class="input-group">
-                    <span class="input-group-text"><i class="bi bi-lock"></i></span>
-                    <input type="password" name="password" class="form-control" placeholder="请输入密码" required>
-                </div>
-            </div>
-            <button type="submit" class="btn btn-primary w-100">
-            <i class="bi bi-box-arrow-in-right"></i> 登 录
-        </button>
-        </form>
 
-        <div class="text-center mt-2 text-muted small">
-            默认管理员: admin / admin123<br>
-            客户协同专员使用同一登录页，登录后进入客户协同管理
+        <!-- 右侧登录卡片 -->
+        <div class="login-card">
+            <div class="login-header">
+                <div class="login-logo"><i class="bi bi-kanban"></i></div>
+                <h3 class="mt-3 mb-1">欢迎回来</h3>
+                <p class="text-muted">登录您的账号，开启高效管理</p>
+            </div>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            <form method="POST" action="{{ url_for('login') }}">
+                <div class="mb-3">
+                    <label class="form-label">用户名</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-person"></i></span>
+                        <input type="text" name="username" class="form-control" placeholder="请输入用户名" required autofocus>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">密码</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                        <input type="password" name="password" class="form-control" placeholder="请输入密码" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-box-arrow-in-right"></i> 登 录
+                </button>
+            </form>
+
+            <div class="text-center mt-3 text-muted small login-tip">
+                默认管理员：admin / admin123<br>
+                客户协同专员使用同一登录页，登录后进入客户协同管理
+            </div>
         </div>
     </div>
 </div>
