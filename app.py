@@ -1446,6 +1446,27 @@ def project_delete(pid):
 
 # ==================== 路由：项目详情 ====================
 
+def recalc_investment_ratios(db, pid):
+    """根据各参与人在本项目的实际投资金额，自动计算并写回投资比例（占项目总投资的百分比）。"""
+    total = db.execute(
+        "SELECT COALESCE(SUM(amount), 0) FROM investments WHERE project_id=?", (pid,)
+    ).fetchone()[0] or 0
+    rows = db.execute(
+        "SELECT participant_id FROM project_participants WHERE project_id=?", (pid,)
+    ).fetchall()
+    for r in rows:
+        part_sum = db.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM investments WHERE project_id=? AND participant_id=?",
+            (pid, r['participant_id'])
+        ).fetchone()[0] or 0
+        ratio = round(part_sum / total * 100, 2) if total > 0 else 0
+        db.execute(
+            "UPDATE project_participants SET investment_ratio=? WHERE project_id=? AND participant_id=?",
+            (ratio, pid, r['participant_id'])
+        )
+    db.commit()
+
+
 @app.route('/project/<int:pid>')
 @login_required
 def project_detail(pid):
@@ -1454,6 +1475,9 @@ def project_detail(pid):
     if not project:
         flash('项目不存在', 'danger')
         return redirect(url_for('project_list'))
+
+    # 投资比例按实际投资金额自动重算（自愈，保证展示与下游分红计算一致）
+    recalc_investment_ratios(db, pid)
 
     # 参与人列表
     participants = db.execute("""
@@ -1677,6 +1701,7 @@ def investment_add(pid):
         (pid, participant_id, invest_date, amount, invest_type, payment_method, remark)
     )
     db.commit()
+    recalc_investment_ratios(db, pid)
     add_log(session['user_id'], session['username'], '新增投资',
             f'项目{pid}新增{invest_type}: {amount}元', request.remote_addr)
     flash('投资记录添加成功', 'success')
