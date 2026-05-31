@@ -24,6 +24,84 @@ def _now():
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
+def _month_key(dt_str):
+    if not dt_str:
+        return '未知'
+    s = str(dt_str).strip()
+    return s[:7] if len(s) >= 7 else s
+
+
+def summarize_recharge_records(recharges):
+    """充值记录汇总：按付款方式、月份"""
+    total_amount = 0.0
+    by_method = {}
+    by_month = {}
+    for row in recharges:
+        r = dict(row)
+        amt = float(r.get('amount') or 0)
+        total_amount += amt
+        method = r.get('payment_method') or 'other'
+        bucket = by_method.setdefault(method, {'count': 0, 'amount': 0.0})
+        bucket['count'] += 1
+        bucket['amount'] += amt
+        mk = _month_key(r.get('created_at'))
+        mb = by_month.setdefault(mk, {'count': 0, 'amount': 0.0})
+        mb['count'] += 1
+        mb['amount'] += amt
+    return {
+        'total_count': len(recharges),
+        'total_amount': total_amount,
+        'by_method': sorted(
+            [{'method': k, 'label': PAYMENT_METHODS.get(k, k), **v} for k, v in by_method.items()],
+            key=lambda x: -x['amount'],
+        ),
+        'by_month': sorted(
+            [{'month': k, **v} for k, v in by_month.items()],
+            key=lambda x: x['month'],
+            reverse=True,
+        ),
+    }
+
+
+def summarize_deduction_records(deductions):
+    """扣减记录汇总：按品名、月份"""
+    total_amount = 0.0
+    total_qty = 0.0
+    by_item = {}
+    by_month = {}
+    for row in deductions:
+        d = dict(row)
+        amt = float(d.get('amount') or 0)
+        qty = float(d.get('quantity') or 0)
+        total_amount += amt
+        total_qty += qty
+        item = (d.get('item_name') or '').strip() or '未填写'
+        ib = by_item.setdefault(item, {'count': 0, 'qty': 0.0, 'amount': 0.0})
+        ib['count'] += 1
+        ib['qty'] += qty
+        ib['amount'] += amt
+        dt = d.get('deduct_date') or d.get('created_at')
+        mk = _month_key(dt)
+        mb = by_month.setdefault(mk, {'count': 0, 'qty': 0.0, 'amount': 0.0})
+        mb['count'] += 1
+        mb['qty'] += qty
+        mb['amount'] += amt
+    return {
+        'total_count': len(deductions),
+        'total_qty': total_qty,
+        'total_amount': total_amount,
+        'by_item': sorted(
+            [{'item_name': k, **v} for k, v in by_item.items()],
+            key=lambda x: -x['amount'],
+        ),
+        'by_month': sorted(
+            [{'month': k, **v} for k, v in by_month.items()],
+            key=lambda x: x['month'],
+            reverse=True,
+        ),
+    }
+
+
 def primary_client_for_customer(db, customer_id):
     """取该公司下首个已激活门户账号。"""
     if not customer_id:
@@ -110,14 +188,14 @@ def get_company_workspace(db, customer_id=0, client_id=None):
     recharges = db.execute(
         f"""SELECT cr.*, ca.company_name FROM client_recharges cr
             JOIN client_accounts ca ON cr.client_id = ca.id
-            WHERE cr.client_id IN ({ph}) ORDER BY cr.created_at DESC LIMIT 50""",
+            WHERE cr.client_id IN ({ph}) ORDER BY cr.created_at DESC, cr.id DESC""",
         scope_ids,
     ).fetchall()
     deductions = db.execute(
         f"""SELECT cd.*, ca.company_name FROM client_deductions cd
             JOIN client_accounts ca ON cd.client_id = ca.id
             WHERE cd.client_id IN ({ph})
-            ORDER BY COALESCE(cd.deduct_date, cd.created_at) DESC LIMIT 50""",
+            ORDER BY COALESCE(cd.deduct_date, cd.created_at) DESC, cd.id DESC""",
         scope_ids,
     ).fetchall()
     accounts = db.execute(
@@ -138,6 +216,8 @@ def get_company_workspace(db, customer_id=0, client_id=None):
         'transactions': transactions[:80],
         'recharges': recharges,
         'deductions': deductions,
+        'recharge_summary': summarize_recharge_records(recharges),
+        'deduction_summary': summarize_deduction_records(deductions),
         'accounts': accounts,
         'payment_methods': PAYMENT_METHODS,
     }

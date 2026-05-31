@@ -148,7 +148,7 @@
                             <tr>
                                 <td class="small">{{ (r.created_at or '')[:16] }}</td>
                                 <td class="text-end text-success">{{ "%.2f"|format(r.amount or 0) }}</td>
-                                <td class="small">{{ r.payment_method or '-' }}</td>
+                                <td class="small">{{ ws.payment_methods.get(r.payment_method, r.payment_method or '-') }}</td>
                                 <td class="small">{{ r.remark or '-' }}</td>
                                 <td class="text-nowrap">
                                     <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 edit-recharge"
@@ -169,6 +169,46 @@
                             </tbody>
                         </table>
                     </div>
+                    {% if ws.recharge_summary.total_count %}
+                    <div class="border-top bg-light p-2">
+                        <div class="d-flex justify-content-between align-items-center small fw-semibold mb-2">
+                            <span>合计</span>
+                            <span>{{ ws.recharge_summary.total_count }} 笔 · <span class="text-success">{{ "%.2f"|format(ws.recharge_summary.total_amount) }}</span> 元</span>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <div class="small text-muted mb-1">按付款方式</div>
+                                <table class="table table-sm table-bordered mb-0 bg-white">
+                                    <thead><tr><th>付款方式</th><th class="text-end">笔数</th><th class="text-end">金额</th></tr></thead>
+                                    <tbody>
+                                    {% for row in ws.recharge_summary.by_method %}
+                                    <tr>
+                                        <td>{{ row.label }}</td>
+                                        <td class="text-end">{{ row.count }}</td>
+                                        <td class="text-end text-success">{{ "%.2f"|format(row.amount) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="small text-muted mb-1">按月份</div>
+                                <table class="table table-sm table-bordered mb-0 bg-white">
+                                    <thead><tr><th>月份</th><th class="text-end">笔数</th><th class="text-end">金额</th></tr></thead>
+                                    <tbody>
+                                    {% for row in ws.recharge_summary.by_month %}
+                                    <tr>
+                                        <td>{{ row.month }}</td>
+                                        <td class="text-end">{{ row.count }}</td>
+                                        <td class="text-end text-success">{{ "%.2f"|format(row.amount) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -214,6 +254,48 @@
                             </tbody>
                         </table>
                     </div>
+                    {% if ws.deduction_summary.total_count %}
+                    <div class="border-top bg-light p-2">
+                        <div class="d-flex justify-content-between align-items-center small fw-semibold mb-2">
+                            <span>合计</span>
+                            <span>{{ ws.deduction_summary.total_count }} 笔 · {{ "%g"|format(ws.deduction_summary.total_qty) }} 吨 · <span class="text-danger">{{ "%.2f"|format(ws.deduction_summary.total_amount) }}</span> 元</span>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <div class="small text-muted mb-1">按品名</div>
+                                <table class="table table-sm table-bordered mb-0 bg-white">
+                                    <thead><tr><th>品名</th><th class="text-end">笔数</th><th class="text-end">吨数</th><th class="text-end">金额</th></tr></thead>
+                                    <tbody>
+                                    {% for row in ws.deduction_summary.by_item %}
+                                    <tr>
+                                        <td>{{ row.item_name }}</td>
+                                        <td class="text-end">{{ row.count }}</td>
+                                        <td class="text-end">{{ "%g"|format(row.qty) }}</td>
+                                        <td class="text-end text-danger">{{ "%.2f"|format(row.amount) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="small text-muted mb-1">按月份</div>
+                                <table class="table table-sm table-bordered mb-0 bg-white">
+                                    <thead><tr><th>月份</th><th class="text-end">笔数</th><th class="text-end">吨数</th><th class="text-end">金额</th></tr></thead>
+                                    <tbody>
+                                    {% for row in ws.deduction_summary.by_month %}
+                                    <tr>
+                                        <td>{{ row.month }}</td>
+                                        <td class="text-end">{{ row.count }}</td>
+                                        <td class="text-end">{{ "%g"|format(row.qty) }}</td>
+                                        <td class="text-end text-danger">{{ "%.2f"|format(row.amount) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
