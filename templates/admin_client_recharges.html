@@ -2,15 +2,41 @@
 {% block title %}充值申请审核{% endblock %}
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
         <h4 class="mb-0"><i class="bi bi-cash-stack"></i> 充值申请审核</h4>
+        {% if pending_count > 0 %}
+        <span class="badge bg-warning text-dark fs-6">待审核 {{ pending_count }} 笔 · {{ "%.2f"|format(pending_amount) }} 元</span>
+        {% endif %}
     </div>
+
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link {% if current_status == 'pending' %}active{% endif %}"
+               href="{{ url_for('admin_client_recharges', status='pending', client_id=request.args.get('client_id', '')) }}">
+                待审核{% if pending_count %} <span class="badge bg-warning text-dark">{{ pending_count }}</span>{% endif %}
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if current_status == 'confirmed' %}active{% endif %}"
+               href="{{ url_for('admin_client_recharges', status='confirmed', client_id=request.args.get('client_id', '')) }}">已确认</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if current_status == 'rejected' %}active{% endif %}"
+               href="{{ url_for('admin_client_recharges', status='rejected', client_id=request.args.get('client_id', '')) }}">已拒绝</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if not current_status %}active{% endif %}"
+               href="{{ url_for('admin_client_recharges', client_id=request.args.get('client_id', '')) }}">全部</a>
+        </li>
+    </ul>
 
     <div class="card mb-3">
         <div class="card-body">
-            <form method="GET" class="row g-2">
-                <div class="col-md-2">
-                    <select class="form-select" name="client_id">
+            <form method="GET" class="row g-2 align-items-end">
+                {% if request.args.get('status') %}<input type="hidden" name="status" value="{{ request.args.get('status') }}">{% endif %}
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">客户</label>
+                    <select class="form-select form-select-sm" name="client_id">
                         <option value="">全部客户</option>
                         {% for c in clients %}
                         <option value="{{ c.id }}" {% if request.args.get('client_id')|int == c.id %}selected{% endif %}>{{ c.company_name }}</option>
@@ -18,26 +44,25 @@
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <select class="form-select" name="status">
-                        <option value="">全部状态</option>
-                        <option value="pending" {% if request.args.get('status') == 'pending' %}selected{% endif %}>待审核</option>
-                        <option value="confirmed" {% if request.args.get('status') == 'confirmed' %}selected{% endif %}>已确认</option>
-                        <option value="rejected" {% if request.args.get('status') == 'rejected' %}selected{% endif %}>已拒绝</option>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <select class="form-select" name="payment_method">
-                        <option value="">全部方式</option>
+                    <label class="form-label small mb-1">付款方式</label>
+                    <select class="form-select form-select-sm" name="payment_method">
+                        <option value="">全部</option>
                         {% for key, label in payment_methods.items() %}
                         <option value="{{ key }}" {% if request.args.get('payment_method') == key %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-2"><input type="date" class="form-control" name="start_date" value="{{ request.args.get('start_date', '') }}"></div>
-                <div class="col-md-2"><input type="date" class="form-control" name="end_date" value="{{ request.args.get('end_date', '') }}"></div>
                 <div class="col-md-2">
+                    <label class="form-label small mb-1">开始日期</label>
+                    <input type="date" class="form-control form-control-sm" name="start_date" value="{{ request.args.get('start_date', '') }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">结束日期</label>
+                    <input type="date" class="form-control form-control-sm" name="end_date" value="{{ request.args.get('end_date', '') }}">
+                </div>
+                <div class="col-md-3">
                     <button class="btn btn-primary btn-sm" type="submit">筛选</button>
-                    <a href="{{ url_for('admin_client_recharges') }}" class="btn btn-outline-secondary btn-sm">重置</a>
+                    <a href="{{ url_for('admin_client_recharges', status=request.args.get('status', '')) }}" class="btn btn-outline-secondary btn-sm">重置</a>
                 </div>
             </form>
         </div>
@@ -55,25 +80,25 @@
                             <th class="text-end">金额</th>
                             <th>方式</th>
                             <th>流水号</th>
+                            <th>备注</th>
                             <th>状态</th>
-                            <th>附件</th>
                             <th class="table-op-col">操作</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for r in recharges %}
-                        <tr>
+                        <tr{% if r.status == 'pending' %} class="table-warning"{% endif %}>
                             <td class="small text-nowrap">{{ (r.created_at or '')[:16] }}</td>
                             <td>{{ r.company_name or '-' }}</td>
                             <td class="text-end text-success fw-semibold">{{ "%.2f"|format(r.amount or 0) }}</td>
                             <td class="small">{{ payment_methods.get(r.payment_method, r.payment_method or '-') }}</td>
                             <td class="small">{{ r.payment_no or '-' }}</td>
+                            <td class="small">{{ r.remark or '-' }}</td>
                             <td>
                                 {% if r.status == 'pending' %}<span class="badge bg-warning text-dark">待审核</span>
                                 {% elif r.status == 'confirmed' %}<span class="badge bg-success">已确认</span>
                                 {% else %}<span class="badge bg-danger">已拒绝</span>{% endif %}
                             </td>
-                            <td>{% if r.attachment %}<a target="_blank" href="/uploads/{{ r.attachment }}">查看</a>{% else %}-{% endif %}</td>
                             <td class="table-op-col">
                                 {% if r.status == 'pending' %}
                                 <a href="{{ url_for('admin_client_recharge_confirm', id=r.id) }}"
@@ -84,12 +109,8 @@
                                    onclick="return confirm('确认拒绝该充值申请？')">拒绝</a>
                                 {% else %}
                                 <span class="text-muted small">
-                                    {% if r.confirmer_name or r.confirmed_at %}
-                                        {% if r.confirmer_name %}{{ r.confirmer_name }}{% endif %}
-                                        {% if r.confirmed_at %}<br>{{ (r.confirmed_at or '')[:16] }}{% endif %}
-                                    {% else %}
-                                        已审核
-                                    {% endif %}
+                                    {% if r.confirmer_name %}{{ r.confirmer_name }}{% else %}已审核{% endif %}
+                                    {% if r.confirmed_at %}<br>{{ (r.confirmed_at or '')[:16] }}{% endif %}
                                 </span>
                                 {% if r.customer_id %}
                                 <a href="{{ url_for('admin_client_workspace', customer_id=r.customer_id) }}"
@@ -103,7 +124,14 @@
                 </table>
             </div>
             {% else %}
-            <div class="text-center text-muted py-5">暂无充值记录</div>
+            <div class="text-center text-muted py-5">
+                {% if current_status == 'pending' %}
+                <p class="mb-1">当前没有待审核的充值申请</p>
+                <p class="small">客户门户提交的充值会出现在这里；Excel 导入的充值需审核后才会入账。</p>
+                {% else %}
+                暂无充值记录
+                {% endif %}
+            </div>
             {% endif %}
         </div>
     </div>

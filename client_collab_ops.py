@@ -827,7 +827,7 @@ def _parse_df_rows(df, mode):
     return {'rows': rows}
 
 
-def import_recharge_rows(db, client_id, rows, user_id):
+def import_recharge_rows(db, client_id, rows, user_id, auto_confirm=False):
     ok, errs = 0, []
     for i, row in enumerate(rows, 1):
         try:
@@ -838,7 +838,7 @@ def import_recharge_rows(db, client_id, rows, user_id):
                 row.get('payment_no', ''),
                 row.get('remark', '') or row.get('recharge_date', ''),
                 user_id=user_id,
-                auto_confirm=True,
+                auto_confirm=auto_confirm,
             )
             ok += 1
         except Exception as e:

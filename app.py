@@ -4107,6 +4107,23 @@ def admin_client_recharges():
     payment_method = request.args.get('payment_method', '').strip()
     start_date = request.args.get('start_date', '').strip()
     end_date = request.args.get('end_date', '').strip()
+
+    pending_sql = """SELECT COUNT(*) AS cnt, COALESCE(SUM(cr.amount), 0) AS amt
+                     FROM client_recharges cr
+                     LEFT JOIN client_accounts ca ON cr.client_id = ca.id
+                     WHERE cr.status='pending'"""
+    pending_params = []
+    pscope, pscope_p = apply_client_account_scope_sql(
+        db, session.get('user_id'), session.get('role'), 'ca')
+    pending_sql += pscope
+    pending_params.extend(pscope_p)
+    pending_row = db.execute(pending_sql, pending_params).fetchone()
+    pending_count = int(pending_row['cnt'] or 0)
+    pending_amount = float(pending_row['amt'] or 0)
+
+    if 'status' not in request.args and pending_count > 0:
+        status = 'pending'
+
     sql = """SELECT cr.*, ca.username, ca.company_name, ca.contact_name, ca.customer_id,
                     u.username as confirmer_name
              FROM client_recharges cr
@@ -4147,6 +4164,9 @@ def admin_client_recharges():
         recharges=recharges,
         clients=clients,
         payment_methods=PAYMENT_METHODS,
+        pending_count=pending_count,
+        pending_amount=pending_amount,
+        current_status=status,
     )
 
 
