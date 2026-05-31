@@ -663,41 +663,50 @@ document.addEventListener('DOMContentLoaded', function () {
             filtered.forEach(function (r) {
                 var key = displayValue(field, r[field]);
                 if (!groups[key]) {
-                    groups[key] = { count: 0, qty: 0, amount: 0 };
+                    groups[key] = { count: 0, qty: 0, trucks: 0, amount: 0 };
                 }
                 groups[key].count += 1;
                 groups[key].qty += r.quantity;
+                groups[key].trucks += r.truck_count || 0;
                 groups[key].amount += r.amount;
             });
             var rows = Object.keys(groups).map(function (key) {
-                return { key: key, count: groups[key].count, qty: groups[key].qty, amount: groups[key].amount };
+                return { key: key, count: groups[key].count, qty: groups[key].qty, trucks: groups[key].trucks, amount: groups[key].amount };
             });
             rows.sort(function (a, b) {
                 if (field === 'date' || field === 'month') {
                     return b.key > a.key ? 1 : b.key < a.key ? -1 : 0;
                 }
-                if (field === 'unit_price') {
+                if (field === 'unit_price' || field === 'truck_count') {
                     return Number(b.key) - Number(a.key);
                 }
                 return b.amount - a.amount;
             });
             var totalCount = 0;
             var totalQty = 0;
+            var totalTrucks = 0;
             var totalAmount = 0;
             summaryBody.innerHTML = rows.map(function (row) {
                 totalCount += row.count;
                 totalQty += row.qty;
+                totalTrucks += row.trucks;
                 totalAmount += row.amount;
                 return '<tr><td>' + row.key + '</td>' +
                     '<td class="text-end">' + row.count + '</td>' +
+                    '<td class="text-end">' + formatQty(row.trucks) + '</td>' +
                     '<td class="text-end">' + formatQty(row.qty) + '</td>' +
                     '<td class="text-end text-danger">' + formatMoney(row.amount) + '</td></tr>';
             }).join('');
             if (!rows.length) {
-                summaryBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">无匹配数据</td></tr>';
+                summaryBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">无匹配数据</td></tr>';
             }
-            summaryTotal.innerHTML = totalCount + ' 笔 · ' + formatQty(totalQty) + ' 吨 · ' +
+            var totalParts = totalCount + ' 笔';
+            if (totalTrucks > 0) {
+                totalParts += ' · ' + formatQty(totalTrucks) + ' 车';
+            }
+            totalParts += ' · ' + formatQty(totalQty) + ' 吨 · ' +
                 '<span class="text-danger">' + formatMoney(totalAmount) + '</span> 元';
+            summaryTotal.innerHTML = totalParts;
         }
 
         fieldSelect.addEventListener('change', function () {
