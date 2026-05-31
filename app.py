@@ -3471,16 +3471,24 @@ def admin_client_company_excel_import(customer_id):
     if denied:
         return denied
     mode = request.form.get('mode', 'recharge')
+    sheet = request.form.get('sheet', '').strip() or None
     if 'excel_file' not in request.files or not request.files['excel_file'].filename:
         flash('请上传 Excel 文件', 'warning')
         return redirect(url_for('admin_client_workspace', customer_id=customer_id))
     f = request.files['excel_file']
     _, rel = save_upload_file(app.config['UPLOAD_FOLDER'], f, subdir='client_excel')
     abs_path = os.path.join(app.config['UPLOAD_FOLDER'], rel.replace('/', os.sep))
-    parsed = parse_collab_excel(abs_path, mode=mode)
+    parsed = parse_collab_excel(abs_path, mode=mode, sheet=sheet)
     if parsed.get('error'):
-        flash(f'Excel 导入失败：{parsed["error"]}', 'danger')
+        err = parsed['error']
+        avail = parsed.get('available_sheets')
+        if avail and '页签' not in err:
+            err += f'（该文件页签：{"、".join(avail)}，可在「页签名称」中指定）'
+        flash(f'Excel 导入失败：{err}', 'danger')
         return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    used_sheet = parsed.get('used_sheet')
+    available_sheets = parsed.get('available_sheets') or []
+    other_sheets = [s for s in available_sheets if s != used_sheet]
     client = primary_client_for_company(db, customer_id=customer_id, client_id=None)
     if not client:
         flash('未找到激活的客户账号，无法导入', 'danger')

@@ -494,19 +494,93 @@ def import_standard_excel_bundle(db, customer_id, client_id, parsed, user_id, sp
     return True, '；'.join(parts), errs
 
 
-def parse_collab_excel(file_path, mode='recharge'):
-    """解析 Excel：mode=recharge|outbound|auto（自动识别标准模板）"""
+STANDARD_HEADER_TOKENS = ['收款日期', '金额', '销售日期', '规格', '车数',
+                          '销售吨数', '单价', '销售金额', '余款', '备注']
+
+
+def _detect_header_row(raw):
+    """raw 为 header=None 读入的 DataFrame，定位标准表头所在行（跳过标题行）。"""
+    scan = min(len(raw), 15)
+    best_idx, best_hits = None, 0
+    for i in range(scan):
+        vals = [str(v).strip() for v in raw.iloc[i].tolist()]
+        hits = sum(1 for t in STANDARD_HEADER_TOKENS if t in vals)
+        if hits > best_hits:
+            best_hits, best_idx = hits, i
+    if best_idx is not None and best_hits >= 3:
+        return best_idx
+    return None
+
+
+def _load_sheet_df(pd, file_path, sheet):
+    """读取指定页签并自动跳过标题行，返回规范化表头的 DataFrame。"""
+    try:
+        raw = pd.read_excel(file_path, sheet_name=sheet, header=None)
+    except Exception:
+        return None
+    if raw is None or raw.empty:
+        return None
+    hdr = _detect_header_row(raw)
+    if hdr is None:
+        try:
+            df = pd.read_excel(file_path, sheet_name=sheet)
+        except Exception:
+            return None
+    else:
+        header = [str(v).strip() for v in raw.iloc[hdr].tolist()]
+        df = raw.iloc[hdr + 1:].copy()
+        df.columns = header
+        df = df.reset_index(drop=True)
+    df.columns = [str(c).strip() for c in df.columns]
+    df = df.dropna(how='all')
+    return df
+
+
+def parse_collab_excel(file_path, mode='recharge', sheet=None):
+    """解析 Excel：自动定位表头行；支持多页签（sheet 指定，默认取首个有效页签）。"""
     try:
         import pandas as pd
     except ImportError:
         return {'error': '服务器未安装 pandas，无法导入 Excel'}
 
     try:
-        df = pd.read_excel(file_path)
+        xl = pd.ExcelFile(file_path)
     except Exception as e:
         return {'error': str(e)}
 
-    if df.empty:
+    sheet_names = list(xl.sheet_names)
+    if sheet:
+        if sheet not in sheet_names:
+            return {'error': f'未找到页签「{sheet}」，可用页签：{"、".join(sheet_names)}',
+                    'available_sheets': sheet_names}
+        candidates = [sheet]
+    else:
+        candidates = sheet_names
+
+    last_err = None
+    for sn in candidates:
+        df = _load_sheet_df(pd, file_path, sn)
+        if df is None or df.empty:
+            continue
+        result = _parse_df_rows(df, mode)
+        if result.get('error'):
+            last_err = result['error']
+            continue
+        if not (result.get('rows') or result.get('recharge_rows') or result.get('outbound_rows')):
+            continue
+        result['used_sheet'] = sn
+        result['available_sheets'] = sheet_names
+        return result
+
+    return {
+        'error': last_err or '未识别标准模板列，请使用：收款日期、金额、销售日期、规格、车数、销售吨数、单价、销售金额、余款、备注',
+        'available_sheets': sheet_names,
+    }
+
+
+def _parse_df_rows(df, mode):
+    """对单个已规范化表头的 DataFrame 解析为可导入记录。"""
+    if df is None or df.empty:
         return {'error': 'Excel 为空'}
 
     df.columns = [str(c).strip() for c in df.columns]
