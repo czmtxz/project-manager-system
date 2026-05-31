@@ -34,9 +34,11 @@ from project_category_utils import (
 from auth_utils import (
     ROLE_ADMIN,
     ROLE_CLIENT_COLLAB,
+    ROLE_CLIENT_COLLAB_ADMIN,
     ROLE_LABELS,
     MODULE_CLIENT_PORTAL,
     module_required,
+    collab_admin_required,
     register_auth_hooks,
     login_redirect_for_role,
 )
@@ -85,6 +87,7 @@ from client_collab_ops import (
 
 STAFF_ROLES = [
     {'code': 'admin', 'name': '系统管理员'},
+    {'code': 'client_collab_admin', 'name': '客户协同管理员'},
     {'code': 'client_collab', 'name': '客户协同专员'},
     {'code': 'finance', 'name': '财务'},
     {'code': 'manager', 'name': '项目经理'},

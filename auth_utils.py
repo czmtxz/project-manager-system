@@ -28,7 +28,6 @@ COLLAB_ADMIN_STAFF_ENDPOINTS = frozenset({
     'admin_collab_staff_reset',
     'admin_collab_staff_toggle',
     'admin_collab_staff_delete',
-    'admin_user_collab_scope',
 })
 
 # 客户协同专员可访问的内部路由
