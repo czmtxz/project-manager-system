@@ -3611,10 +3611,11 @@ def admin_client_deduction_delete(customer_id, did):
     if not r or (r['acc_customer_id'] and r['acc_customer_id'] != customer_id):
         flash('扣减记录不存在或无权限', 'danger')
         return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    # 先删扣减记录，避免外键引用 sales_order_items
+    db.execute("DELETE FROM client_deductions WHERE id=?", (did,))
     if r['sales_item_id']:
         db.execute("DELETE FROM sales_order_items WHERE id=?", (r['sales_item_id'],))
         _recompute_sales_order_totals(db, r['sales_order_id'])
-    db.execute("DELETE FROM client_deductions WHERE id=?", (did,))
     _recompute_client_balance(db, r['client_id'])
     db.commit()
     add_log(session.get('user_id'), session.get('username', ''), '删除客户扣减',
