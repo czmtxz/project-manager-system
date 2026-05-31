@@ -53,6 +53,7 @@
                             <th class="text-end">余额</th>
                             <th class="text-end">累计充值</th>
                             <th class="text-end">累计扣减</th>
+                            <th>客户登录</th>
                             <th>注册时间</th>
                             <th>操作</th>
                         </tr>
@@ -81,6 +82,16 @@
                             <td class="text-end">{{ "%.2f"|format(acc.balance or 0) }}</td>
                             <td class="text-end text-success">{{ "%.2f"|format(acc.total_recharge or 0) }}</td>
                             <td class="text-end text-danger">{{ "%.2f"|format(acc.total_deduct or 0) }}</td>
+                            <td class="text-nowrap">
+                                {% set portal_url = request.url_root ~ 'portal/login' %}
+                                <a href="{{ portal_url }}" target="_blank" class="small text-decoration-none" title="客户登录入口">
+                                    <i class="bi bi-box-arrow-up-right"></i> 登录入口
+                                </a>
+                                <button type="button" class="btn btn-sm btn-link p-0 ms-1 align-baseline copy-login"
+                                        data-url="{{ portal_url }}" data-user="{{ acc.username }}" title="复制登录地址和账号">
+                                    <i class="bi bi-clipboard"></i>
+                                </button>
+                            </td>
                             <td>{{ (acc.created_at or '')[:16] }}</td>
                             <td class="text-nowrap">
                                 {% if acc.customer_id %}
