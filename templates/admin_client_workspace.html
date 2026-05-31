@@ -41,6 +41,30 @@
         </div>
     </div>
 
+    {% if ws.pending_sync_amount > 0 %}
+    <div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <i class="bi bi-info-circle"></i>
+            销售模块有 <strong>{{ ws.pending_sync|length }}</strong> 条出库明细尚未同步为扣减，
+            合计 <strong class="text-danger">¥{{ "%.2f"|format(ws.pending_sync_amount) }}</strong>，同步后将参与余额计算。
+        </div>
+        {% if can_collab_authorize %}
+        <a href="{{ url_for('admin_client_deductions_sync', customer_id=ws.customer_id) }}"
+           class="btn btn-sm btn-primary">同步至扣减</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if ws.deduct_by_type|length > 1 %}
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        {% for key, info in ws.deduct_by_type.items() %}
+        <span class="badge bg-light text-dark border">
+            {{ info.label }} {{ info.count }} 笔 · ¥{{ "%.2f"|format(info.amount) }}
+        </span>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {% set preview = session.get('collab_ocr_preview') %}
     {% if preview and preview.customer_id == ws.customer_id and preview.rows %}
     <div class="card mb-3 border-info">
@@ -160,6 +184,29 @@
             </div>
         </div>
 
+        <div class="col-lg-6">
+            <div class="card mb-3">
+                <div class="card-header">
+                    <span><i class="bi bi-dash-circle text-secondary"></i> 其他扣减</span>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('admin_client_company_other_deduct', customer_id=ws.customer_id) }}">
+                        <div class="row g-2">
+                            <div class="col-md-6"><input class="form-control form-control-sm" name="item_name" placeholder="扣减项目（如手续费、调整）" required></div>
+                            <div class="col-md-6"><input class="form-control form-control-sm" name="amount" type="number" step="0.01" min="0.01" placeholder="金额" required></div>
+                            <div class="col-md-6"><input class="form-control form-control-sm" name="deduct_date" type="date"></div>
+                            <div class="col-md-6"><input class="form-control form-control-sm" name="remark" placeholder="备注"></div>
+                            <div class="col-12">
+                                <button class="btn btn-secondary btn-sm" type="submit">
+                                    <i class="bi bi-check-lg"></i> 录入其他扣减
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
         <!-- 充值记录管理 -->
         <div class="col-lg-6">
             <div class="card">
@@ -243,23 +290,33 @@
             </div>
         </div>
 
-        <!-- 出库扣减记录管理 -->
+        <!-- 扣减记录管理 -->
         <div class="col-lg-6">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span><i class="bi bi-box-arrow-up text-danger"></i> 出库扣减记录（可维护）</span>
+                    <span><i class="bi bi-list-check text-danger"></i> 扣减记录（可维护）</span>
                     <span class="badge bg-light text-dark">{{ ws.deductions|length }} 条</span>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive" style="max-height: 360px;">
                         <table class="table table-sm table-hover mb-0">
                             <thead class="table-light sticky-top">
-                                <tr><th>日期</th><th>品名</th><th class="text-end">车数</th><th class="text-end">吨数</th><th class="text-end">单价</th><th class="text-end">金额</th><th class="text-nowrap">操作</th></tr>
+                                <tr><th>日期</th><th>类型</th><th>品名</th><th class="text-end">车数</th><th class="text-end">吨数</th><th class="text-end">单价</th><th class="text-end">金额</th><th class="text-nowrap">操作</th></tr>
                             </thead>
                             <tbody>
                             {% for d in ws.deductions %}
+                            {% set dtype = d.deduct_type or 'outbound' %}
                             <tr>
                                 <td class="small">{{ (d.deduct_date or d.created_at or '')[:10] }}</td>
+                                <td class="small">
+                                    {% if dtype == 'other' %}
+                                    <span class="badge bg-secondary">{{ ws.deduct_type_labels.get(dtype, '其他') }}</span>
+                                    {% elif dtype == 'sync' %}
+                                    <span class="badge bg-info text-dark">{{ ws.deduct_type_labels.get(dtype, '同步') }}</span>
+                                    {% else %}
+                                    <span class="badge bg-danger bg-opacity-75">{{ ws.deduct_type_labels.get(dtype, '出库') }}</span>
+                                    {% endif %}
+                                </td>
                                 <td class="small">{{ d.item_name or '-' }}</td>
                                 <td class="text-end">{{ "%g"|format(d.truck_count) if d.truck_count else '-' }}</td>
                                 <td class="text-end">{{ "%g"|format(d.quantity or 0) }}</td>
@@ -281,7 +338,7 @@
                                 </td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="7" class="text-center text-muted py-4">暂无扣减记录</td></tr>
+                            <tr><td colspan="8" class="text-center text-muted py-4">暂无扣减记录</td></tr>
                             {% endfor %}
                             </tbody>
                         </table>

@@ -78,6 +78,7 @@ from client_collab_ops import (
     unconfirm_client_recharge,
     reject_client_recharge,
     record_client_outbound,
+    record_client_other_deduction,
     parse_collab_excel,
     summarize_collab_excel_sheets,
     import_recharge_rows,
@@ -3470,6 +3471,39 @@ def admin_client_company_outbound(customer_id):
     return redirect(url_for('admin_client_workspace', customer_id=customer_id))
 
 
+@app.route('/admin/client-company/<int:customer_id>/other-deduct', methods=['POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_company_other_deduct(customer_id):
+    db = get_db()
+    denied = assert_customer_access(
+        db, session.get('user_id'), session.get('role'), customer_id)
+    if denied:
+        return denied
+    item_name = request.form.get('item_name', '').strip()
+    amount = request.form.get('amount', '').strip()
+    deduct_date = request.form.get('deduct_date', '').strip()
+    remark = request.form.get('remark', '').strip()
+    try:
+        did = record_client_other_deduction(
+            db,
+            customer_id=customer_id,
+            amount=float(amount),
+            item_name=item_name,
+            deduct_date=deduct_date or None,
+            remark=remark,
+            user_id=session.get('user_id'),
+        )
+        db.commit()
+        add_log(session.get('user_id'), session.get('username', ''), '客户协同其他扣减',
+                f'扣减单 {did} 金额 {float(amount):.2f}', request.remote_addr)
+        flash(f'其他扣减已录入 ¥{float(amount):.2f}', 'success')
+    except (ValueError, TypeError) as e:
+        db.rollback()
+        flash(f'录入失败：{e}', 'danger')
+    return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+
+
 def _recompute_client_balance(db, client_id):
     """按实际充值/扣减记录重算账户余额、累计充值、累计扣减。"""
     rech = db.execute(
@@ -4317,7 +4351,8 @@ def _batch_recharge_action(action):
 @module_required(MODULE_CLIENT_PORTAL)
 def admin_client_deductions_sync():
     db = get_db()
-    count = sync_deductions_for_customer(db)
+    customer_id = request.args.get('customer_id', type=int)
+    count = sync_deductions_for_customer(db, customer_id)
     db.commit()
     add_log(session.get('user_id'), session.get('username', ''), '同步扣减',
             f"同步 {count} 条", request.remote_addr)
@@ -4325,6 +4360,8 @@ def admin_client_deductions_sync():
         flash('没有需要同步的出库记录', 'info')
     else:
         flash(f'同步完成，共处理 {count} 条扣减记录', 'success')
+    if customer_id:
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
     return redirect(url_for('admin_client_accounts'))
 
 

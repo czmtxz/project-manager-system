@@ -55,6 +55,7 @@ COLLAB_DATA_ENDPOINTS = frozenset({
     'admin_client_workspace',
     'admin_client_company_recharge',
     'admin_client_company_outbound',
+    'admin_client_company_other_deduct',
     'admin_client_company_excel_import',
     'admin_client_company_excel_preview',
     'admin_client_company_excel_import_confirm',

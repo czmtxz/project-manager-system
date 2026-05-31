@@ -514,7 +514,7 @@ def record_client_other_deduction(db, customer_id, client_id=None, amount=0,
     now = _now()
     deduct_date = (deduct_date or now[:10])[:10]
     name = (item_name or remark or '其他扣减').strip()[:120]
-    db.execute(
+    cur = db.execute(
         """INSERT INTO client_deductions
            (client_id, amount, quantity, unit_price, item_name, truck_count,
             deduct_date, remark, deduct_type, created_at)
@@ -527,7 +527,7 @@ def record_client_other_deduction(db, customer_id, client_id=None, amount=0,
            WHERE id=?""",
         (amount, amount, now, client_id),
     )
-    return db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    return cur.lastrowid
 
 
 def _normalize_payment_method(val):
