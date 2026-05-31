@@ -213,28 +213,29 @@ body {
 }
 
 .login-card .form-control:focus {
-    border-color: #4361ee;
-    box-shadow: 0 0 0 0.2rem rgba(67, 97, 238, 0.2);
+    border-color: var(--la1);
+    box-shadow: 0 0 0 0.2rem var(--la-glow);
 }
 
 .login-card .input-group:focus-within .input-group-text {
-    border-color: #4361ee;
+    border-color: var(--la1);
 }
 
 .login-card .btn-primary {
-    background: linear-gradient(135deg, #4361ee 0%, #5b2bd6 100%);
+    background: linear-gradient(135deg, var(--la1) 0%, var(--la2) 100%);
     border: none;
     padding: 12px;
     font-size: 16px;
     font-weight: 600;
     border-radius: 10px;
-    box-shadow: 0 10px 24px rgba(67, 97, 238, 0.4);
+    box-shadow: 0 10px 24px var(--la-glow);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .login-card .btn-primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 14px 30px rgba(67, 97, 238, 0.5);
+    box-shadow: 0 14px 30px var(--la-glow);
+    filter: brightness(1.05);
 }
 
 .login-tip {
