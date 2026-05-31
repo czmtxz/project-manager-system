@@ -105,7 +105,7 @@ def main():
         if summary.get('error'):
             raise SystemExit(summary['error'])
         sheet_names = [
-            s['name'] for s in summary.get('sheets', [])
+            s['sheet'] for s in summary.get('sheets', [])
             if not s.get('is_duplicate')
         ]
     if not sheet_names:
