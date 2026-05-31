@@ -68,8 +68,7 @@
         </div>
     </div>
 
-    {% if recharges %}
-    {% if can_collab_authorize %}
+    {% if can_collab_authorize and recharges %}
     <div class="card mb-2 border-0 bg-light">
         <div class="card-body py-2 d-flex flex-wrap align-items-center gap-2">
             <span class="small text-muted">批量操作：</span>
