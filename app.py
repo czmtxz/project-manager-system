@@ -3538,6 +3538,104 @@ def admin_client_company_excel_import(customer_id):
     return redirect(url_for('admin_client_workspace', customer_id=customer_id))
 
 
+def _safe_client_excel_path(rel):
+    """校验并返回 uploads/client_excel 下的文件绝对路径，非法则 None。"""
+    if not rel:
+        return None
+    rel = rel.replace('\\', '/').lstrip('/')
+    if '..' in rel or not rel.startswith('client_excel/'):
+        return None
+    abs_path = os.path.join(app.config['UPLOAD_FOLDER'], rel.replace('/', os.sep))
+    return abs_path if os.path.exists(abs_path) else None
+
+
+@app.route('/admin/client-company/<int:customer_id>/excel-preview', methods=['POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_company_excel_preview(customer_id):
+    db = get_db()
+    denied = assert_customer_access(
+        db, session.get('user_id'), session.get('role'), customer_id)
+    if denied:
+        return denied
+    if 'excel_file' not in request.files or not request.files['excel_file'].filename:
+        flash('请上传 Excel 文件', 'warning')
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    split_orders = request.form.get('split_orders') == '1'
+    f = request.files['excel_file']
+    _, rel = save_upload_file(app.config['UPLOAD_FOLDER'], f, subdir='client_excel')
+    abs_path = os.path.join(app.config['UPLOAD_FOLDER'], rel.replace('/', os.sep))
+    summary = summarize_collab_excel_sheets(abs_path, mode='standard')
+    if summary.get('error'):
+        flash(f'Excel 解析失败：{summary["error"]}', 'danger')
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    sheets = summary.get('sheets') or []
+    if not sheets:
+        flash('未在任何页签中识别到可导入的数据', 'warning')
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    return render_template(
+        'admin_client_excel_preview.html',
+        customer_id=customer_id,
+        file_rel=rel,
+        sheets=sheets,
+        split_orders=split_orders,
+    )
+
+
+@app.route('/admin/client-company/<int:customer_id>/excel-import-confirm', methods=['POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_company_excel_import_confirm(customer_id):
+    db = get_db()
+    denied = assert_customer_access(
+        db, session.get('user_id'), session.get('role'), customer_id)
+    if denied:
+        return denied
+    abs_path = _safe_client_excel_path(request.form.get('file_rel', ''))
+    if not abs_path:
+        flash('导入文件已失效，请重新上传', 'danger')
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    selected = request.form.getlist('sheets')
+    if not selected:
+        flash('请至少勾选一个页签', 'warning')
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    client = primary_client_for_company(db, customer_id=customer_id, client_id=None)
+    if not client:
+        flash('未找到激活的客户账号，无法导入', 'danger')
+        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+    split_orders = request.form.get('split_orders') == '1'
+
+    done_parts = []
+    all_errs = []
+    failed_sheets = []
+    for sn in selected:
+        parsed = parse_collab_excel(abs_path, mode='standard', sheet=sn)
+        if parsed.get('error'):
+            failed_sheets.append(f'{sn}:{parsed["error"]}')
+            continue
+        ok, msg, errs = import_standard_excel_bundle(
+            db, customer_id, client['id'], parsed,
+            session.get('user_id'), split_orders=split_orders,
+        )
+        if ok:
+            done_parts.append(f'【{sn}】{msg}')
+        else:
+            failed_sheets.append(f'{sn}:{msg}')
+        all_errs.extend(errs)
+
+    if done_parts:
+        db.commit()
+        flash(f'已导入 {len(done_parts)} 个页签：' + '；'.join(done_parts), 'success')
+        if failed_sheets:
+            flash(f'部分页签未导入：{"; ".join(failed_sheets[:5])}', 'warning')
+        if all_errs:
+            flash(f'部分行失败：{"; ".join(all_errs[:5])}', 'warning')
+    else:
+        db.rollback()
+        flash(f'导入失败：{"; ".join(failed_sheets[:5]) if failed_sheets else "无有效数据"}', 'danger')
+    return redirect(url_for('admin_client_workspace', customer_id=customer_id))
+
+
 @app.route('/admin/client-company/<int:customer_id>/ocr-upload', methods=['POST'])
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)

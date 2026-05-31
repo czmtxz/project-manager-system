@@ -37,6 +37,8 @@ CLIENT_PORTAL_ENDPOINTS = frozenset({
     'admin_client_company_recharge',
     'admin_client_company_outbound',
     'admin_client_company_excel_import',
+    'admin_client_company_excel_preview',
+    'admin_client_company_excel_import_confirm',
     'admin_client_company_ocr_upload',
     'admin_client_company_ocr_apply',
     'admin_client_accounts',
