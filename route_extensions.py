@@ -796,6 +796,35 @@ def register_missing_routes(app, ctx):
         flash('已从项目移除该参与人', 'success')
         return redirect(url_for('project_detail', pid=pid))
 
+    @app.route('/project/<int:pid>/participant/<int:participant_id>/update', methods=['POST'])
+    @login_required
+    def project_participant_update(pid, participant_id):
+        db = get_db()
+        try:
+            investment_ratio = float(request.form.get('investment_ratio', 0) or 0)
+            dividend_ratio = float(request.form.get('dividend_ratio', 0) or 0)
+        except (TypeError, ValueError):
+            flash('比例必须为数字', 'warning')
+            return redirect(url_for('project_detail', pid=pid))
+        project_role = request.form.get('project_role')
+        if project_role:
+            db.execute(
+                """UPDATE project_participants
+                   SET investment_ratio=?, dividend_ratio=?, project_role=?
+                   WHERE project_id=? AND participant_id=?""",
+                (investment_ratio, dividend_ratio, project_role, pid, participant_id)
+            )
+        else:
+            db.execute(
+                """UPDATE project_participants
+                   SET investment_ratio=?, dividend_ratio=?
+                   WHERE project_id=? AND participant_id=?""",
+                (investment_ratio, dividend_ratio, pid, participant_id)
+            )
+        db.commit()
+        flash('参与人比例已更新', 'success')
+        return redirect(url_for('project_detail', pid=pid))
+
     @app.route('/project/<int:pid>/investment/<int:id>/edit', methods=['GET', 'POST'])
     @login_required
     def investment_edit(pid, id):
