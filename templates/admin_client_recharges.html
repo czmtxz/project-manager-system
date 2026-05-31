@@ -68,13 +68,42 @@
         </div>
     </div>
 
+    {% if recharges %}
+    <div class="card mb-2 border-0 bg-light">
+        <div class="card-body py-2 d-flex flex-wrap align-items-center gap-2">
+            <span class="small text-muted">批量操作：</span>
+            {% if current_status == 'pending' or not current_status %}
+            <form method="POST" action="{{ url_for('admin_client_recharge_batch_confirm') }}" class="d-inline batch-form"
+                  onsubmit="return batchConfirm('确认批量通过所选充值？')">
+                <input type="hidden" name="redirect_status" value="{{ current_status }}">
+                <button type="submit" class="btn btn-sm btn-success">批量通过</button>
+            </form>
+            <form method="POST" action="{{ url_for('admin_client_recharge_batch_reject') }}" class="d-inline batch-form"
+                  onsubmit="return batchConfirm('确认批量拒绝所选充值？')">
+                <input type="hidden" name="redirect_status" value="{{ current_status }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger">批量拒绝</button>
+            </form>
+            {% endif %}
+            {% if current_status == 'confirmed' or not current_status %}
+            <form method="POST" action="{{ url_for('admin_client_recharge_batch_unconfirm') }}" class="d-inline batch-form"
+                  onsubmit="return batchConfirm('确认批量反审核？已入账金额将从余额中扣回并退回待审核。')">
+                <input type="hidden" name="redirect_status" value="{{ current_status }}">
+                <button type="submit" class="btn btn-sm btn-warning">批量反审核</button>
+            </form>
+            {% endif %}
+            <span class="small text-muted ms-auto" id="selectedCount">已选 0 条</span>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="card">
         <div class="card-body p-0">
             {% if recharges %}
             <div class="table-responsive recharge-review-table">
-                <table class="table table-hover mb-0 align-middle">
+                <table class="table table-hover mb-0 align-middle" id="rechargeTable">
                     <thead class="table-light">
                         <tr>
+                            <th style="width:2rem;"><input type="checkbox" class="form-check-input" id="checkAll" title="全选本页"></th>
                             <th>时间</th>
                             <th>公司</th>
                             <th class="text-end">金额</th>
@@ -88,6 +117,13 @@
                     <tbody>
                         {% for r in recharges %}
                         <tr{% if r.status == 'pending' %} class="table-warning"{% endif %}>
+                            <td>
+                                {% if r.status == 'pending' or r.status == 'confirmed' %}
+                                <input type="checkbox" class="form-check-input row-check" name="ids" value="{{ r.id }}"
+                                       form="batchForms"
+                                       data-status="{{ r.status }}">
+                                {% endif %}
+                            </td>
                             <td class="small text-nowrap">{{ (r.created_at or '')[:16] }}</td>
                             <td>{{ r.company_name or '-' }}</td>
                             <td class="text-end text-success fw-semibold">{{ "%.2f"|format(r.amount or 0) }}</td>
@@ -107,11 +143,18 @@
                                 <a href="{{ url_for('admin_client_recharge_reject', id=r.id) }}"
                                    class="btn btn-sm btn-outline-danger"
                                    onclick="return confirm('确认拒绝该充值申请？')">拒绝</a>
+                                {% elif r.status == 'confirmed' %}
+                                <form method="POST" action="{{ url_for('admin_client_recharge_unconfirm', id=r.id) }}" class="d-inline"
+                                      onsubmit="return confirm('确认反审核？金额将从余额扣回并退回待审核。')">
+                                    <input type="hidden" name="redirect_status" value="{{ current_status }}">
+                                    <button type="submit" class="btn btn-sm btn-warning">反审核</button>
+                                </form>
+                                {% if r.customer_id %}
+                                <a href="{{ url_for('admin_client_workspace', customer_id=r.customer_id) }}"
+                                   class="btn btn-sm btn-outline-secondary">工作台</a>
+                                {% endif %}
                                 {% else %}
-                                <span class="text-muted small">
-                                    {% if r.confirmer_name %}{{ r.confirmer_name }}{% else %}已审核{% endif %}
-                                    {% if r.confirmed_at %}<br>{{ (r.confirmed_at or '')[:16] }}{% endif %}
-                                </span>
+                                <span class="text-muted small">已拒绝</span>
                                 {% if r.customer_id %}
                                 <a href="{{ url_for('admin_client_workspace', customer_id=r.customer_id) }}"
                                    class="btn btn-sm btn-outline-secondary ms-1">工作台</a>
@@ -127,7 +170,7 @@
             <div class="text-center text-muted py-5">
                 {% if current_status == 'pending' %}
                 <p class="mb-1">当前没有待审核的充值申请</p>
-                <p class="small">客户门户提交的充值会出现在这里；Excel 导入的充值需审核后才会入账。</p>
+                <p class="small">客户门户或 Excel 导入的充值会出现在这里，审核通过后入账。</p>
                 {% else %}
                 暂无充值记录
                 {% endif %}
@@ -136,4 +179,44 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var checkAll = document.getElementById('checkAll');
+    var rows = document.querySelectorAll('.row-check');
+    var countEl = document.getElementById('selectedCount');
+    function updateCount() {
+        var n = document.querySelectorAll('.row-check:checked').length;
+        if (countEl) countEl.textContent = '已选 ' + n + ' 条';
+    }
+    if (checkAll) {
+        checkAll.addEventListener('change', function () {
+            rows.forEach(function (cb) { cb.checked = checkAll.checked; });
+            updateCount();
+        });
+    }
+    rows.forEach(function (cb) {
+        cb.addEventListener('change', updateCount);
+    });
+    window.batchConfirm = function (msg) {
+        var checked = document.querySelectorAll('.row-check:checked');
+        if (!checked.length) {
+            alert('请先勾选记录');
+            return false;
+        }
+        if (!confirm(msg)) return false;
+        var form = event.target.closest('form');
+        checked.forEach(function (cb) {
+            var hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'ids';
+            hidden.value = cb.value;
+            form.appendChild(hidden);
+        });
+        return true;
+    };
+})();
+</script>
 {% endblock %}

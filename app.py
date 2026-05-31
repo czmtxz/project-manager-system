@@ -4243,7 +4243,7 @@ def admin_client_recharge_unconfirm(id):
         flash('已反审核，记录退回待确认', 'success')
     except ValueError as e:
         flash(str(e), 'warning')
-    return redirect(url_for('admin_client_recharges', status=request.args.get('status', 'confirmed')))
+    return redirect(url_for('admin_client_recharges', status=request.form.get('redirect_status', 'confirmed')))
 
 
 @app.route('/admin/client-recharges/batch/confirm', methods=['POST'])
@@ -4306,71 +4306,6 @@ def _batch_recharge_action(action):
     elif action == 'unconfirm':
         redirect_status = redirect_status or 'confirmed'
     return redirect(url_for('admin_client_recharges', status=redirect_status))
-
-
-@app.route('/admin/client-recharges/<int:id>/confirm_old', methods=['GET', 'POST'])
-@login_required
-@module_required(MODULE_CLIENT_PORTAL)
-def admin_client_recharge_confirm_old(id):
-    db = get_db()
-    recharge = db.execute("SELECT * FROM client_recharges WHERE id=?", (id,)).fetchone()
-    if not recharge:
-        flash('充值记录不存在', 'danger')
-        return redirect(url_for('admin_client_recharges'))
-    if recharge['status'] != 'pending':
-        flash('该充值记录不在待确认状态', 'warning')
-        return redirect(url_for('admin_client_recharges'))
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    db.execute(
-        "UPDATE client_recharges SET status='confirmed', confirmed_by=?, confirmed_at=? WHERE id=?",
-        (session.get('user_id'), now, id),
-    )
-    db.execute(
-        """UPDATE client_accounts SET balance=balance+?, total_recharge=total_recharge+?, updated_at=?
-           WHERE id=?""",
-        (recharge['amount'], recharge['amount'], now, recharge['client_id']),
-    )
-    db.execute(
-        """INSERT INTO client_messages (client_id, title, content, msg_type)
-           VALUES (?, ?, ?, 'notice')""",
-        (recharge['client_id'], '充值成功',
-         f'您的充值申请 {recharge["amount"]:.2f} 元已确认到账。'),
-    )
-    db.commit()
-    add_log(session.get('user_id'), session.get('username', ''), '确认充值',
-            f"充值单 {id} 金额 {recharge['amount']:.2f}", request.remote_addr)
-    flash('充值已确认', 'success')
-    return redirect(url_for('admin_client_recharges'))
-
-
-@app.route('/admin/client-recharges/<int:id>/reject', methods=['GET', 'POST'])
-@login_required
-@module_required(MODULE_CLIENT_PORTAL)
-def admin_client_recharge_reject(id):
-    db = get_db()
-    recharge = db.execute("SELECT * FROM client_recharges WHERE id=?", (id,)).fetchone()
-    if not recharge:
-        flash('充值记录不存在', 'danger')
-        return redirect(url_for('admin_client_recharges'))
-    if recharge['status'] != 'pending':
-        flash('该充值记录不在待确认状态', 'warning')
-        return redirect(url_for('admin_client_recharges'))
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    db.execute(
-        "UPDATE client_recharges SET status='rejected', confirmed_by=?, confirmed_at=? WHERE id=?",
-        (session.get('user_id'), now, id),
-    )
-    db.execute(
-        """INSERT INTO client_messages (client_id, title, content, msg_type)
-           VALUES (?, ?, ?, 'notice')""",
-        (recharge['client_id'], '充值申请被拒绝',
-         f'您的充值申请 {recharge["amount"]:.2f} 元已被拒绝，请联系管理员了解详情。'),
-    )
-    db.commit()
-    add_log(session.get('user_id'), session.get('username', ''), '拒绝充值',
-            f"充值单 {id}", request.remote_addr)
-    flash('已拒绝该充值申请', 'success')
-    return redirect(url_for('admin_client_recharges'))
 
 
 @app.route('/admin/client-deductions/sync')
