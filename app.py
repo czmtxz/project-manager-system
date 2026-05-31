@@ -1271,6 +1271,85 @@ LOGIN_THEMES = [
         ],
         'stats': [['AI', '智能录入'], ['实时', '数据看板'], ['闭环', '业务流转']],
     },
+    # ---------- 行业风格文案 ----------
+    {
+        'cls': 'login-theme-gold',
+        'bg': 'img/login-bg-3.png',
+        'badge': '工程项目 · 全程管控',
+        'subtitle': '从立项到结算全周期管理，<br>让<b>每个工程项目都成本可控、利润清晰</b>。',
+        'features': [
+            ['bi-building', '项目预算成本实时归集'],
+            ['bi-clipboard-check', '采购对账自动核对'],
+            ['bi-cash-coin', '进度款回款全程跟踪'],
+            ['bi-people', '分包供应商台账清晰'],
+        ],
+        'stats': [['全周期', '项目管控'], ['实时', '成本归集'], ['透明', '资金往来']],
+    },
+    {
+        'cls': 'login-theme-teal',
+        'bg': 'img/login-bg-2.png',
+        'badge': '贸易供应链 · 高效协同',
+        'subtitle': '采购、销售、库存、对账一体化，<br>让<b>每一单生意都账目分明</b>。',
+        'features': [
+            ['bi-arrow-left-right', '采购销售双向对账'],
+            ['bi-box-seam', '出入库与合同联动'],
+            ['bi-people', '客户供应商台账透明'],
+            ['bi-calculator', '毛利实时测算'],
+        ],
+        'stats': [['一体化', '购销存'], ['双向', '对账'], ['实时', '毛利']],
+    },
+    {
+        'cls': 'login-theme-gold',
+        'bg': 'img/login-bg-3.png',
+        'badge': '投资基金 · 收益透明',
+        'subtitle': '出资、分红、回报全程可溯，<br>让<b>每一笔投资都收益清晰</b>。',
+        'features': [
+            ['bi-bank', '投资人出资台账清晰'],
+            ['bi-percent', '投资比例自动核算'],
+            ['bi-pie-chart', '分红批次一键执行'],
+            ['bi-graph-up-arrow', '投资回报实时测算'],
+        ],
+        'stats': [['自动', '比例核算'], ['清晰', '分红台账'], ['可溯', '投资回报']],
+    },
+    {
+        'cls': 'login-theme-neon',
+        'bg': 'img/login-bg-4.png',
+        'badge': '数字经营 · 智能驱动',
+        'subtitle': 'AI 识别 + 数据中台，<br>让<b>经营决策更快一步</b>。',
+        'features': [
+            ['bi-cpu', '票据 OCR 智能录入'],
+            ['bi-bar-chart-line', '经营数据实时中台'],
+            ['bi-clipboard-data', '多维报表自助分析'],
+            ['bi-diagram-3', '全链路业务在线'],
+        ],
+        'stats': [['AI', '智能录入'], ['中台', '数据驱动'], ['在线', '业务闭环']],
+    },
+    {
+        'cls': 'login-theme-indigo',
+        'bg': 'img/login-bg.png',
+        'badge': '智造管理 · 降本增效',
+        'subtitle': '物料、订单、成本、交付全流程，<br>让<b>每条产线都降本增效</b>。',
+        'features': [
+            ['bi-boxes', '采购物料成本归集'],
+            ['bi-truck', '订单交付全程跟踪'],
+            ['bi-clipboard-check', '供应商对账自动化'],
+            ['bi-graph-up', '项目毛利实时可视'],
+        ],
+        'stats': [['全流程', '订单交付'], ['自动', '成本核算'], ['实时', '毛利可视']],
+    },
+    {
+        'cls': 'login-theme-gold',
+        'bg': 'img/login-bg-3.png',
+        'badge': '连锁门店 · 精细运营',
+        'subtitle': '门店收支、费用、对账集中管理，<br>让<b>每家门店都算得清盈亏</b>。',
+        'features': [
+            ['bi-shop', '门店费用集中归集'],
+            ['bi-cash-stack', '收支流水实时统计'],
+            ['bi-camera', '票据拍照自动录入'],
+            ['bi-bar-chart', '多门店盈亏对比'],
+        ],
+        'stats': [['集中', '多店管理'], ['实时', '收支统计'], ['清晰', '门店盈亏']],
+    },
 ]
 
 
