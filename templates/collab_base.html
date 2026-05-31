@@ -27,15 +27,16 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'admin_client_recharges' %}active{% endif %}"
+                           href="{{ url_for('admin_client_recharges') }}">
+                            <i class="bi bi-cash-stack"></i> {% if can_collab_authorize %}充值审核{% else %}充值记录{% endif %}
+                        </a>
+                    </li>
+                    {% if can_collab_authorize %}
+                    <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'admin_client_accounts' %}active{% endif %}"
                            href="{{ url_for('admin_client_accounts') }}">
                             <i class="bi bi-person-badge"></i> 客户账户
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'admin_client_recharges' %}active{% endif %}"
-                           href="{{ url_for('admin_client_recharges') }}">
-                            <i class="bi bi-cash-stack"></i> 充值审核
                         </a>
                     </li>
                     <li class="nav-item">
@@ -43,6 +44,7 @@
                             <i class="bi bi-arrow-repeat"></i> 同步扣减
                         </a>
                     </li>
+                    {% endif %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('reports.') %}active{% endif %}"
                            href="{{ url_for('reports.view', slug='client-collab-funds') }}">

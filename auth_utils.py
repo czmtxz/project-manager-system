@@ -30,8 +30,27 @@ COLLAB_ADMIN_STAFF_ENDPOINTS = frozenset({
     'admin_collab_staff_delete',
 })
 
-# 客户协同专员可访问的内部路由
-CLIENT_PORTAL_ENDPOINTS = frozenset({
+# 需协同管理员或系统管理员才可操作（账户授权、充值审核、同步等）
+COLLAB_AUTHORIZE_ENDPOINTS = frozenset({
+    'admin_client_accounts',
+    'admin_client_accounts_create',
+    'admin_client_account_approve',
+    'admin_client_account_reject',
+    'admin_client_account_enable',
+    'admin_client_account_disable',
+    'admin_client_account_bind',
+    'admin_client_account_reset_password',
+    'admin_client_recharge_confirm',
+    'admin_client_recharge_reject',
+    'admin_client_recharge_unconfirm',
+    'admin_client_recharge_batch_confirm',
+    'admin_client_recharge_batch_reject',
+    'admin_client_recharge_batch_unconfirm',
+    'admin_client_deductions_sync',
+}) | COLLAB_ADMIN_STAFF_ENDPOINTS
+
+# 协同专员：仅数据录入 / 查询 / 修改（不含授权与系统设置）
+COLLAB_DATA_ENDPOINTS = frozenset({
     'admin_client_dashboard',
     'admin_client_workspace',
     'admin_client_company_recharge',
@@ -41,22 +60,7 @@ CLIENT_PORTAL_ENDPOINTS = frozenset({
     'admin_client_company_excel_import_confirm',
     'admin_client_company_ocr_upload',
     'admin_client_company_ocr_apply',
-    'admin_client_accounts',
-    'admin_client_account_approve',
-    'admin_client_account_reject',
-    'admin_client_account_enable',
-    'admin_client_account_disable',
-    'admin_client_accounts_create',
-    'admin_client_account_bind',
-    'admin_client_account_reset_password',
     'admin_client_recharges',
-    'admin_client_recharge_confirm',
-    'admin_client_recharge_reject',
-    'admin_client_recharge_unconfirm',
-    'admin_client_recharge_batch_confirm',
-    'admin_client_recharge_batch_reject',
-    'admin_client_recharge_batch_unconfirm',
-    'admin_client_deductions_sync',
     'admin_client_recharge_update',
     'admin_client_recharge_delete',
     'admin_client_deduction_update',
@@ -66,11 +70,24 @@ CLIENT_PORTAL_ENDPOINTS = frozenset({
     'static',
 })
 
+# 客户协同模块全部内部路由（管理员 / 协同管理员）
+CLIENT_PORTAL_ENDPOINTS = COLLAB_DATA_ENDPOINTS | COLLAB_AUTHORIZE_ENDPOINTS
+
 PUBLIC_ENDPOINTS = frozenset({
     'login', 'logout', 'static',
     'portal_login', 'portal_register', 'portal_logout',
     'uploaded_file', 'serve_ocr_image', 'serve_upload_file',
 })
+
+
+def can_collab_authorize(role):
+    """是否可进行账户授权、充值审核等管理操作。"""
+    return role in (ROLE_ADMIN, ROLE_CLIENT_COLLAB_ADMIN)
+
+
+def is_portal_client_session():
+    """客户门户登录（仅 client_id，无内部 user_id）。"""
+    return 'client_id' in session and 'user_id' not in session
 
 
 def is_client_portal_admin_endpoint(endpoint):
@@ -96,9 +113,10 @@ def can_access_endpoint(role, endpoint):
         return False
 
     if role == ROLE_CLIENT_COLLAB:
-        if endpoint in CLIENT_PORTAL_ENDPOINTS:
+        if endpoint in COLLAB_AUTHORIZE_ENDPOINTS:
+            return False
+        if endpoint in COLLAB_DATA_ENDPOINTS:
             return True
-        # 报表中心：仅允许客户资金报表（slug 在 reports_routes 内二次校验）
         if endpoint and endpoint.startswith('reports.'):
             return True
         return False
@@ -158,6 +176,20 @@ def collab_admin_required(f):
     return wrapped
 
 
+def collab_authorize_required(f):
+    """仅系统管理员或客户协同管理员（账户授权、充值审核等）。"""
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        role = session.get('role')
+        if not can_collab_authorize(role):
+            flash('权限不足，您仅可录入、查询和修改业务数据', 'danger')
+            return redirect(login_redirect_for_role(role))
+        return f(*args, **kwargs)
+    return wrapped
+
+
 def staff_layout_template():
     """内部员工页面布局：协同角色使用独立导航，与 ERP 完全分离。"""
     from flask import session
@@ -177,7 +209,23 @@ def register_auth_hooks(app):
             'is_collab_staff': role in COLLAB_ONLY_ROLES,
             'is_collab_admin': role == ROLE_CLIENT_COLLAB_ADMIN,
             'is_system_admin': role == ROLE_ADMIN,
+            'can_collab_authorize': can_collab_authorize(role),
         }
+
+    @app.before_request
+    def enforce_portal_client_isolation():
+        """客户门户账号只能访问 /portal/*，不能进入内部管理端。"""
+        if not is_portal_client_session():
+            return None
+        endpoint = request.endpoint
+        if not endpoint or endpoint in PUBLIC_ENDPOINTS:
+            return None
+        if endpoint.startswith('static'):
+            return None
+        if endpoint.startswith('portal_'):
+            return None
+        flash('客户账户无权访问该功能', 'danger')
+        return redirect(url_for('portal_index'))
 
     @app.before_request
     def enforce_internal_module_access():

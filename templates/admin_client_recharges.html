@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-        <h4 class="mb-0"><i class="bi bi-cash-stack"></i> 充值申请审核</h4>
+        <h4 class="mb-0"><i class="bi bi-cash-stack"></i> {% if can_collab_authorize %}充值申请审核{% else %}充值记录{% endif %}</h4>
         {% if pending_count > 0 %}
         <span class="badge bg-warning text-dark fs-6">待审核 {{ pending_count }} 笔 · {{ "%.2f"|format(pending_amount) }} 元</span>
         {% endif %}
@@ -69,6 +69,7 @@
     </div>
 
     {% if recharges %}
+    {% if can_collab_authorize %}
     <div class="card mb-2 border-0 bg-light">
         <div class="card-body py-2 d-flex flex-wrap align-items-center gap-2">
             <span class="small text-muted">批量操作：</span>
@@ -103,7 +104,7 @@
                 <table class="table table-hover mb-0 align-middle" id="rechargeTable">
                     <thead class="table-light">
                         <tr>
-                            <th style="width:2rem;"><input type="checkbox" class="form-check-input" id="checkAll" title="全选本页"></th>
+                            {% if can_collab_authorize %}<th style="width:2rem;"><input type="checkbox" class="form-check-input" id="checkAll" title="全选本页"></th>{% endif %}
                             <th>时间</th>
                             <th>公司</th>
                             <th class="text-end">金额</th>
@@ -111,12 +112,13 @@
                             <th>流水号</th>
                             <th>备注</th>
                             <th>状态</th>
-                            <th class="table-op-col">操作</th>
+                            {% if can_collab_authorize %}<th class="table-op-col">操作</th>{% endif %}
                         </tr>
                     </thead>
                     <tbody>
                         {% for r in recharges %}
                         <tr{% if r.status == 'pending' %} class="table-warning"{% endif %}>
+                            {% if can_collab_authorize %}
                             <td>
                                 {% if r.status == 'pending' or r.status == 'confirmed' %}
                                 <input type="checkbox" class="form-check-input row-check" name="ids" value="{{ r.id }}"
@@ -124,6 +126,7 @@
                                        data-status="{{ r.status }}">
                                 {% endif %}
                             </td>
+                            {% endif %}
                             <td class="small text-nowrap">{{ (r.created_at or '')[:16] }}</td>
                             <td>{{ r.company_name or '-' }}</td>
                             <td class="text-end text-success fw-semibold">{{ "%.2f"|format(r.amount or 0) }}</td>
@@ -135,6 +138,7 @@
                                 {% elif r.status == 'confirmed' %}<span class="badge bg-success">已确认</span>
                                 {% else %}<span class="badge bg-danger">已拒绝</span>{% endif %}
                             </td>
+                            {% if can_collab_authorize %}
                             <td class="table-op-col">
                                 {% if r.status == 'pending' %}
                                 <a href="{{ url_for('admin_client_recharge_confirm', id=r.id) }}"
@@ -161,6 +165,12 @@
                                 {% endif %}
                                 {% endif %}
                             </td>
+                            {% elif r.customer_id %}
+                            <td class="small">
+                                <a href="{{ url_for('admin_client_workspace', customer_id=r.customer_id) }}"
+                                   class="btn btn-sm btn-outline-secondary">工作台</a>
+                            </td>
+                            {% endif %}
                         </tr>
                         {% endfor %}
                     </tbody>
