@@ -1663,7 +1663,7 @@ def participant_add():
 def project_participant_add(pid):
     participant_id = request.form.get('participant_id')
     project_role = request.form.get('project_role', 'member')
-    investment_ratio = float(request.form.get('investment_ratio', 0) or 0)
+    # 投资比例由实际投资金额自动计算，这里不接收手填值
     dividend_ratio = float(request.form.get('dividend_ratio', 0) or 0)
 
     if not participant_id:
@@ -1675,9 +1675,10 @@ def project_participant_add(pid):
         """INSERT OR REPLACE INTO project_participants
            (project_id, participant_id, project_role, investment_ratio, dividend_ratio)
            VALUES (?, ?, ?, ?, ?)""",
-        (pid, participant_id, project_role, investment_ratio, dividend_ratio)
+        (pid, participant_id, project_role, 0, dividend_ratio)
     )
     db.commit()
+    recalc_investment_ratios(db, pid)
     flash('参与人已添加到项目', 'success')
     return redirect(url_for('project_detail', pid=pid))
 

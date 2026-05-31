@@ -801,29 +801,29 @@ def register_missing_routes(app, ctx):
     @login_required
     def project_participant_update(pid, participant_id):
         db = get_db()
+        # 投资比例按实际投资金额自动计算，这里只允许调整分红比例（及角色）
         try:
-            investment_ratio = float(request.form.get('investment_ratio', 0) or 0)
             dividend_ratio = float(request.form.get('dividend_ratio', 0) or 0)
         except (TypeError, ValueError):
-            flash('比例必须为数字', 'warning')
+            flash('分红比例必须为数字', 'warning')
             return redirect(url_for('project_detail', pid=pid))
         project_role = request.form.get('project_role')
         if project_role:
             db.execute(
                 """UPDATE project_participants
-                   SET investment_ratio=?, dividend_ratio=?, project_role=?
+                   SET dividend_ratio=?, project_role=?
                    WHERE project_id=? AND participant_id=?""",
-                (investment_ratio, dividend_ratio, project_role, pid, participant_id)
+                (dividend_ratio, project_role, pid, participant_id)
             )
         else:
             db.execute(
                 """UPDATE project_participants
-                   SET investment_ratio=?, dividend_ratio=?
+                   SET dividend_ratio=?
                    WHERE project_id=? AND participant_id=?""",
-                (investment_ratio, dividend_ratio, pid, participant_id)
+                (dividend_ratio, pid, participant_id)
             )
         db.commit()
-        flash('参与人比例已更新', 'success')
+        flash('分红比例已更新', 'success')
         return redirect(url_for('project_detail', pid=pid))
 
     @app.route('/project/<int:pid>/investment/<int:id>/edit', methods=['GET', 'POST'])
