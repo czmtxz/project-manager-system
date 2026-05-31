@@ -343,7 +343,7 @@ def _cell_date(val):
     s = _cell_str(val)
     if not s:
         return ''
-    m = re.search(r'(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})', s)
+    m = re.search(r'(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})', s)
     if m:
         return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
     return s[:10]
