@@ -1,83 +1,92 @@
 {% extends staff_layout|default('nav_base.html') %}
 {% block title %}公司工作台 - {{ ws.company_name }}{% endblock %}
+{% block extra_css %}
+<style>
+.workspace-header {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: .5rem;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+.workspace-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 102;
+    background: #fff;
+    border-bottom: 1px solid #dee2e6;
+    padding: .5rem 0;
+    margin: 0 -1rem 1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+.workspace-tabs .nav-link {
+    color: #495057;
+    font-weight: 500;
+    border-radius: 2rem;
+    padding: .45rem 1rem;
+    margin-right: .35rem;
+}
+.workspace-tabs .nav-link.active {
+    background: #0d6efd;
+    color: #fff;
+}
+.stat-card {
+    border: none;
+    border-radius: .5rem;
+    transition: transform .15s ease;
+}
+.stat-card:hover { transform: translateY(-2px); }
+.stat-card .stat-icon {
+    font-size: 1.75rem;
+    opacity: .25;
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+}
+.stat-card .stat-value { font-size: 1.35rem; font-weight: 700; }
+.workspace-table-wrap { max-height: 480px; overflow: auto; }
+.quick-action-btn { min-width: 8rem; }
+</style>
+{% endblock %}
 {% block content %}
-<div class="container-fluid px-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="mb-0"><i class="bi bi-building"></i> {{ ws.company_name }}</h4>
-        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_client_dashboard') }}">返回总览</a>
-    </div>
-
-    <div class="row mb-3 g-3">
-        <div class="col-md-3 col-lg-2">
-            <div class="card h-100"><div class="card-body">
-                <div class="text-muted small">当前余额</div>
-                <div class="h4 mb-0 text-primary">{{ "%.2f"|format(ws.balance) }}</div>
-            </div></div>
-        </div>
-        <div class="col-md-3 col-lg-2">
-            <div class="card h-100"><div class="card-body">
-                <div class="text-muted small">累计充值</div>
-                <div class="h4 mb-0 text-success">{{ "%.2f"|format(ws.total_recharge) }}</div>
-            </div></div>
-        </div>
-        <div class="col-md-3 col-lg-2">
-            <div class="card h-100"><div class="card-body">
-                <div class="text-muted small">累计扣减</div>
-                <div class="h4 mb-0 text-danger">{{ "%.2f"|format(ws.total_deduct) }}</div>
-            </div></div>
-        </div>
-        <div class="col-md-3 col-lg-2">
-            <div class="card h-100 border-warning">
-                <div class="card-body">
-                    <div class="text-muted small">待确认充值</div>
-                    {% if ws.pending_recharge > 0 %}
-                    <a href="{{ url_for('admin_client_recharges', status='pending', client_id=ws.client.id) }}"
-                       class="h4 mb-0 text-warning text-decoration-none">{{ "%.2f"|format(ws.pending_recharge) }}</a>
-                    {% else %}
-                    <div class="h4 mb-0 text-muted">{{ "%.2f"|format(ws.pending_recharge or 0) }}</div>
-                    {% endif %}
-                </div>
+<div class="container-fluid px-4 pb-4" id="clientWorkspace" data-customer-id="{{ ws.customer_id }}">
+    <div class="workspace-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <h4 class="mb-1"><i class="bi bi-building text-primary"></i> {{ ws.company_name }}</h4>
+            <div class="text-muted small">
+                账号 {{ ws.client.username }}
+                {% if ws.accounts|length > 1 %} · 同公司 {{ ws.accounts|length }} 个门户账号{% endif %}
             </div>
         </div>
-    </div>
-
-    {% if ws.pending_sync_amount > 0 %}
-    <div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <div>
-            <i class="bi bi-info-circle"></i>
-            销售模块有 <strong>{{ ws.pending_sync|length }}</strong> 条出库明细尚未同步为扣减，
-            合计 <strong class="text-danger">¥{{ "%.2f"|format(ws.pending_sync_amount) }}</strong>，同步后将参与余额计算。
+        <div class="d-flex flex-wrap gap-2">
+            {% if can_collab_authorize %}
+            <a href="{{ url_for('admin_client_recharges', status='pending', client_id=ws.client.id) }}"
+               class="btn btn-outline-warning btn-sm">
+                <i class="bi bi-hourglass-split"></i> 充值审核
+                {% if ws.pending_recharge > 0 %}<span class="badge bg-warning text-dark ms-1">{{ "%.0f"|format(ws.pending_recharge) }}</span>{% endif %}
+            </a>
+            {% endif %}
+            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_client_dashboard') }}">
+                <i class="bi bi-arrow-left"></i> 返回总览
+            </a>
         </div>
-        {% if can_collab_authorize %}
-        <a href="{{ url_for('admin_client_deductions_sync', customer_id=ws.customer_id) }}"
-           class="btn btn-sm btn-primary">同步至扣减</a>
-        {% endif %}
     </div>
-    {% endif %}
-
-    {% if ws.deduct_by_type|length > 1 %}
-    <div class="d-flex flex-wrap gap-2 mb-3">
-        {% for key, info in ws.deduct_by_type.items() %}
-        <span class="badge bg-light text-dark border">
-            {{ info.label }} {{ info.count }} 笔 · ¥{{ "%.2f"|format(info.amount) }}
-        </span>
-        {% endfor %}
-    </div>
-    {% endif %}
 
     {% set preview = session.get('collab_ocr_preview') %}
     {% if preview and preview.customer_id == ws.customer_id and preview.rows %}
-    <div class="card mb-3 border-info">
-        <div class="card-header bg-info bg-opacity-10">
-            OCR 预览 — {% if preview.mode == 'outbound' %}出库扣减{% else %}充值{% endif %}（{{ preview.rows|length }} 条）
+    <div class="card mb-3 border-info shadow-sm">
+        <div class="card-header bg-info bg-opacity-10 d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-eye"></i> OCR 预览 — {% if preview.mode == 'outbound' %}出库扣减{% else %}充值{% endif %}（{{ preview.rows|length }} 条）</span>
+            <button type="button" class="btn btn-sm btn-outline-info" data-ws-tab="{% if preview.mode == 'outbound' %}deduction{% else %}recharge{% endif %}">前往对应页签</button>
         </div>
         <div class="card-body p-0">
-            <div class="table-responsive">
+            <div class="table-responsive workspace-table-wrap" style="max-height:240px">
                 <table class="table table-sm mb-0">
                     <thead class="table-light">
                         <tr>
                             {% if preview.mode == 'outbound' %}
-                            <th>品名</th><th class="text-end">车数</th><th class="text-end">数量</th><th class="text-end">单价</th><th class="text-end">金额</th><th>日期</th>
+                            <th>品名</th><th class="text-end">车数</th><th class="text-end">吨数</th><th class="text-end">单价</th><th class="text-end">金额</th><th>日期</th>
                             {% else %}
                             <th class="text-end">金额</th><th>方式</th><th>备注</th>
                             {% endif %}
@@ -103,48 +112,221 @@
                     </tbody>
                 </table>
             </div>
-            <div class="p-3 border-top">
+            <div class="p-3 border-top bg-light">
                 <form method="POST" action="{{ url_for('admin_client_company_ocr_apply', customer_id=ws.customer_id) }}" class="d-inline">
                     {% if preview.mode == 'outbound' %}
                     <label class="form-check form-check-inline me-2">
                         <input class="form-check-input" type="checkbox" name="split_orders" value="1">
-                        每条明细单独生成一张出库单
+                        每条明细单独生成出库单
                     </label>
                     {% endif %}
                     <button class="btn btn-primary btn-sm" type="submit">
                         确认导入并{% if preview.mode == 'outbound' %}扣减余额{% else %}充值到账{% endif %}
                     </button>
                 </form>
-                <span class="text-muted small ms-2">识别有误可重新打开「导入」上传</span>
             </div>
         </div>
     </div>
     {% endif %}
 
-    <div class="row">
-        <div class="col-lg-6">
+    <ul class="nav nav-pills workspace-tabs flex-nowrap overflow-auto" id="workspaceTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-overview-btn" data-bs-toggle="pill" data-bs-target="#tab-overview"
+                    type="button" role="tab"><i class="bi bi-grid-1x2"></i> 总览</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-recharge-btn" data-bs-toggle="pill" data-bs-target="#tab-recharge"
+                    type="button" role="tab">
+                <i class="bi bi-cash-coin"></i> 充值
+                <span class="badge bg-light text-dark ms-1">{{ ws.recharges|length }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-deduction-btn" data-bs-toggle="pill" data-bs-target="#tab-deduction"
+                    type="button" role="tab">
+                <i class="bi bi-box-arrow-up"></i> 扣减
+                <span class="badge bg-light text-dark ms-1">{{ ws.deductions|length }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-flow-btn" data-bs-toggle="pill" data-bs-target="#tab-flow"
+                    type="button" role="tab"><i class="bi bi-journal-text"></i> 流水</button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="workspaceTabContent">
+
+        <!-- ========== 总览 ========== -->
+        <div class="tab-pane fade show active" id="tab-overview" role="tabpanel">
+            <div class="row g-3 mb-3">
+                <div class="col-6 col-md-3">
+                    <div class="card stat-card h-100 bg-primary bg-opacity-10">
+                        <div class="card-body position-relative">
+                            <div class="text-muted small mb-1">当前余额</div>
+                            <div class="stat-value text-primary">¥{{ "%.2f"|format(ws.balance) }}</div>
+                            <i class="bi bi-wallet2 stat-icon text-primary"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card stat-card h-100 bg-success bg-opacity-10">
+                        <div class="card-body position-relative">
+                            <div class="text-muted small mb-1">累计充值</div>
+                            <div class="stat-value text-success">¥{{ "%.2f"|format(ws.total_recharge) }}</div>
+                            <i class="bi bi-plus-circle stat-icon text-success"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card stat-card h-100 bg-danger bg-opacity-10">
+                        <div class="card-body position-relative">
+                            <div class="text-muted small mb-1">累计扣减</div>
+                            <div class="stat-value text-danger">¥{{ "%.2f"|format(ws.total_deduct) }}</div>
+                            <i class="bi bi-dash-circle stat-icon text-danger"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card stat-card h-100 {% if ws.pending_recharge > 0 %}border-warning{% endif %}">
+                        <div class="card-body position-relative">
+                            <div class="text-muted small mb-1">待确认充值</div>
+                            {% if ws.pending_recharge > 0 %}
+                            <div class="stat-value text-warning">¥{{ "%.2f"|format(ws.pending_recharge) }}</div>
+                            {% else %}
+                            <div class="stat-value text-muted">¥0.00</div>
+                            {% endif %}
+                            <i class="bi bi-hourglass-split stat-icon text-warning"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {% if ws.pending_sync_amount > 0 %}
+            <div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div class="small">
+                    <i class="bi bi-arrow-repeat"></i>
+                    销售出库待同步 <strong>{{ ws.pending_sync|length }}</strong> 条，
+                    合计 <strong class="text-danger">¥{{ "%.2f"|format(ws.pending_sync_amount) }}</strong>
+                </div>
+                {% if can_collab_authorize %}
+                <a href="{{ url_for('admin_client_deductions_sync', customer_id=ws.customer_id) }}" class="btn btn-sm btn-primary">同步至扣减</a>
+                {% endif %}
+            </div>
+            {% endif %}
+
             <div class="card mb-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span><i class="bi bi-cash-coin text-success"></i> 充值</span>
+                <div class="card-body py-3">
+                    <div class="text-muted small mb-2">快捷操作</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-success btn-sm quick-action-btn" data-ws-tab="recharge">
+                            <i class="bi bi-cash-coin"></i> 录入充值
+                        </button>
+                        <button type="button" class="btn btn-danger btn-sm quick-action-btn" data-ws-tab="deduction">
+                            <i class="bi bi-box-arrow-up"></i> 录入出库扣减
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm quick-action-btn" data-ws-tab="deduction" data-ws-sub="other">
+                            <i class="bi bi-slash-circle"></i> 其他扣减
+                        </button>
+                        <button type="button" class="btn btn-outline-primary btn-sm quick-action-btn" data-ws-tab="flow">
+                            <i class="bi bi-journal-text"></i> 查看流水
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header py-2"><i class="bi bi-pie-chart"></i> 扣减构成</div>
+                        <div class="card-body">
+                            {% if ws.deduct_by_type %}
+                            <ul class="list-group list-group-flush">
+                                {% for key, info in ws.deduct_by_type.items() %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                    <span>{{ info.label }}</span>
+                                    <span class="text-muted small">{{ info.count }} 笔</span>
+                                    <span class="text-danger fw-semibold">¥{{ "%.2f"|format(info.amount) }}</span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <p class="text-muted small mb-0">暂无扣减记录</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header py-2 d-flex justify-content-between">
+                            <span><i class="bi bi-clock-history"></i> 最近流水</span>
+                            <button type="button" class="btn btn-link btn-sm p-0" data-ws-tab="flow">全部</button>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead class="table-light"><tr><th>时间</th><th>类型</th><th class="text-end">金额</th></tr></thead>
+                                    <tbody>
+                                    {% for tx in ws.transactions[:8] %}
+                                    <tr>
+                                        <td class="small text-nowrap">{{ (tx.created_at or '')[:16] }}</td>
+                                        <td class="small">
+                                            {% if tx.type == 'recharge' %}
+                                            <span class="badge bg-success bg-opacity-75">充值</span>
+                                            {% else %}
+                                            <span class="badge bg-danger bg-opacity-75">扣减</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-end small {% if tx.type == 'recharge' %}text-success{% else %}text-danger{% endif %}">
+                                            {% if tx.type == 'recharge' %}+{% else %}-{% endif %}{{ "%.2f"|format(tx.amount or 0) }}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="3" class="text-center text-muted py-3">暂无流水</td></tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== 充值 ========== -->
+        <div class="tab-pane fade" id="tab-recharge" role="tabpanel">
+            <div class="card mb-3 border-success border-opacity-25">
+                <div class="card-header bg-success bg-opacity-10">
+                    <i class="bi bi-plus-lg text-success"></i> 新增充值
                 </div>
                 <div class="card-body">
                     <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin_client_company_recharge', customer_id=ws.customer_id) }}">
-                        <div class="row g-2">
-                            <div class="col-md-6"><input class="form-control form-control-sm" name="amount" type="number" step="0.01" min="0.01" placeholder="金额" required></div>
-                            <div class="col-md-6">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-2">
+                                <label class="form-label small mb-0">金额 *</label>
+                                <input class="form-control form-control-sm" name="amount" type="number" step="0.01" min="0.01" required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small mb-0">付款方式</label>
                                 <select class="form-select form-select-sm" name="payment_method">
                                     {% for code, name in ws.payment_methods.items() %}
                                     <option value="{{ code }}">{{ name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
-                            <div class="col-md-6"><input class="form-control form-control-sm" name="payment_no" placeholder="流水号"></div>
-                            <div class="col-md-6"><input class="form-control form-control-sm" type="file" name="attachment"></div>
-                            <div class="col-12"><input class="form-control form-control-sm" name="remark" placeholder="备注"></div>
-                            <div class="col-12 d-flex gap-2 flex-wrap">
-                                <button class="btn btn-success btn-sm" type="submit">
-                                    <i class="bi bi-check-lg"></i> 立即充值
-                                </button>
+                            <div class="col-md-2">
+                                <label class="form-label small mb-0">流水号</label>
+                                <input class="form-control form-control-sm" name="payment_no">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small mb-0">附件</label>
+                                <input class="form-control form-control-sm" type="file" name="attachment">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small mb-0">备注</label>
+                                <input class="form-control form-control-sm" name="remark">
+                            </div>
+                            <div class="col-md-2 d-flex gap-1 flex-wrap">
+                                <button class="btn btn-success btn-sm" type="submit"><i class="bi bi-check-lg"></i> 充值</button>
                                 <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#importRechargeModal">
                                     <i class="bi bi-upload"></i> 导入
                                 </button>
@@ -153,80 +335,30 @@
                     </form>
                 </div>
             </div>
-        </div>
 
-        <div class="col-lg-6">
-            <div class="card mb-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span><i class="bi bi-box-arrow-up text-danger"></i> 出库扣减</span>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="{{ url_for('admin_client_company_outbound', customer_id=ws.customer_id) }}">
-                        <div class="row g-2">
-                            <div class="col-md-5"><input class="form-control form-control-sm" name="item_name" placeholder="品名/规格" required></div>
-                            <div class="col-md-2"><input class="form-control form-control-sm" name="truck_count" type="number" step="1" min="0" placeholder="车数"></div>
-                            <div class="col-md-2"><input class="form-control form-control-sm" name="quantity" type="number" step="0.01" min="0" placeholder="吨数"></div>
-                            <div class="col-md-3"><input class="form-control form-control-sm" name="unit_price" type="number" step="0.01" min="0" placeholder="单价"></div>
-                            <div class="col-md-6"><input class="form-control form-control-sm" name="amount" type="number" step="0.01" min="0.01" placeholder="金额" required></div>
-                            <div class="col-md-6"><input class="form-control form-control-sm" name="deduct_date" type="date"></div>
-                            <div class="col-12"><input class="form-control form-control-sm" name="remark" placeholder="备注"></div>
-                            <div class="col-12 d-flex gap-2 flex-wrap">
-                                <button class="btn btn-danger btn-sm" type="submit">
-                                    <i class="bi bi-check-lg"></i> 录入扣减
-                                </button>
-                                <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#importOutboundModal">
-                                    <i class="bi bi-upload"></i> 导入
-                                </button>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-lg-6">
-            <div class="card mb-3">
-                <div class="card-header">
-                    <span><i class="bi bi-dash-circle text-secondary"></i> 其他扣减</span>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="{{ url_for('admin_client_company_other_deduct', customer_id=ws.customer_id) }}">
-                        <div class="row g-2">
-                            <div class="col-md-6"><input class="form-control form-control-sm" name="item_name" placeholder="扣减项目（如手续费、调整）" required></div>
-                            <div class="col-md-6"><input class="form-control form-control-sm" name="amount" type="number" step="0.01" min="0.01" placeholder="金额" required></div>
-                            <div class="col-md-6"><input class="form-control form-control-sm" name="deduct_date" type="date"></div>
-                            <div class="col-md-6"><input class="form-control form-control-sm" name="remark" placeholder="备注"></div>
-                            <div class="col-12">
-                                <button class="btn btn-secondary btn-sm" type="submit">
-                                    <i class="bi bi-check-lg"></i> 录入其他扣减
-                                </button>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-
-        <!-- 充值记录管理 -->
-        <div class="col-lg-6">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span><i class="bi bi-cash-coin text-success"></i> 充值记录（可维护）</span>
-                    <span class="badge bg-light text-dark">{{ ws.recharges|length }} 条</span>
+                    <span>充值记录</span>
+                    <span class="text-muted small">{{ ws.recharges|length }} 条 · 合计 ¥{{ "%.2f"|format(ws.recharge_summary.total_amount or 0) }}</span>
                 </div>
                 <div class="card-body p-0">
-                    <div class="table-responsive" style="max-height: 360px;">
+                    <div class="table-responsive workspace-table-wrap">
                         <table class="table table-sm table-hover mb-0">
                             <thead class="table-light sticky-top">
-                                <tr><th>时间</th><th class="text-end">金额</th><th>方式</th><th>备注</th><th class="text-nowrap">操作</th></tr>
+                                <tr><th>时间</th><th class="text-end">金额</th><th>方式</th><th>状态</th><th>备注</th><th>操作</th></tr>
                             </thead>
                             <tbody>
                             {% for r in ws.recharges %}
                             <tr>
-                                <td class="small">{{ (r.created_at or '')[:16] }}</td>
-                                <td class="text-end text-success">{{ "%.2f"|format(r.amount or 0) }}</td>
+                                <td class="small text-nowrap">{{ (r.created_at or '')[:16] }}</td>
+                                <td class="text-end text-success fw-semibold">{{ "%.2f"|format(r.amount or 0) }}</td>
                                 <td class="small">{{ ws.payment_methods.get(r.payment_method, r.payment_method or '-') }}</td>
-                                <td class="small">{{ r.remark or '-' }}</td>
+                                <td class="small">
+                                    {% if r.status == 'confirmed' %}<span class="badge bg-success">已确认</span>
+                                    {% elif r.status == 'pending' %}<span class="badge bg-warning text-dark">待审核</span>
+                                    {% else %}<span class="badge bg-secondary">{{ r.status }}</span>{% endif %}
+                                </td>
+                                <td class="small text-truncate" style="max-width:8rem">{{ r.remark or '-' }}</td>
                                 <td class="text-nowrap">
                                     <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 edit-recharge"
                                             data-id="{{ r.id }}" data-amount="{{ r.amount or 0 }}"
@@ -235,50 +367,40 @@
                                         <i class="bi bi-pencil"></i>
                                     </button>
                                     <form method="POST" action="{{ url_for('admin_client_recharge_delete', customer_id=ws.customer_id, rid=r.id) }}"
-                                          class="d-inline" onsubmit="return confirm('确定删除此充值记录？余额将自动重算。')">
+                                          class="d-inline" onsubmit="return confirm('确定删除？余额将重算。')">
                                         <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-trash"></i></button>
                                     </form>
                                 </td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="5" class="text-center text-muted py-4">暂无充值记录</td></tr>
+                            <tr><td colspan="6" class="text-center text-muted py-5">暂无充值记录，请在上方录入</td></tr>
                             {% endfor %}
                             </tbody>
                         </table>
                     </div>
                     {% if ws.recharge_summary.total_count %}
-                    <div class="border-top bg-light p-2">
-                        <div class="d-flex justify-content-between align-items-center small fw-semibold mb-2">
-                            <span>合计</span>
-                            <span>{{ ws.recharge_summary.total_count }} 笔 · <span class="text-success">{{ "%.2f"|format(ws.recharge_summary.total_amount) }}</span> 元</span>
-                        </div>
-                        <div class="row g-2">
+                    <div class="border-top bg-light p-3">
+                        <div class="row g-3">
                             <div class="col-md-6">
                                 <div class="small text-muted mb-1">按付款方式</div>
-                                <table class="table table-sm table-bordered mb-0 bg-white">
-                                    <thead><tr><th>付款方式</th><th class="text-end">笔数</th><th class="text-end">金额</th></tr></thead>
+                                <table class="table table-sm table-bordered mb-0 bg-white small">
+                                    <thead><tr><th>方式</th><th class="text-end">笔数</th><th class="text-end">金额</th></tr></thead>
                                     <tbody>
                                     {% for row in ws.recharge_summary.by_method %}
-                                    <tr>
-                                        <td>{{ row.label }}</td>
-                                        <td class="text-end">{{ row.count }}</td>
-                                        <td class="text-end text-success">{{ "%.2f"|format(row.amount) }}</td>
-                                    </tr>
+                                    <tr><td>{{ row.label }}</td><td class="text-end">{{ row.count }}</td>
+                                        <td class="text-end text-success">{{ "%.2f"|format(row.amount) }}</td></tr>
                                     {% endfor %}
                                     </tbody>
                                 </table>
                             </div>
                             <div class="col-md-6">
                                 <div class="small text-muted mb-1">按月份</div>
-                                <table class="table table-sm table-bordered mb-0 bg-white">
+                                <table class="table table-sm table-bordered mb-0 bg-white small">
                                     <thead><tr><th>月份</th><th class="text-end">笔数</th><th class="text-end">金额</th></tr></thead>
                                     <tbody>
                                     {% for row in ws.recharge_summary.by_month %}
-                                    <tr>
-                                        <td>{{ row.month }}</td>
-                                        <td class="text-end">{{ row.count }}</td>
-                                        <td class="text-end text-success">{{ "%.2f"|format(row.amount) }}</td>
-                                    </tr>
+                                    <tr><td>{{ row.month }}</td><td class="text-end">{{ row.count }}</td>
+                                        <td class="text-end text-success">{{ "%.2f"|format(row.amount) }}</td></tr>
                                     {% endfor %}
                                     </tbody>
                                 </table>
@@ -290,25 +412,111 @@
             </div>
         </div>
 
-        <!-- 扣减记录管理 -->
-        <div class="col-lg-6">
+        <!-- ========== 扣减 ========== -->
+        <div class="tab-pane fade" id="tab-deduction" role="tabpanel">
+            <ul class="nav nav-tabs mb-3" id="deductEntryTabs" role="tablist">
+                <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#deductEntryOutbound" type="button">出库扣减</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deductEntryOther" type="button" id="deductEntryOtherTab">其他扣减</button></li>
+            </ul>
+            <div class="tab-content mb-3">
+                <div class="tab-pane fade show active" id="deductEntryOutbound">
+                    <div class="card border-danger border-opacity-25">
+                        <div class="card-body">
+                            <form method="POST" action="{{ url_for('admin_client_company_outbound', customer_id=ws.customer_id) }}">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-md-3">
+                                        <label class="form-label small mb-0">品名/规格 *</label>
+                                        <input class="form-control form-control-sm" name="item_name" required>
+                                    </div>
+                                    <div class="col-md-1">
+                                        <label class="form-label small mb-0">车数</label>
+                                        <input class="form-control form-control-sm" name="truck_count" type="number" step="1" min="0">
+                                    </div>
+                                    <div class="col-md-1">
+                                        <label class="form-label small mb-0">吨数</label>
+                                        <input class="form-control form-control-sm" name="quantity" type="number" step="0.01" min="0">
+                                    </div>
+                                    <div class="col-md-1">
+                                        <label class="form-label small mb-0">单价</label>
+                                        <input class="form-control form-control-sm" name="unit_price" type="number" step="0.01" min="0">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-0">金额 *</label>
+                                        <input class="form-control form-control-sm" name="amount" type="number" step="0.01" min="0.01" required>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-0">日期</label>
+                                        <input class="form-control form-control-sm" name="deduct_date" type="date">
+                                    </div>
+                                    <div class="col-md-2 d-flex gap-1">
+                                        <button class="btn btn-danger btn-sm" type="submit"><i class="bi bi-check-lg"></i> 录入</button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#importOutboundModal"><i class="bi bi-upload"></i></button>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <input class="form-control form-control-sm" name="remark" placeholder="备注（可选）">
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="deductEntryOther">
+                    <div class="card border-secondary">
+                        <div class="card-body">
+                            <form method="POST" action="{{ url_for('admin_client_company_other_deduct', customer_id=ws.customer_id) }}">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-md-4">
+                                        <label class="form-label small mb-0">扣减项目 *</label>
+                                        <input class="form-control form-control-sm" name="item_name" placeholder="手续费、调整等" required>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-0">金额 *</label>
+                                        <input class="form-control form-control-sm" name="amount" type="number" step="0.01" min="0.01" required>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-0">日期</label>
+                                        <input class="form-control form-control-sm" name="deduct_date" type="date">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small mb-0">备注</label>
+                                        <input class="form-control form-control-sm" name="remark">
+                                    </div>
+                                    <div class="col-md-1">
+                                        <button class="btn btn-secondary btn-sm w-100" type="submit">录入</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span><i class="bi bi-list-check text-danger"></i> 扣减记录（可维护）</span>
-                    <span class="badge bg-light text-dark">{{ ws.deductions|length }} 条</span>
+                <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <span>扣减记录</span>
+                    <span class="text-muted small">
+                        {{ ws.deductions|length }} 条 ·
+                        {% if ws.deduction_summary.total_trucks %}{{ "%g"|format(ws.deduction_summary.total_trucks) }} 车 · {% endif %}
+                        {{ "%g"|format(ws.deduction_summary.total_qty or 0) }} 吨 ·
+                        合计 <span class="text-danger">¥{{ "%.2f"|format(ws.deduction_summary.total_amount or 0) }}</span>
+                    </span>
                 </div>
                 <div class="card-body p-0">
-                    <div class="table-responsive" style="max-height: 360px;">
+                    <div class="table-responsive workspace-table-wrap">
                         <table class="table table-sm table-hover mb-0">
                             <thead class="table-light sticky-top">
-                                <tr><th>日期</th><th>类型</th><th>品名</th><th class="text-end">车数</th><th class="text-end">吨数</th><th class="text-end">单价</th><th class="text-end">金额</th><th class="text-nowrap">操作</th></tr>
+                                <tr>
+                                    <th>日期</th><th>类型</th><th>品名</th>
+                                    <th class="text-end">车数</th><th class="text-end">吨数</th>
+                                    <th class="text-end">单价</th><th class="text-end">金额</th><th>操作</th>
+                                </tr>
                             </thead>
                             <tbody>
                             {% for d in ws.deductions %}
                             {% set dtype = d.deduct_type or 'outbound' %}
                             <tr>
-                                <td class="small">{{ (d.deduct_date or d.created_at or '')[:10] }}</td>
-                                <td class="small">
+                                <td class="small text-nowrap">{{ (d.deduct_date or d.created_at or '')[:10] }}</td>
+                                <td>
                                     {% if dtype == 'other' %}
                                     <span class="badge bg-secondary">{{ ws.deduct_type_labels.get(dtype, '其他') }}</span>
                                     {% elif dtype == 'sync' %}
@@ -318,10 +526,10 @@
                                     {% endif %}
                                 </td>
                                 <td class="small">{{ d.item_name or '-' }}</td>
-                                <td class="text-end">{{ "%g"|format(d.truck_count) if d.truck_count else '-' }}</td>
-                                <td class="text-end">{{ "%g"|format(d.quantity or 0) }}</td>
-                                <td class="text-end">{{ "%g"|format(d.unit_price or 0) }}</td>
-                                <td class="text-end text-danger">{{ "%.2f"|format(d.amount or 0) }}</td>
+                                <td class="text-end small">{{ "%g"|format(d.truck_count) if d.truck_count else '-' }}</td>
+                                <td class="text-end small">{{ "%g"|format(d.quantity or 0) }}</td>
+                                <td class="text-end small">{{ "%g"|format(d.unit_price or 0) }}</td>
+                                <td class="text-end text-danger fw-semibold">{{ "%.2f"|format(d.amount or 0) }}</td>
                                 <td class="text-nowrap">
                                     <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 edit-deduction"
                                             data-id="{{ d.id }}" data-amount="{{ d.amount or 0 }}"
@@ -332,52 +540,40 @@
                                         <i class="bi bi-pencil"></i>
                                     </button>
                                     <form method="POST" action="{{ url_for('admin_client_deduction_delete', customer_id=ws.customer_id, did=d.id) }}"
-                                          class="d-inline" onsubmit="return confirm('确定删除此扣减记录？余额将自动重算，关联出库明细同步删除。')">
+                                          class="d-inline" onsubmit="return confirm('确定删除？余额将重算。')">
                                         <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-trash"></i></button>
                                     </form>
                                 </td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="8" class="text-center text-muted py-4">暂无扣减记录</td></tr>
+                            <tr><td colspan="8" class="text-center text-muted py-5">暂无扣减记录</td></tr>
                             {% endfor %}
                             </tbody>
                         </table>
                     </div>
                     {% if ws.deduction_summary.total_count %}
-                    <div class="border-top bg-light p-2" id="deductionSummaryPanel">
+                    <div class="border-top bg-light p-3" id="deductionSummaryPanel">
                         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                             <span class="small fw-semibold">分类汇总</span>
                             <div class="d-flex flex-wrap align-items-center gap-2">
-                                <label class="small text-muted mb-0" for="deductionGroupField">汇总字段</label>
-                                <select id="deductionGroupField" class="form-select form-select-sm" style="width: auto; min-width: 6rem;">
+                                <select id="deductionGroupField" class="form-select form-select-sm" style="width:auto">
                                     {% for key, label in ws.deduction_group_fields.items() %}
                                     <option value="{{ key }}"{% if key == 'date' %} selected{% endif %}>{{ label }}</option>
                                     {% endfor %}
                                 </select>
-                                <label class="small text-muted mb-0" for="deductionFilterValue">筛选</label>
-                                <select id="deductionFilterValue" class="form-select form-select-sm" style="width: auto; min-width: 7rem;">
+                                <select id="deductionFilterValue" class="form-select form-select-sm" style="width:auto">
                                     <option value="">全部</option>
                                 </select>
                             </div>
                         </div>
-                        <div class="d-flex justify-content-between align-items-center small fw-semibold mb-2">
-                            <span>合计</span>
-                            <span id="deductionSummaryTotal">
-                                {{ ws.deduction_summary.total_count }} 笔 ·
-                                {% if ws.deduction_summary.total_trucks %}{{ "%g"|format(ws.deduction_summary.total_trucks) }} 车 · {% endif %}
-                                {{ "%g"|format(ws.deduction_summary.total_qty) }} 吨 ·
-                                <span class="text-danger">{{ "%.2f"|format(ws.deduction_summary.total_amount) }}</span> 元
-                            </span>
-                        </div>
-                        <div class="table-responsive" style="max-height: 220px;">
+                        <div class="small fw-semibold mb-2" id="deductionSummaryTotal"></div>
+                        <div class="table-responsive" style="max-height:200px">
                             <table class="table table-sm table-bordered mb-0 bg-white">
                                 <thead class="table-light sticky-top">
                                     <tr>
                                         <th id="deductionGroupColHead">日期</th>
-                                        <th class="text-end">笔数</th>
-                                        <th class="text-end">车数</th>
-                                        <th class="text-end">吨数</th>
-                                        <th class="text-end">金额</th>
+                                        <th class="text-end">笔数</th><th class="text-end">车数</th>
+                                        <th class="text-end">吨数</th><th class="text-end">金额</th>
                                     </tr>
                                 </thead>
                                 <tbody id="deductionSummaryBody"></tbody>
@@ -385,6 +581,48 @@
                         </div>
                     </div>
                     {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== 流水 ========== -->
+        <div class="tab-pane fade" id="tab-flow" role="tabpanel">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-journal-text"></i> 资金流水（充值 + 扣减，按时间倒序）
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive workspace-table-wrap">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th>时间</th><th>类型</th><th>说明</th>
+                                    <th class="text-end">金额</th><th class="text-end">余额</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            {% for tx in ws.transactions %}
+                            <tr>
+                                <td class="small text-nowrap">{{ (tx.created_at or '')[:16] }}</td>
+                                <td>
+                                    {% if tx.type == 'recharge' %}
+                                    <span class="badge bg-success">充值</span>
+                                    {% else %}
+                                    <span class="badge bg-danger">扣减</span>
+                                    {% endif %}
+                                </td>
+                                <td class="small">{{ tx.remark or '-' }}</td>
+                                <td class="text-end {% if tx.type == 'recharge' %}text-success{% else %}text-danger{% endif %}">
+                                    {% if tx.type == 'recharge' %}+{% else %}-{% endif %}{{ "%.2f"|format(tx.amount or 0) }}
+                                </td>
+                                <td class="text-end small text-muted">{{ "%.2f"|format(tx.balance_after or 0) }}</td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center text-muted py-5">暂无流水</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -416,27 +654,26 @@
     </div>
 </div>
 
-<!-- 编辑扣减 -->
 <div class="modal fade" id="editDeductionModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="POST" id="editDeductionForm">
-                <div class="modal-header"><h6 class="modal-title">编辑出库扣减记录</h6>
+                <div class="modal-header"><h6 class="modal-title">编辑扣减记录</h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
                 <div class="modal-body">
-                    <div class="mb-2"><label class="form-label small">出库日期</label>
+                    <div class="mb-2"><label class="form-label small">日期</label>
                         <input type="date" name="deduct_date" id="ed_date" class="form-control form-control-sm"></div>
-                    <div class="mb-2"><label class="form-label small">品名/规格</label>
+                    <div class="mb-2"><label class="form-label small">品名/项目</label>
                         <input type="text" name="item_name" id="ed_item" class="form-control form-control-sm"></div>
                     <div class="row g-2">
-                        <div class="col-4 mb-2"><label class="form-label small">车数</label>
+                        <div class="col-4"><label class="form-label small">车数</label>
                             <input type="number" step="1" min="0" name="truck_count" id="ed_trucks" class="form-control form-control-sm"></div>
-                        <div class="col-4 mb-2"><label class="form-label small">吨数</label>
+                        <div class="col-4"><label class="form-label small">吨数</label>
                             <input type="number" step="0.01" name="quantity" id="ed_qty" class="form-control form-control-sm"></div>
-                        <div class="col-4 mb-2"><label class="form-label small">单价</label>
+                        <div class="col-4"><label class="form-label small">单价</label>
                             <input type="number" step="0.01" name="unit_price" id="ed_price" class="form-control form-control-sm"></div>
                     </div>
-                    <div class="mb-2"><label class="form-label small">金额 *</label>
+                    <div class="mb-2 mt-2"><label class="form-label small">金额 *</label>
                         <input type="number" step="0.01" min="0.01" name="amount" id="ed_amount" class="form-control form-control-sm" required></div>
                     <div class="mb-2"><label class="form-label small">备注</label>
                         <input type="text" name="remark" id="ed_remark" class="form-control form-control-sm"></div>
@@ -448,65 +685,31 @@
 </div>
 
 <!-- 充值导入 -->
-<div class="modal fade" id="importRechargeModal" tabindex="-1" aria-labelledby="importRechargeModalLabel" aria-hidden="true">
+<div class="modal fade" id="importRechargeModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="importRechargeModalLabel"><i class="bi bi-upload"></i> 充值数据导入</h5>
+                <h5 class="modal-title"><i class="bi bi-upload"></i> 充值数据导入</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <ul class="nav nav-tabs mb-3" role="tablist">
-                    <li class="nav-item">
-                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#rechargeTabImage" type="button">
-                            <i class="bi bi-image"></i> 图片识别
-                        </button>
-                    </li>
-                    <li class="nav-item">
-                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#rechargeTabExcel" type="button">
-                            <i class="bi bi-file-earmark-excel"></i> Excel 导入
-                        </button>
-                    </li>
+                <ul class="nav nav-tabs mb-3">
+                    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#rechargeTabImage" type="button"><i class="bi bi-image"></i> 图片识别</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#rechargeTabExcel" type="button"><i class="bi bi-file-earmark-excel"></i> Excel</button></li>
                 </ul>
                 <div class="tab-content">
                     <div class="tab-pane fade show active" id="rechargeTabImage">
-                        <p class="small text-muted">上传转账截图、收款凭证等，识别金额后预览确认再充值到账。</p>
                         <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin_client_company_ocr_upload', customer_id=ws.customer_id) }}">
                             <input type="hidden" name="mode" value="recharge">
-                            <div class="mb-3">
-                                <input class="form-control" type="file" name="image" accept=".jpg,.jpeg,.png,.webp" required>
-                            </div>
-                            <button class="btn btn-primary btn-sm" type="submit">
-                                <i class="bi bi-eye"></i> 识别并预览
-                            </button>
+                            <input class="form-control mb-2" type="file" name="image" accept=".jpg,.jpeg,.png,.webp" required>
+                            <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-eye"></i> 识别并预览</button>
                         </form>
                     </div>
                     <div class="tab-pane fade" id="rechargeTabExcel">
-                        <p class="small text-muted mb-2">使用标准业务表头，系统按「金额」「收款日期」列自动充值；若表中含销售列，将一并处理出库。</p>
-                        <p class="small mb-2 text-break">
-                            <span class="badge bg-light text-dark">收款日期</span>
-                            <span class="badge bg-light text-dark">金额</span>
-                            <span class="badge bg-light text-dark">销售日期</span>
-                            <span class="badge bg-light text-dark">规格</span>
-                            <span class="badge bg-light text-dark">车数</span>
-                            <span class="badge bg-light text-dark">销售吨数</span>
-                            <span class="badge bg-light text-dark">单价</span>
-                            <span class="badge bg-light text-dark">销售金额</span>
-                            <span class="badge bg-light text-dark">余款</span>
-                            <span class="badge bg-light text-dark">备注</span>
-                        </p>
                         <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin_client_company_excel_preview', customer_id=ws.customer_id) }}">
-                            <div class="mb-3">
-                                <input class="form-control" type="file" name="excel_file" accept=".xlsx,.xls" required>
-                            </div>
-                            <p class="small text-muted mb-2"><i class="bi bi-info-circle"></i> 支持多页签：上传后可勾选要导入的页签，一次性导入所选页签的全部数据（标题行自动跳过）。</p>
-                            <label class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" name="split_orders" value="1">
-                                <span class="form-check-label small">表中销售明细：每条单独生成出库单</span>
-                            </label>
-                            <button class="btn btn-success btn-sm" type="submit">
-                                <i class="bi bi-file-earmark-arrow-up"></i> 上传并选择页签
-                            </button>
+                            <input class="form-control mb-2" type="file" name="excel_file" accept=".xlsx,.xls" required>
+                            <label class="form-check mb-2"><input class="form-check-input" type="checkbox" name="split_orders" value="1"> 销售明细每条单独出库单</label>
+                            <button class="btn btn-success btn-sm" type="submit"><i class="bi bi-file-earmark-arrow-up"></i> 上传并选择页签</button>
                         </form>
                     </div>
                 </div>
@@ -516,65 +719,32 @@
 </div>
 
 <!-- 出库导入 -->
-<div class="modal fade" id="importOutboundModal" tabindex="-1" aria-labelledby="importOutboundModalLabel" aria-hidden="true">
+<div class="modal fade" id="importOutboundModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="importOutboundModalLabel"><i class="bi bi-upload"></i> 出库数据导入</h5>
+                <h5 class="modal-title"><i class="bi bi-upload"></i> 出库数据导入</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <ul class="nav nav-tabs mb-3" role="tablist">
-                    <li class="nav-item">
-                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#outboundTabImage" type="button">
-                            <i class="bi bi-image"></i> 图片识别
-                        </button>
-                    </li>
-                    <li class="nav-item">
-                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#outboundTabExcel" type="button">
-                            <i class="bi bi-file-earmark-excel"></i> Excel 导入
-                        </button>
-                    </li>
+                <ul class="nav nav-tabs mb-3">
+                    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#outboundTabImage" type="button"><i class="bi bi-image"></i> 图片</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#outboundTabExcel" type="button"><i class="bi bi-file-earmark-excel"></i> Excel</button></li>
                 </ul>
                 <div class="tab-content">
                     <div class="tab-pane fade show active" id="outboundTabImage">
-                        <p class="small text-muted">上传送货单、出库单照片，识别规格、吨数、单价、金额后批量扣减余额。</p>
                         <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin_client_company_ocr_upload', customer_id=ws.customer_id) }}">
                             <input type="hidden" name="mode" value="outbound">
-                            <div class="mb-3">
-                                <input class="form-control" type="file" name="image" accept=".jpg,.jpeg,.png,.webp" required>
-                            </div>
-                            <button class="btn btn-danger btn-sm" type="submit">
-                                <i class="bi bi-eye"></i> 识别并预览
-                            </button>
+                            <input class="form-control mb-2" type="file" name="image" accept=".jpg,.jpeg,.png,.webp" required>
+                            <button class="btn btn-danger btn-sm" type="submit"><i class="bi bi-eye"></i> 识别并预览</button>
                         </form>
                     </div>
                     <div class="tab-pane fade" id="outboundTabExcel">
-                        <p class="small text-muted mb-2">推荐使用标准表头；也可仅含销售相关列。</p>
-                        <p class="small mb-2 text-break">
-                            <span class="badge bg-light text-dark">销售日期</span>
-                            <span class="badge bg-light text-dark">规格</span>
-                            <span class="badge bg-light text-dark">车数</span>
-                            <span class="badge bg-light text-dark">销售吨数</span>
-                            <span class="badge bg-light text-dark">单价</span>
-                            <span class="badge bg-light text-dark">销售金额</span>
-                            <span class="badge bg-light text-dark">备注</span>
-                        </p>
-                        <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin_client_company_excel_preview', customer_id=ws.customer_id) }}">
-                            <div class="mb-3">
-                                <input class="form-control" type="file" name="excel_file" accept=".xlsx,.xls" required>
-                            </div>
-                            <p class="small text-muted mb-2"><i class="bi bi-info-circle"></i> 支持多页签：上传后可勾选要导入的页签，一次性导入所选页签的全部数据（标题行自动跳过）。</p>
-                            <label class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" name="split_orders" value="1">
-                                <span class="form-check-label small">每条销售明细单独生成一张出库单</span>
-                            </label>
-                            <button class="btn btn-danger btn-sm" type="submit">
-                                <i class="bi bi-file-earmark-arrow-up"></i> 上传并选择页签
-                            </button>
+                        <form method="POST" enctype="multipart/form-data" class="mb-2" action="{{ url_for('admin_client_company_excel_preview', customer_id=ws.customer_id) }}">
+                            <input class="form-control mb-2" type="file" name="excel_file" accept=".xlsx,.xls" required>
+                            <label class="form-check mb-2"><input class="form-check-input" type="checkbox" name="split_orders" value="1"> 每条明细单独出库单</label>
+                            <button class="btn btn-danger btn-sm" type="submit"><i class="bi bi-file-earmark-arrow-up"></i> 上传并选择页签</button>
                         </form>
-                        <hr class="my-3">
-                        <p class="small text-muted mb-2">仅出库简易表（无收款列）：</p>
                         <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin_client_company_excel_import', customer_id=ws.customer_id) }}">
                             <input type="hidden" name="mode" value="outbound">
                             <div class="input-group input-group-sm">
@@ -594,14 +764,56 @@
 {% if preview and preview.customer_id == ws.customer_id and preview.rows %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    var id = {% if preview.mode == 'outbound' %}'importOutboundModal'{% else %}'importRechargeModal'{% endif %};
-    var el = document.getElementById(id);
-    if (el) new bootstrap.Modal(el).show();
+    var tab = {% if preview.mode == 'outbound' %}'deduction'{% else %}'recharge'{% endif %};
+    if (window.wsActivateTab) window.wsActivateTab(tab);
 });
 </script>
 {% endif %}
 <script>
 (function () {
+    var root = document.getElementById('clientWorkspace');
+    var cid = root ? root.dataset.customerId : '';
+    var storageKey = 'ws_tab_' + cid;
+
+    var tabMap = {
+        overview: 'tab-overview-btn',
+        recharge: 'tab-recharge-btn',
+        deduction: 'tab-deduction-btn',
+        flow: 'tab-flow-btn'
+    };
+
+    function activateTab(name) {
+        var btnId = tabMap[name] || tabMap.overview;
+        var btn = document.getElementById(btnId);
+        if (btn) bootstrap.Tab.getOrCreateInstance(btn).show();
+        try { localStorage.setItem(storageKey, name); } catch (e) {}
+        if (location.hash !== '#' + name) {
+            history.replaceState(null, '', '#' + name);
+        }
+    }
+    window.wsActivateTab = activateTab;
+
+    document.querySelectorAll('[data-ws-tab]').forEach(function (el) {
+        el.addEventListener('click', function () {
+            activateTab(this.getAttribute('data-ws-tab'));
+            var sub = this.getAttribute('data-ws-sub');
+            if (sub === 'other') {
+                setTimeout(function () {
+                    var t = document.getElementById('deductEntryOtherTab');
+                    if (t) bootstrap.Tab.getOrCreateInstance(t).show();
+                }, 80);
+            }
+        });
+    });
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var hash = (location.hash || '').replace('#', '');
+        var saved = '';
+        try { saved = localStorage.getItem(storageKey) || ''; } catch (e) {}
+        var initial = hash || saved || 'overview';
+        if (tabMap[initial]) activateTab(initial);
+    });
+
     var rBase = "{{ url_for('admin_client_recharge_update', customer_id=ws.customer_id, rid=0) }}";
     var dBase = "{{ url_for('admin_client_deduction_update', customer_id=ws.customer_id, did=0) }}";
     var rModal = document.getElementById('editRechargeModal');
@@ -647,51 +859,28 @@ document.addEventListener('DOMContentLoaded', function () {
             var s = Number(n).toFixed(4).replace(/\.?0+$/, '');
             return s || '0';
         }
-
-        function formatMoney(n) {
-            return Number(n).toFixed(2);
-        }
-
+        function formatMoney(n) { return Number(n).toFixed(2); }
         function displayValue(field, raw) {
-            if (field === 'unit_price') {
-                return formatQty(raw);
-            }
-            if (field === 'truck_count') {
-                return raw > 0 ? formatQty(raw) : '0';
-            }
+            if (field === 'unit_price') return formatQty(raw);
+            if (field === 'truck_count') return raw > 0 ? formatQty(raw) : '0';
             return raw;
         }
-
         function sortKey(field, raw) {
-            if (field === 'date' || field === 'month') {
-                return raw === '未知' ? '' : String(raw);
-            }
-            if (field === 'unit_price' || field === 'truck_count') {
-                return Number(raw);
-            }
+            if (field === 'date' || field === 'month') return raw === '未知' ? '' : String(raw);
+            if (field === 'unit_price' || field === 'truck_count') return Number(raw);
             return String(raw);
         }
-
         function refreshFilterOptions() {
             var field = fieldSelect.value;
             var prev = filterSelect.value;
             var values = {};
             deductionRows.forEach(function (r) {
-                var v = displayValue(field, r[field]);
-                values[v] = true;
+                values[displayValue(field, r[field])] = true;
             });
             var sorted = Object.keys(values).sort(function (a, b) {
-                var ka = sortKey(field, a);
-                var kb = sortKey(field, b);
-                if (field === 'date' || field === 'month') {
-                    return kb > ka ? 1 : kb < ka ? -1 : 0;
-                }
-                if (field === 'unit_price') {
-                    return Number(a) - Number(b);
-                }
-                if (field === 'truck_count') {
-                    return Number(b) - Number(a);
-                }
+                if (field === 'date' || field === 'month') return b > a ? 1 : b < a ? -1 : 0;
+                if (field === 'unit_price') return Number(a) - Number(b);
+                if (field === 'truck_count') return Number(b) - Number(a);
                 return a.localeCompare(b, 'zh-CN');
             });
             filterSelect.innerHTML = '<option value="">全部</option>';
@@ -701,27 +890,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 opt.textContent = v;
                 filterSelect.appendChild(opt);
             });
-            if (prev && values[prev]) {
-                filterSelect.value = prev;
-            }
+            if (prev && values[prev]) filterSelect.value = prev;
         }
-
         function renderSummary() {
             var field = fieldSelect.value;
             var filterVal = filterSelect.value;
             colHead.textContent = groupLabels[field] || field;
             var filtered = deductionRows.filter(function (r) {
-                if (!filterVal) {
-                    return true;
-                }
-                return displayValue(field, r[field]) === filterVal;
+                return !filterVal || displayValue(field, r[field]) === filterVal;
             });
             var groups = {};
             filtered.forEach(function (r) {
                 var key = displayValue(field, r[field]);
-                if (!groups[key]) {
-                    groups[key] = { count: 0, qty: 0, trucks: 0, amount: 0 };
-                }
+                if (!groups[key]) groups[key] = { count: 0, qty: 0, trucks: 0, amount: 0 };
                 groups[key].count += 1;
                 groups[key].qty += r.quantity;
                 groups[key].trucks += r.truck_count || 0;
@@ -731,45 +912,27 @@ document.addEventListener('DOMContentLoaded', function () {
                 return { key: key, count: groups[key].count, qty: groups[key].qty, trucks: groups[key].trucks, amount: groups[key].amount };
             });
             rows.sort(function (a, b) {
-                if (field === 'date' || field === 'month') {
-                    return b.key > a.key ? 1 : b.key < a.key ? -1 : 0;
-                }
-                if (field === 'unit_price' || field === 'truck_count') {
-                    return Number(b.key) - Number(a.key);
-                }
+                if (field === 'date' || field === 'month') return b.key > a.key ? 1 : b.key < a.key ? -1 : 0;
+                if (field === 'unit_price' || field === 'truck_count') return Number(b.key) - Number(a.key);
                 return b.amount - a.amount;
             });
-            var totalCount = 0;
-            var totalQty = 0;
-            var totalTrucks = 0;
-            var totalAmount = 0;
+            var totalCount = 0, totalQty = 0, totalTrucks = 0, totalAmount = 0;
             summaryBody.innerHTML = rows.map(function (row) {
                 totalCount += row.count;
                 totalQty += row.qty;
                 totalTrucks += row.trucks;
                 totalAmount += row.amount;
-                return '<tr><td>' + row.key + '</td>' +
-                    '<td class="text-end">' + row.count + '</td>' +
-                    '<td class="text-end">' + formatQty(row.trucks) + '</td>' +
-                    '<td class="text-end">' + formatQty(row.qty) + '</td>' +
+                return '<tr><td>' + row.key + '</td><td class="text-end">' + row.count + '</td>' +
+                    '<td class="text-end">' + formatQty(row.trucks) + '</td><td class="text-end">' + formatQty(row.qty) + '</td>' +
                     '<td class="text-end text-danger">' + formatMoney(row.amount) + '</td></tr>';
             }).join('');
-            if (!rows.length) {
-                summaryBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">无匹配数据</td></tr>';
-            }
-            var totalParts = totalCount + ' 笔';
-            if (totalTrucks > 0) {
-                totalParts += ' · ' + formatQty(totalTrucks) + ' 车';
-            }
-            totalParts += ' · ' + formatQty(totalQty) + ' 吨 · ' +
-                '<span class="text-danger">' + formatMoney(totalAmount) + '</span> 元';
-            summaryTotal.innerHTML = totalParts;
+            if (!rows.length) summaryBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">无匹配数据</td></tr>';
+            var parts = '合计 ' + totalCount + ' 笔';
+            if (totalTrucks > 0) parts += ' · ' + formatQty(totalTrucks) + ' 车';
+            parts += ' · ' + formatQty(totalQty) + ' 吨 · <span class="text-danger">' + formatMoney(totalAmount) + '</span> 元';
+            summaryTotal.innerHTML = parts;
         }
-
-        fieldSelect.addEventListener('change', function () {
-            refreshFilterOptions();
-            renderSummary();
-        });
+        fieldSelect.addEventListener('change', function () { refreshFilterOptions(); renderSummary(); });
         filterSelect.addEventListener('change', renderSummary);
         refreshFilterOptions();
         renderSummary();
