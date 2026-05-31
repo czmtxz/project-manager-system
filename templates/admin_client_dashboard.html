@@ -92,7 +92,8 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <a class="btn btn-sm btn-primary" href="{{ url_for('admin_client_workspace', customer_id=(c.customer_id or 0)) }}">进入公司工作台</a>
+                                <a class="btn btn-sm btn-primary" href="{{ url_for('admin_client_workspace', customer_id=(c.customer_id or 0)) }}">工作台</a>
+                                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_client_reports', customer_id=(c.customer_id or 0)) }}">报表</a>
                             </td>
                         </tr>
                     {% endfor %}

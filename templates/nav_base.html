@@ -162,6 +162,9 @@
                             <li><a class="dropdown-item" href="{{ url_for('admin_client_recharges') }}">
                                 <i class="bi bi-cash-stack"></i> {% if can_collab_authorize %}充值审核{% else %}充值记录{% endif %}
                             </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('admin_client_reports') }}">
+                                <i class="bi bi-graph-up"></i> 协同报表
+                            </a></li>
                             {% if can_collab_authorize %}
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{{ url_for('admin_client_deductions_sync') }}">
