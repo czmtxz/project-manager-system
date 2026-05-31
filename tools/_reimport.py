@@ -11,13 +11,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 
-import pandas as pd
+from openpyxl import load_workbook
 from client_collab_ops import parse_collab_excel, import_standard_excel_bundle
 
 EXCEL = sys.argv[1]
 CLIENT_ID = 1
 CUSTOMER_ID = 1
-TARGET_INDICES = [0, 3]
+NAME_PREFIX = '虎子'  # 仅导入可见的「虎子」页签（跳过隐藏、景鸿、空表）
+
+wb = load_workbook(EXCEL, read_only=True)
+TARGET_SHEETS = [ws.title for ws in wb.worksheets
+                 if ws.sheet_state == 'visible' and ws.title.startswith(NAME_PREFIX)]
+wb.close()
+print('target sheets:', TARGET_SHEETS)
 
 db = sqlite3.connect(os.path.join(ROOT, 'project_manager.db'))
 db.row_factory = sqlite3.Row
@@ -35,17 +41,13 @@ db.execute("UPDATE client_accounts SET balance=0, total_recharge=0, total_deduct
 db.commit()
 print('cleared old recharges/deductions and %d CC sales orders; balance reset' % len(old_orders))
 
-sheet_names = list(pd.ExcelFile(EXCEL).sheet_names)
-for idx in TARGET_INDICES:
-    if idx >= len(sheet_names):
-        continue
-    sn = sheet_names[idx]
+for sn in TARGET_SHEETS:
     parsed = parse_collab_excel(EXCEL, mode='standard', sheet=sn)
     if parsed.get('error'):
-        print('SKIP idx %d (%r): %s' % (idx, sn, parsed['error']))
+        print('SKIP %r: %s' % (sn, parsed['error']))
         continue
     ok, msg, errs = import_standard_excel_bundle(db, CUSTOMER_ID, CLIENT_ID, parsed, user_id=1, split_orders=False)
-    print('idx %d %r -> ok=%s | %s' % (idx, sn, ok, msg))
+    print('%r -> ok=%s | %s' % (sn, ok, msg))
     if errs:
         print('   errs:', errs[:3])
 db.commit()
