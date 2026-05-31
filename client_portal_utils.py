@@ -7,6 +7,13 @@ CLIENT_STATUS_APPROVED = 'approved'
 CLIENT_STATUS_REJECTED = 'rejected'
 CLIENT_STATUS_DISABLED = 'disabled'
 
+# 剩余余额低于此值时预警（元）
+LOW_BALANCE_THRESHOLD = 10000
+
+
+def is_low_balance(balance):
+    return float(balance or 0) < LOW_BALANCE_THRESHOLD
+
 
 def table_has_column(db, table, column):
     cols = db.execute(f"PRAGMA table_info({table})").fetchall()
@@ -142,79 +149,99 @@ def assert_sales_order_access(db, client, order_id):
 
 
 def aggregate_company_balance(db, client):
-    """同 customer 下账户余额合计。"""
+    """剩余余额 = 已确认充值总额 − 全部扣减总额（按流水实时汇总）。"""
+    return compute_balance_totals(db, client)
+
+
+def compute_balance_totals(db, client):
     ids = company_scope_client_ids(db, client)
     if not ids:
         return 0.0, 0.0, 0.0
     ph = ','.join('?' * len(ids))
-    row = db.execute(
-        f"""SELECT COALESCE(SUM(balance),0) as bal,
-                   COALESCE(SUM(total_recharge),0) as rech,
-                   COALESCE(SUM(total_deduct),0) as ded
-            FROM client_accounts WHERE id IN ({ph})""",
+    rech = float(db.execute(
+        f"""SELECT COALESCE(SUM(amount), 0) FROM client_recharges
+            WHERE client_id IN ({ph}) AND status='confirmed'""",
         ids,
-    ).fetchone()
-    return float(row['bal']), float(row['rech']), float(row['ded'])
+    ).fetchone()[0] or 0)
+    ded = float(db.execute(
+        f"""SELECT COALESCE(SUM(amount), 0) FROM client_deductions
+            WHERE client_id IN ({ph})""",
+        ids,
+    ).fetchone()[0] or 0)
+    return rech - ded, rech, ded
+
+
+def _fetch_all_transactions(db, ids):
+    """拉取全部已确认充值与扣减（用于流水与逐笔余额）。"""
+    ph = ','.join('?' * len(ids))
+    rows = []
+    for r in db.execute(
+        f"""SELECT created_at, 'recharge' AS type, amount,
+                   payment_method AS remark, status, id, client_id
+            FROM client_recharges
+            WHERE client_id IN ({ph}) AND status='confirmed'
+            ORDER BY created_at, id""",
+        ids,
+    ).fetchall():
+        rows.append(dict(r))
+    for r in db.execute(
+        f"""SELECT COALESCE(deduct_date, created_at) AS created_at,
+                   'deduction' AS type, amount,
+                   COALESCE(item_name, remark) AS remark,
+                   'confirmed' AS status, id, client_id,
+                   COALESCE(deduct_type, 'outbound') AS deduct_type
+            FROM client_deductions
+            WHERE client_id IN ({ph})
+            ORDER BY COALESCE(deduct_date, created_at), id""",
+        ids,
+    ).fetchall():
+        row = dict(r)
+        label = deduct_type_label(row.get('deduct_type'))
+        base = row.get('remark') or ''
+        row['remark'] = f'[{label}] {base}'.strip() if base else f'[{label}]'
+        rows.append(row)
+    return rows
+
+
+def _tx_date_key(row):
+    return (row.get('created_at') or '')[:19]
+
+
+def _apply_transaction_filters(rows, tx_type='', start_date='', end_date=''):
+    out = rows
+    if tx_type == 'recharge':
+        out = [r for r in out if r['type'] == 'recharge']
+    elif tx_type == 'deduction':
+        out = [r for r in out if r['type'] == 'deduction']
+    if start_date:
+        out = [r for r in out if _tx_date_key(r)[:10] >= start_date]
+    if end_date:
+        out = [r for r in out if _tx_date_key(r)[:10] <= end_date]
+    return out
 
 
 def build_portal_transactions(db, client, tx_type='', start_date='', end_date=''):
-    """合并充值与扣减流水。"""
+    """合并充值与扣减流水；剩余余额 = 累计充值 − 累计扣减，逐笔倒推剩余。"""
     ids = company_scope_client_ids(db, client)
     if not ids:
-        return []
-    ph = ','.join('?' * len(ids))
-    rows = []
+        return [], 0.0, 0.0, 0.0
 
-    if tx_type in ('', 'recharge'):
-        q = f"""SELECT created_at, 'recharge' as type, amount,
-                       payment_method as remark, status, id,
-                       NULL as balance_after, client_id
-                FROM client_recharges
-                WHERE client_id IN ({ph}) AND status='confirmed'"""
-        params = list(ids)
-        if start_date:
-            q += " AND date(created_at) >= ?"
-            params.append(start_date)
-        if end_date:
-            q += " AND date(created_at) <= ?"
-            params.append(end_date)
-        for r in db.execute(q, params).fetchall():
-            rows.append(dict(r))
+    balance, total_recharge, total_deduct = compute_balance_totals(db, client)
+    all_rows = _fetch_all_transactions(db, ids)
+    all_rows.sort(key=_tx_date_key)
 
-    if tx_type in ('', 'deduction'):
-        q = f"""SELECT created_at, 'deduction' as type, amount,
-                       COALESCE(item_name, remark) as remark,
-                       'confirmed' as status, id,
-                       NULL as balance_after, client_id,
-                       COALESCE(deduct_type, 'outbound') as deduct_type
-                FROM client_deductions
-                WHERE client_id IN ({ph})"""
-        params = list(ids)
-        if start_date:
-            q += " AND date(COALESCE(deduct_date, created_at)) >= ?"
-            params.append(start_date)
-        if end_date:
-            q += " AND date(COALESCE(deduct_date, created_at)) <= ?"
-            params.append(end_date)
-        for r in db.execute(q, params).fetchall():
-            row = dict(r)
-            label = deduct_type_label(row.get('deduct_type'))
-            base = row.get('remark') or ''
-            row['remark'] = f'[{label}] {base}'.strip() if base else f'[{label}]'
-            rows.append(row)
-
-    rows.sort(key=lambda x: x.get('created_at') or '', reverse=True)
-    bal, _, _ = aggregate_company_balance(db, client)
-    running = bal
-    for r in rows:
-        r['balance_after'] = running
+    running = 0.0
+    for r in all_rows:
+        amt = float(r.get('amount') or 0)
         if r['type'] == 'recharge':
-            running -= float(r['amount'] or 0)
+            running += amt
         else:
-            running += float(r['amount'] or 0)
-    total_recharge = sum(float(r['amount'] or 0) for r in rows if r['type'] == 'recharge')
-    total_deduction = sum(float(r['amount'] or 0) for r in rows if r['type'] == 'deduction')
-    return rows, bal, total_recharge, total_deduction
+            running -= amt
+        r['balance_after'] = running
+
+    filtered = _apply_transaction_filters(all_rows, tx_type, start_date, end_date)
+    filtered.sort(key=_tx_date_key, reverse=True)
+    return filtered, balance, total_recharge, total_deduct
 
 
 def sync_deductions_for_customer(db, customer_id=None):
