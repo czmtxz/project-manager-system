@@ -590,7 +590,24 @@ def summarize_collab_excel_sheets(file_path, mode='standard'):
     except Exception as e:
         return {'error': str(e)}
 
+    import hashlib
+
+    def _signature(rch, obd):
+        parts = []
+        for r in rch:
+            parts.append('R|%s|%s' % (r.get('recharge_date') or '', round(float(r.get('amount') or 0), 2)))
+        for r in obd:
+            parts.append('O|%s|%s|%s|%s' % (
+                r.get('deduct_date') or '',
+                (r.get('item_name') or '').strip(),
+                round(float(r.get('quantity') or 0), 3),
+                round(float(r.get('amount') or 0), 2),
+            ))
+        parts.sort()
+        return hashlib.md5('\n'.join(parts).encode('utf-8')).hexdigest()
+
     summaries = []
+    seen_sig = {}
     for sn in xl.sheet_names:
         df = _load_sheet_df(pd, file_path, sn)
         if df is None or df.empty:
@@ -605,6 +622,10 @@ def summarize_collab_excel_sheets(file_path, mode='standard'):
         dates = [r.get('recharge_date') for r in rch if r.get('recharge_date')]
         dates += [r.get('deduct_date') for r in obd if r.get('deduct_date')]
         dates = [d for d in dates if d]
+        sig = _signature(rch, obd)
+        dup_of = seen_sig.get(sig)
+        if not dup_of:
+            seen_sig[sig] = sn
         summaries.append({
             'sheet': sn,
             'ok': True,
@@ -614,6 +635,8 @@ def summarize_collab_excel_sheets(file_path, mode='standard'):
             'outbound_amount': round(sum(float(r.get('amount') or 0) for r in obd), 2),
             'date_min': min(dates) if dates else '',
             'date_max': max(dates) if dates else '',
+            'is_duplicate': bool(dup_of),
+            'duplicate_of': dup_of or '',
         })
     return {'sheets': summaries, 'all_sheets': list(xl.sheet_names)}
 

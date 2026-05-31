@@ -12,7 +12,8 @@
     <div class="alert alert-light border small">
         <i class="bi bi-info-circle text-info"></i>
         系统已识别以下页签的数据（标题行已自动跳过）。请勾选需要导入的页签，确认后将<strong>一次性导入所选页签的全部数据</strong>。
-        请核对各页签的<strong>日期范围</strong>与<strong>金额</strong>，避免勾选内容重复的页签造成重复扣减。
+        <strong>内容完全相同的页签会自动标记「疑似重复」并默认不勾选</strong>，可避免重复扣减；如确需导入可手动勾选。
+        也请核对各页签的<strong>日期范围</strong>与<strong>金额</strong>再确认。
     </div>
 
     <form method="POST" action="{{ url_for('admin_client_company_excel_import_confirm', customer_id=customer_id) }}">
@@ -42,12 +43,20 @@
                         </thead>
                         <tbody>
                             {% for s in sheets %}
-                            <tr>
+                            <tr class="{% if s.is_duplicate %}table-warning{% endif %}">
                                 <td>
                                     <input class="form-check-input sheet-check" type="checkbox"
-                                           name="sheets" value="{{ s.sheet }}" id="sheet{{ loop.index }}" checked>
+                                           name="sheets" value="{{ s.sheet }}" id="sheet{{ loop.index }}"
+                                           {% if not s.is_duplicate %}checked{% endif %}>
                                 </td>
-                                <td><label for="sheet{{ loop.index }}" class="fw-bold mb-0">{{ s.sheet }}</label></td>
+                                <td>
+                                    <label for="sheet{{ loop.index }}" class="fw-bold mb-0">{{ s.sheet }}</label>
+                                    {% if s.is_duplicate %}
+                                    <br><span class="badge bg-warning text-dark" title="内容与「{{ s.duplicate_of }}」完全相同">
+                                        <i class="bi bi-exclamation-triangle"></i> 疑似重复（同「{{ s.duplicate_of }}」）
+                                    </span>
+                                    {% endif %}
+                                </td>
                                 <td class="small text-muted">
                                     {% if s.date_min %}{{ s.date_min }} ~ {{ s.date_max }}{% else %}-{% endif %}
                                 </td>
@@ -81,15 +90,17 @@
 (function () {
     var all = document.getElementById('checkAll');
     var boxes = document.querySelectorAll('.sheet-check');
+    function syncAll() {
+        all.checked = Array.prototype.every.call(boxes, function (x) { return x.checked; });
+    }
     if (all) {
         all.addEventListener('change', function () {
             boxes.forEach(function (b) { b.checked = all.checked; });
         });
+        syncAll();
     }
     boxes.forEach(function (b) {
-        b.addEventListener('change', function () {
-            all.checked = Array.prototype.every.call(boxes, function (x) { return x.checked; });
-        });
+        b.addEventListener('change', syncAll);
     });
 })();
 </script>
