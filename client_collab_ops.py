@@ -9,6 +9,10 @@ from client_portal_utils import (
     resolve_or_create_customer,
     build_portal_transactions,
     company_scope_client_ids,
+    DEDUCT_TYPE_OUTBOUND,
+    DEDUCT_TYPE_OTHER,
+    DEDUCT_TYPE_LABELS,
+    deduct_type_label,
 )
 
 PAYMENT_METHODS = {
@@ -74,6 +78,7 @@ DEDUCTION_GROUP_FIELDS = {
     'date': '日期',
     'month': '月份',
     'item_name': '品名',
+    'deduct_type': '类型',
     'truck_count': '车数',
     'unit_price': '单价',
 }
@@ -89,6 +94,7 @@ def deduction_rows_for_summary(deductions):
             'date': _date_key(dt),
             'month': _month_key(dt),
             'item_name': (d.get('item_name') or '').strip() or '未填写',
+            'deduct_type': deduct_type_label(d.get('deduct_type')),
             'truck_count': float(d.get('truck_count') or 0),
             'unit_price': float(d.get('unit_price') or 0),
             'quantity': float(d.get('quantity') or 0),
@@ -113,6 +119,42 @@ def summarize_deduction_records(deductions):
         'total_trucks': total_trucks,
         'total_amount': total_amount,
     }
+
+
+def summarize_deductions_by_type(deductions):
+    """按扣减类型汇总。"""
+    buckets = {}
+    for row in deductions:
+        d = dict(row)
+        key = d.get('deduct_type') or DEDUCT_TYPE_OUTBOUND
+        b = buckets.setdefault(key, {'count': 0, 'amount': 0.0})
+        b['count'] += 1
+        b['amount'] += float(d.get('amount') or 0)
+    return {
+        k: {
+            'label': deduct_type_label(k),
+            'count': v['count'],
+            'amount': v['amount'],
+        }
+        for k, v in buckets.items()
+    }
+
+
+def get_pending_sync_deductions(db, customer_id):
+    """销售出库已交付但尚未写入 client_deductions 的明细。"""
+    if not customer_id:
+        return []
+    return db.execute(
+        """SELECT si.id AS sales_item_id, si.item_name, si.quantity, si.unit_price,
+                  si.amount, so.id AS sales_order_id, so.order_no, so.order_date, so.remark
+           FROM sales_order_items si
+           JOIN sales_orders so ON si.sales_order_id = so.id
+           LEFT JOIN client_deductions cd ON cd.sales_item_id = si.id
+           WHERE so.customer_id=? AND so.status IN ('delivered', 'completed')
+             AND cd.id IS NULL AND COALESCE(si.amount, 0) > 0
+           ORDER BY so.order_date DESC, si.id DESC""",
+        (customer_id,),
+    ).fetchall()
 
 
 def primary_client_for_customer(db, customer_id):
@@ -225,6 +267,9 @@ def get_company_workspace(db, customer_id=0, client_id=None):
         scope_ids,
     ).fetchone()[0]
 
+    pending_sync = get_pending_sync_deductions(db, cid) if cid else []
+    pending_sync_amount = sum(float(r['amount'] or 0) for r in pending_sync)
+
     return {
         'client': client,
         'customer_id': cid or 0,
@@ -233,6 +278,10 @@ def get_company_workspace(db, customer_id=0, client_id=None):
         'total_recharge': total_recharge,
         'total_deduct': total_deduct,
         'pending_recharge': float(pending_recharge or 0),
+        'pending_sync': pending_sync,
+        'pending_sync_amount': pending_sync_amount,
+        'deduct_by_type': summarize_deductions_by_type(deductions),
+        'deduct_type_labels': DEDUCT_TYPE_LABELS,
         'transactions': transactions[:80],
         'recharges': recharges,
         'deductions': deductions,
@@ -431,12 +480,13 @@ def record_client_outbound(db, customer_id, client_id, items, order_date=None,
         db.execute(
             """INSERT INTO client_deductions
                (client_id, sales_order_id, sales_item_id, amount, quantity,
-                unit_price, item_name, truck_count, deduct_date, remark, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                unit_price, item_name, truck_count, deduct_date, remark,
+                deduct_type, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 client_id, order_id, item_id, it['amount'], it['quantity'],
                 it['unit_price'], it['item_name'], it['truck_count'], it['deduct_date'],
-                remark, now,
+                remark, DEDUCT_TYPE_OUTBOUND, now,
             ),
         )
         db.execute(
@@ -448,6 +498,36 @@ def record_client_outbound(db, customer_id, client_id, items, order_date=None,
         deduct_count += 1
 
     return order_id, order_no, deduct_count, total_amount
+
+
+def record_client_other_deduction(db, customer_id, client_id=None, amount=0,
+                                  item_name='', deduct_date=None, remark='',
+                                  user_id=None):
+    """录入其他扣减（非出库明细，如手续费、调整等），参与余额计算。"""
+    amount = float(amount)
+    if amount <= 0:
+        raise ValueError('扣减金额须大于 0')
+    client = primary_client_for_company(db, customer_id, client_id)
+    if not client:
+        raise ValueError('未找到有效客户账号')
+    client_id = client['id']
+    now = _now()
+    deduct_date = (deduct_date or now[:10])[:10]
+    name = (item_name or remark or '其他扣减').strip()[:120]
+    db.execute(
+        """INSERT INTO client_deductions
+           (client_id, amount, quantity, unit_price, item_name, truck_count,
+            deduct_date, remark, deduct_type, created_at)
+           VALUES (?, ?, 0, 0, ?, 0, ?, ?, ?, ?)""",
+        (client_id, amount, name, deduct_date, remark, DEDUCT_TYPE_OTHER, now),
+    )
+    db.execute(
+        """UPDATE client_accounts
+           SET total_deduct=total_deduct+?, balance=balance-?, updated_at=?
+           WHERE id=?""",
+        (amount, amount, now, client_id),
+    )
+    return db.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
 def _normalize_payment_method(val):

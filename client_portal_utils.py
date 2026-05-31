@@ -28,7 +28,38 @@ def ensure_schema_extensions(db):
             cur.execute(f"ALTER TABLE users ADD COLUMN {col} {typ}")
     if not table_has_column(db, 'client_deductions', 'truck_count'):
         cur.execute("ALTER TABLE client_deductions ADD COLUMN truck_count REAL DEFAULT 0")
+    if not table_has_column(db, 'client_deductions', 'deduct_type'):
+        cur.execute(
+            "ALTER TABLE client_deductions ADD COLUMN deduct_type TEXT DEFAULT 'outbound'"
+        )
+        cur.execute(
+            """UPDATE client_deductions SET deduct_type='other'
+               WHERE sales_order_id IS NULL"""
+        )
+        cur.execute(
+            """UPDATE client_deductions SET deduct_type='sync'
+               WHERE sales_order_id IS NOT NULL AND id IN (
+                   SELECT cd.id FROM client_deductions cd
+                   JOIN sales_orders so ON cd.sales_order_id = so.id
+                   WHERE so.order_no NOT LIKE 'CC%'
+               )"""
+        )
     db.commit()
+
+
+DEDUCT_TYPE_OUTBOUND = 'outbound'
+DEDUCT_TYPE_OTHER = 'other'
+DEDUCT_TYPE_SYNC = 'sync'
+
+DEDUCT_TYPE_LABELS = {
+    DEDUCT_TYPE_OUTBOUND: '出库扣减',
+    DEDUCT_TYPE_OTHER: '其他扣减',
+    DEDUCT_TYPE_SYNC: '销售同步',
+}
+
+
+def deduct_type_label(deduct_type):
+    return DEDUCT_TYPE_LABELS.get(deduct_type or DEDUCT_TYPE_OUTBOUND, deduct_type or '扣减')
 
 
 def resolve_or_create_customer(db, company_name, contact_name='', phone=''):
@@ -154,7 +185,8 @@ def build_portal_transactions(db, client, tx_type='', start_date='', end_date=''
         q = f"""SELECT created_at, 'deduction' as type, amount,
                        COALESCE(item_name, remark) as remark,
                        'confirmed' as status, id,
-                       NULL as balance_after, client_id
+                       NULL as balance_after, client_id,
+                       COALESCE(deduct_type, 'outbound') as deduct_type
                 FROM client_deductions
                 WHERE client_id IN ({ph})"""
         params = list(ids)
@@ -165,7 +197,11 @@ def build_portal_transactions(db, client, tx_type='', start_date='', end_date=''
             q += " AND date(COALESCE(deduct_date, created_at)) <= ?"
             params.append(end_date)
         for r in db.execute(q, params).fetchall():
-            rows.append(dict(r))
+            row = dict(r)
+            label = deduct_type_label(row.get('deduct_type'))
+            base = row.get('remark') or ''
+            row['remark'] = f'[{label}] {base}'.strip() if base else f'[{label}]'
+            rows.append(row)
 
     rows.sort(key=lambda x: x.get('created_at') or '', reverse=True)
     bal, _, _ = aggregate_company_balance(db, client)
@@ -225,11 +261,11 @@ def sync_deductions_for_customer(db, customer_id=None):
         db.execute(
             """INSERT INTO client_deductions
                (client_id, sales_order_id, sales_item_id, amount, quantity,
-                unit_price, item_name, deduct_date, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                unit_price, item_name, deduct_date, deduct_type, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (client['id'], item['sales_order_id'], item['sales_item_id'],
              item['amount'], item['quantity'], item['unit_price'],
-             item['item_name'], now[:10], now),
+             item['item_name'], now[:10], DEDUCT_TYPE_SYNC, now),
         )
         db.execute(
             """UPDATE client_accounts
