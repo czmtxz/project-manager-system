@@ -7,10 +7,38 @@
         <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_client_dashboard') }}">返回总览</a>
     </div>
 
-    <div class="row mb-3">
-        <div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">当前余额</div><div class="h4 mb-0 text-primary">{{ "%.2f"|format(ws.balance) }}</div></div></div></div>
-        <div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">累计充值</div><div class="h4 mb-0 text-success">{{ "%.2f"|format(ws.total_recharge) }}</div></div></div></div>
-        <div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">累计扣减</div><div class="h4 mb-0 text-danger">{{ "%.2f"|format(ws.total_deduct) }}</div></div></div></div>
+    <div class="row mb-3 g-3">
+        <div class="col-md-3 col-lg-2">
+            <div class="card h-100"><div class="card-body">
+                <div class="text-muted small">当前余额</div>
+                <div class="h4 mb-0 text-primary">{{ "%.2f"|format(ws.balance) }}</div>
+            </div></div>
+        </div>
+        <div class="col-md-3 col-lg-2">
+            <div class="card h-100"><div class="card-body">
+                <div class="text-muted small">累计充值</div>
+                <div class="h4 mb-0 text-success">{{ "%.2f"|format(ws.total_recharge) }}</div>
+            </div></div>
+        </div>
+        <div class="col-md-3 col-lg-2">
+            <div class="card h-100"><div class="card-body">
+                <div class="text-muted small">累计扣减</div>
+                <div class="h4 mb-0 text-danger">{{ "%.2f"|format(ws.total_deduct) }}</div>
+            </div></div>
+        </div>
+        <div class="col-md-3 col-lg-2">
+            <div class="card h-100 border-warning">
+                <div class="card-body">
+                    <div class="text-muted small">待确认充值</div>
+                    {% if ws.pending_recharge > 0 %}
+                    <a href="{{ url_for('admin_client_recharges', status='pending', client_id=ws.client.id) }}"
+                       class="h4 mb-0 text-warning text-decoration-none">{{ "%.2f"|format(ws.pending_recharge) }}</a>
+                    {% else %}
+                    <div class="h4 mb-0 text-muted">{{ "%.2f"|format(ws.pending_recharge or 0) }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
     </div>
 
     {% set preview = session.get('collab_ocr_preview') %}

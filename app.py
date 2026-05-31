@@ -3350,12 +3350,14 @@ def admin_client_dashboard():
     total_balance = sum(float(r.get('balance') or 0) for r in rows)
     total_recharge = sum(float(r.get('total_recharge') or 0) for r in rows)
     total_deduct = sum(float(r.get('total_deduct') or 0) for r in rows)
+    total_pending_recharge = sum(float(r.get('pending_recharge') or 0) for r in rows)
     return render_template(
         'admin_client_dashboard.html',
         companies=rows,
         total_balance=total_balance,
         total_recharge=total_recharge,
         total_deduct=total_deduct,
+        total_pending_recharge=total_pending_recharge,
         q=q,
     )
 

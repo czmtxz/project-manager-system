@@ -214,6 +214,12 @@ def get_company_workspace(db, customer_id=0, client_id=None):
         (cid or -1, client['id']),
     ).fetchall() if cid else [client]
 
+    pending_recharge = db.execute(
+        f"""SELECT COALESCE(SUM(amount), 0) FROM client_recharges
+            WHERE client_id IN ({ph}) AND status='pending'""",
+        scope_ids,
+    ).fetchone()[0]
+
     return {
         'client': client,
         'customer_id': cid or 0,
@@ -221,6 +227,7 @@ def get_company_workspace(db, customer_id=0, client_id=None):
         'balance': bal,
         'total_recharge': total_recharge,
         'total_deduct': total_deduct,
+        'pending_recharge': float(pending_recharge or 0),
         'transactions': transactions[:80],
         'recharges': recharges,
         'deductions': deductions,

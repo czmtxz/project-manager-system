@@ -6,10 +6,45 @@
         <h4 class="mb-0"><i class="bi bi-speedometer2"></i> 客户协同总览</h4>
     </div>
 
-    <div class="row mb-3">
-        <div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">公司数</div><div class="h4 mb-0">{{ companies|length }}</div></div></div></div>
-        <div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">充值总额</div><div class="h4 mb-0 text-success">{{ "%.2f"|format(total_recharge) }}</div></div></div></div>
-        <div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">当前余额</div><div class="h4 mb-0 text-primary">{{ "%.2f"|format(total_balance) }}</div></div></div></div>
+    <div class="row mb-3 g-3">
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card h-100"><div class="card-body">
+                <div class="text-muted small">公司数</div>
+                <div class="h4 mb-0">{{ companies|length }}</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card h-100"><div class="card-body">
+                <div class="text-muted small">当前余额</div>
+                <div class="h4 mb-0 text-primary">{{ "%.2f"|format(total_balance) }}</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card h-100"><div class="card-body">
+                <div class="text-muted small">累计充值</div>
+                <div class="h4 mb-0 text-success">{{ "%.2f"|format(total_recharge) }}</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card h-100"><div class="card-body">
+                <div class="text-muted small">累计扣减</div>
+                <div class="h4 mb-0 text-danger">{{ "%.2f"|format(total_deduct) }}</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card h-100 border-warning">
+                <div class="card-body">
+                    <div class="text-muted small">待确认充值</div>
+                    {% if total_pending_recharge > 0 %}
+                    <a href="{{ url_for('admin_client_recharges', status='pending') }}" class="h4 mb-0 text-warning text-decoration-none">
+                        {{ "%.2f"|format(total_pending_recharge) }}
+                    </a>
+                    {% else %}
+                    <div class="h4 mb-0 text-muted">{{ "%.2f"|format(total_pending_recharge) }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="card mb-3">
@@ -48,7 +83,14 @@
                             <td class="text-end">{{ "%.2f"|format(c.balance or 0) }}</td>
                             <td class="text-end text-success">{{ "%.2f"|format(c.total_recharge or 0) }}</td>
                             <td class="text-end text-danger">{{ "%.2f"|format(c.total_deduct or 0) }}</td>
-                            <td class="text-end text-warning">{{ "%.2f"|format(c.pending_recharge or 0) }}</td>
+                            <td class="text-end">
+                                {% if c.pending_recharge and c.pending_recharge > 0 %}
+                                <a href="{{ url_for('admin_client_recharges', status='pending', client_id=c.primary_client_id) }}"
+                                   class="text-warning fw-semibold text-decoration-none">{{ "%.2f"|format(c.pending_recharge) }}</a>
+                                {% else %}
+                                <span class="text-muted">{{ "%.2f"|format(c.pending_recharge or 0) }}</span>
+                                {% endif %}
+                            </td>
                             <td>
                                 <a class="btn btn-sm btn-primary" href="{{ url_for('admin_client_workspace', customer_id=(c.customer_id or 0)) }}">进入公司工作台</a>
                             </td>
