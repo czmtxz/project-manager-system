@@ -1,29 +1,30 @@
 {% extends staff_layout|default('nav_base.html') %}
-{% block title %}客户账户管理 - 客户协同{% endblock %}
+{% block title %}客户注册账号管理{% endblock %}
 {% block content %}
 <div class="container-fluid px-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h4 class="mb-0"><i class="bi bi-people"></i> 客户账户管理</h4>
-        {% if can_collab_authorize %}
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <div>
+            <h4 class="mb-1"><i class="bi bi-person-badge"></i> 客户注册账号管理</h4>
+            <p class="text-muted small mb-0">审核、维护客户公司门户注册用户的账号信息（联系人、手机、密码、状态等）</p>
+        </div>
         <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addClientModal">
             <i class="bi bi-plus-lg"></i> 代建账号
         </button>
-        {% endif %}
     </div>
 
     <div class="card mb-4">
         <div class="card-body">
             <form method="GET" class="row g-3">
                 <div class="col-md-2">
-                    <input type="text" class="form-control" name="username" placeholder="用户名"
+                    <input type="text" class="form-control form-control-sm" name="username" placeholder="用户名"
                            value="{{ request.args.get('username', '') }}">
                 </div>
                 <div class="col-md-3">
-                    <input type="text" class="form-control" name="company_name" placeholder="公司名称"
+                    <input type="text" class="form-control form-control-sm" name="company_name" placeholder="公司名称"
                            value="{{ request.args.get('company_name', '') }}">
                 </div>
                 <div class="col-md-2">
-                    <select class="form-select" name="status">
+                    <select class="form-select form-select-sm" name="status">
                         <option value="">全部状态</option>
                         <option value="pending" {% if request.args.get('status') == 'pending' %}selected{% endif %}>待审核</option>
                         <option value="approved" {% if request.args.get('status') == 'approved' %}selected{% endif %}>已激活</option>
@@ -43,7 +44,7 @@
         <div class="card-body p-0">
             {% if accounts %}
             <div class="table-responsive">
-                <table class="table table-hover mb-0">
+                <table class="table table-hover table-sm mb-0">
                     <thead class="table-light">
                         <tr>
                             <th>用户名</th>
@@ -53,9 +54,6 @@
                             <th>手机</th>
                             <th>状态</th>
                             <th class="text-end">余额</th>
-                            <th class="text-end">累计充值</th>
-                            <th class="text-end">累计扣减</th>
-                            <th>客户登录</th>
                             <th>注册时间</th>
                             <th>操作</th>
                         </tr>
@@ -63,14 +61,14 @@
                     <tbody>
                         {% for acc in accounts %}
                         <tr>
-                            <td>{{ acc.username }}</td>
-                            <td><strong>{{ acc.company_name or '-' }}</strong></td>
-                            <td>{{ acc.customer_master_name or '未绑定' }}</td>
+                            <td><strong>{{ acc.username }}</strong></td>
+                            <td>{{ acc.company_name or '-' }}</td>
+                            <td class="small">{{ acc.customer_master_name or '未绑定' }}</td>
                             <td>{{ acc.contact_name or '-' }}</td>
                             <td>{{ acc.phone or '-' }}</td>
                             <td>
                                 {% if acc.status == 'pending' %}
-                                <span class="badge bg-warning">待审核</span>
+                                <span class="badge bg-warning text-dark">待审核</span>
                                 {% elif acc.status in ('approved', 'active') %}
                                 <span class="badge bg-success">已激活</span>
                                 {% elif acc.status == 'rejected' %}
@@ -82,39 +80,30 @@
                                 {% endif %}
                             </td>
                             <td class="text-end">{{ "%.2f"|format(acc.balance or 0) }}</td>
-                            <td class="text-end text-success">{{ "%.2f"|format(acc.total_recharge or 0) }}</td>
-                            <td class="text-end text-danger">{{ "%.2f"|format(acc.total_deduct or 0) }}</td>
-                            <td class="text-nowrap">
-                                {% set portal_url = (public_base_url or request.url_root) ~ 'portal/login' %}
-                                <a href="{{ portal_url }}" target="_blank" class="small text-decoration-none" title="客户登录入口">
-                                    <i class="bi bi-box-arrow-up-right"></i> 登录入口
-                                </a>
-                                <button type="button" class="btn btn-sm btn-link p-0 ms-1 align-baseline copy-login"
-                                        data-url="{{ portal_url }}" data-user="{{ acc.username }}" title="复制登录地址和账号">
-                                    <i class="bi bi-clipboard"></i>
-                                </button>
-                            </td>
-                            <td>{{ (acc.created_at or '')[:16] }}</td>
+                            <td class="small text-nowrap">{{ (acc.created_at or '')[:16] }}</td>
                             <td class="text-nowrap">
                                 {% if acc.customer_id %}
-                                <a href="{{ url_for('admin_client_workspace', customer_id=acc.customer_id) }}" class="btn btn-sm btn-outline-dark">工作台</a>
+                                <a href="{{ url_for('admin_client_workspace', customer_id=acc.customer_id) }}" class="btn btn-sm btn-outline-dark py-0">工作台</a>
                                 {% endif %}
-                                {% if can_collab_authorize %}
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0"
+                                        data-bs-toggle="modal" data-bs-target="#edit{{ acc.id }}">编辑</button>
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0"
+                                        data-bs-toggle="modal" data-bs-target="#pwd{{ acc.id }}">密码</button>
+                                <button type="button" class="btn btn-sm btn-outline-info py-0"
+                                        data-bs-toggle="modal" data-bs-target="#bind{{ acc.id }}">绑定</button>
                                 {% if acc.status == 'pending' %}
-                                <a href="{{ url_for('admin_client_account_approve', id=acc.id) }}" class="btn btn-sm btn-success" title="通过">通过</a>
-                                <a href="{{ url_for('admin_client_account_reject', id=acc.id) }}" class="btn btn-sm btn-outline-danger">拒绝</a>
+                                <a href="{{ url_for('admin_client_account_approve', id=acc.id) }}" class="btn btn-sm btn-success py-0">通过</a>
+                                <a href="{{ url_for('admin_client_account_reject', id=acc.id) }}" class="btn btn-sm btn-outline-danger py-0">拒绝</a>
                                 {% elif acc.status in ('approved', 'active') %}
-                                <form method="POST" action="{{ url_for('admin_client_account_disable', id=acc.id) }}" class="d-inline">
-                                    <button type="submit" class="btn btn-sm btn-warning">禁用</button>
+                                <form method="POST" action="{{ url_for('admin_client_account_disable', id=acc.id) }}" class="d-inline"
+                                      onsubmit="return confirm('确认禁用该账号？');">
+                                    <button type="submit" class="btn btn-sm btn-warning py-0">禁用</button>
                                 </form>
                                 {% elif acc.status == 'disabled' %}
                                 <form method="POST" action="{{ url_for('admin_client_account_enable', id=acc.id) }}" class="d-inline">
-                                    <button type="submit" class="btn btn-sm btn-success">启用</button>
+                                    <button type="submit" class="btn btn-sm btn-success py-0">启用</button>
                                 </form>
                                 {% endif %}
-                                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#bind{{ acc.id }}">绑定</button>
-                                {% endif %}
-                                <a href="{{ url_for('admin_client_recharges') }}?client_id={{ acc.id }}" class="btn btn-sm btn-outline-secondary">充值</a>
                             </td>
                         </tr>
                         {% endfor %}
@@ -122,7 +111,7 @@
                 </table>
             </div>
             {% else %}
-            <div class="text-center py-5 text-muted">暂无客户账户</div>
+            <div class="text-center py-5 text-muted">暂无客户注册账号</div>
             {% endif %}
         </div>
     </div>
@@ -130,11 +119,11 @@
     {% if accounts %}
     <div class="card mt-4">
         <div class="card-body">
-            <div class="row text-center">
-                <div class="col-md-3"><div class="text-muted">账户总数</div><div class="h4">{{ total_accounts }}</div></div>
-                <div class="col-md-3"><div class="text-muted">待审核</div><div class="h4 text-warning">{{ pending_count }}</div></div>
-                <div class="col-md-3"><div class="text-muted">已激活</div><div class="h4 text-success">{{ active_count }}</div></div>
-                <div class="col-md-3"><div class="text-muted">余额合计</div><div class="h4">{{ "%.2f"|format(total_balance) }}</div></div>
+            <div class="row text-center g-3">
+                <div class="col-md-3"><div class="text-muted small">账号总数</div><div class="h4 mb-0">{{ total_accounts }}</div></div>
+                <div class="col-md-3"><div class="text-muted small">待审核</div><div class="h4 mb-0 text-warning">{{ pending_count }}</div></div>
+                <div class="col-md-3"><div class="text-muted small">已激活</div><div class="h4 mb-0 text-success">{{ active_count }}</div></div>
+                <div class="col-md-3"><div class="text-muted small">余额合计</div><div class="h4 mb-0">{{ "%.2f"|format(total_balance) }}</div></div>
             </div>
         </div>
     </div>
@@ -145,7 +134,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="POST" action="{{ url_for('admin_client_accounts_create') }}">
-                <div class="modal-header"><h5 class="modal-title">代建客户账号</h5>
+                <div class="modal-header"><h5 class="modal-title">代建客户注册账号</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
                 <div class="modal-body">
                     <div class="mb-3"><label class="form-label">用户名 *</label>
@@ -167,7 +156,7 @@
                         <input type="text" name="phone" class="form-control"></div>
                 </div>
                 <div class="modal-footer">
-                    <button type="submit" class="btn btn-primary">创建</button>
+                    <button type="submit" class="btn btn-primary">创建并激活</button>
                 </div>
             </form>
         </div>
@@ -175,6 +164,41 @@
 </div>
 
 {% for acc in accounts %}
+<div class="modal fade" id="edit{{ acc.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin_client_account_update', id=acc.id) }}">
+                <div class="modal-header"><h6 class="modal-title">编辑账号 — {{ acc.username }}</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-2"><label class="form-label small">用户名</label>
+                        <input type="text" class="form-control form-control-sm" value="{{ acc.username }}" disabled></div>
+                    <div class="mb-2"><label class="form-label small">公司名称 *</label>
+                        <input type="text" name="company_name" class="form-control form-control-sm" value="{{ acc.company_name or '' }}" required></div>
+                    <div class="mb-2"><label class="form-label small">联系人</label>
+                        <input type="text" name="contact_name" class="form-control form-control-sm" value="{{ acc.contact_name or '' }}"></div>
+                    <div class="mb-2"><label class="form-label small">手机</label>
+                        <input type="text" name="phone" class="form-control form-control-sm" value="{{ acc.phone or '' }}"></div>
+                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">保存</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="pwd{{ acc.id }}" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin_client_account_reset_password', id=acc.id) }}">
+                <div class="modal-header"><h6 class="modal-title">重置密码 — {{ acc.username }}</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <input type="password" name="password" class="form-control" required minlength="6" placeholder="新密码（至少6位）">
+                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">确定</button></div>
+            </form>
+        </div>
+    </div>
+</div>
 <div class="modal fade" id="bind{{ acc.id }}" tabindex="-1">
     <div class="modal-dialog modal-sm">
         <div class="modal-content">
@@ -182,7 +206,7 @@
                 <div class="modal-header"><h6 class="modal-title">绑定客户主数据</h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
                 <div class="modal-body">
-                    <select name="customer_id" class="form-select" required>
+                    <select name="customer_id" class="form-select form-select-sm" required>
                         {% for c in customers %}
                         <option value="{{ c.id }}" {% if acc.customer_id == c.id %}selected{% endif %}>{{ c.name }}</option>
                         {% endfor %}
@@ -194,26 +218,4 @@
     </div>
 </div>
 {% endfor %}
-{% endblock %}
-
-{% block extra_js %}
-<script>
-document.querySelectorAll('.copy-login').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-        var text = '客户登录地址：' + this.dataset.url + '\n登录账号：' + this.dataset.user;
-        var done = () => {
-            var icon = this.querySelector('i');
-            if (icon) { icon.className = 'bi bi-check-lg text-success'; setTimeout(() => icon.className = 'bi bi-clipboard', 1500); }
-        };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(done).catch(done);
-        } else {
-            var ta = document.createElement('textarea');
-            ta.value = text; document.body.appendChild(ta); ta.select();
-            try { document.execCommand('copy'); } catch (e) {}
-            document.body.removeChild(ta); done();
-        }
-    });
-});
-</script>
 {% endblock %}
