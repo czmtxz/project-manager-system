@@ -2507,6 +2507,160 @@ def admin_user_collab_scope(uid):
     )
 
 
+# ==================== 路由：客户协同专员管理（协同管理员） ====================
+
+def _collab_customers(db):
+    """客户协同涉及的客户主数据（已建立客户账号的公司）。"""
+    return db.execute(
+        """SELECT DISTINCT c.id, c.name
+           FROM customers c
+           JOIN client_accounts ca ON ca.customer_id = c.id
+           WHERE COALESCE(c.is_active, 1) = 1
+           ORDER BY c.name"""
+    ).fetchall()
+
+
+@app.route('/admin/collab/staff')
+@login_required
+@collab_admin_required
+def admin_collab_staff():
+    db = get_db()
+    ensure_collab_scope_schema(db)
+    staff = db.execute(
+        """SELECT id, username, real_name, phone, email,
+                  COALESCE(status, 'active') AS status, created_at, last_login
+           FROM users WHERE role=? ORDER BY id""",
+        (ROLE_CLIENT_COLLAB,),
+    ).fetchall()
+    assignments = {}
+    for s in staff:
+        rows = get_user_assignments(db, s['id'])
+        assignments[s['id']] = [{'customer_id': r['customer_id'], 'customer_name': r['customer_name']} for r in rows]
+    customers = _collab_customers(db)
+    return render_template(
+        'admin_collab_staff.html',
+        staff=staff,
+        assignments=assignments,
+        customers=customers,
+    )
+
+
+@app.route('/admin/collab/staff/create', methods=['POST'])
+@login_required
+@collab_admin_required
+def admin_collab_staff_create():
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '').strip()
+    real_name = request.form.get('real_name', '').strip()
+    phone = request.form.get('phone', '').strip()
+    if not username or not password:
+        flash('用户名和密码不能为空', 'warning')
+        return redirect(url_for('admin_collab_staff'))
+    if len(password) < 4:
+        flash('密码至少 4 位', 'warning')
+        return redirect(url_for('admin_collab_staff'))
+    hashed = hashlib.md5(password.encode()).hexdigest()
+    db = get_db()
+    try:
+        db.execute(
+            """INSERT INTO users (username, password, real_name, phone, role, status, created_by)
+               VALUES (?, ?, ?, ?, ?, 'active', ?)""",
+            (username, hashed, real_name, phone, ROLE_CLIENT_COLLAB, session.get('user_id')),
+        )
+        db.commit()
+        add_log(session['user_id'], session['username'], '新增协同专员',
+                f'协同专员: {username}', request.remote_addr)
+        flash(f'协同专员「{username}」已创建，请为其分配负责客户', 'success')
+    except sqlite3.IntegrityError:
+        flash('用户名已存在', 'danger')
+    return redirect(url_for('admin_collab_staff'))
+
+
+def _get_collab_staff_or_redirect(db, uid):
+    user = db.execute(
+        "SELECT id, username, role, COALESCE(status,'active') AS status FROM users WHERE id=?",
+        (uid,),
+    ).fetchone()
+    if not user or user['role'] != ROLE_CLIENT_COLLAB:
+        flash('仅可管理客户协同专员账号', 'warning')
+        return None
+    return user
+
+
+@app.route('/admin/collab/staff/<int:uid>/assign', methods=['POST'])
+@login_required
+@collab_admin_required
+def admin_collab_staff_assign(uid):
+    db = get_db()
+    user = _get_collab_staff_or_redirect(db, uid)
+    if not user:
+        return redirect(url_for('admin_collab_staff'))
+    # 仅允许分配客户协同涉及的客户
+    valid_ids = {str(r['id']) for r in _collab_customers(db)}
+    ids = [cid for cid in request.form.getlist('customer_ids') if cid in valid_ids]
+    set_user_assignments(db, uid, ids, session.get('user_id'))
+    db.commit()
+    add_log(session['user_id'], session['username'], '分配协同客户',
+            f'专员{user["username"]}负责{len(ids)}家客户', request.remote_addr)
+    flash(f'已更新「{user["username"]}」的负责客户（{len(ids)} 家）', 'success')
+    return redirect(url_for('admin_collab_staff'))
+
+
+@app.route('/admin/collab/staff/<int:uid>/reset', methods=['POST'])
+@login_required
+@collab_admin_required
+def admin_collab_staff_reset(uid):
+    db = get_db()
+    user = _get_collab_staff_or_redirect(db, uid)
+    if not user:
+        return redirect(url_for('admin_collab_staff'))
+    password = request.form.get('password', '').strip()
+    if len(password) < 4:
+        flash('密码至少 4 位', 'warning')
+        return redirect(url_for('admin_collab_staff'))
+    hashed = hashlib.md5(password.encode()).hexdigest()
+    db.execute("UPDATE users SET password=? WHERE id=?", (hashed, uid))
+    db.commit()
+    add_log(session['user_id'], session['username'], '重置专员密码',
+            f'专员: {user["username"]}', request.remote_addr)
+    flash(f'{user["username"]} 的密码已重置', 'success')
+    return redirect(url_for('admin_collab_staff'))
+
+
+@app.route('/admin/collab/staff/<int:uid>/toggle', methods=['POST'])
+@login_required
+@collab_admin_required
+def admin_collab_staff_toggle(uid):
+    db = get_db()
+    user = _get_collab_staff_or_redirect(db, uid)
+    if not user:
+        return redirect(url_for('admin_collab_staff'))
+    new_status = 'disabled' if user['status'] == 'active' else 'active'
+    db.execute("UPDATE users SET status=? WHERE id=?", (new_status, uid))
+    db.commit()
+    add_log(session['user_id'], session['username'], '启停协同专员',
+            f'专员{user["username"]} -> {new_status}', request.remote_addr)
+    flash(f'{user["username"]} 已{"禁用" if new_status == "disabled" else "启用"}', 'success')
+    return redirect(url_for('admin_collab_staff'))
+
+
+@app.route('/admin/collab/staff/<int:uid>/delete', methods=['POST'])
+@login_required
+@collab_admin_required
+def admin_collab_staff_delete(uid):
+    db = get_db()
+    user = _get_collab_staff_or_redirect(db, uid)
+    if not user:
+        return redirect(url_for('admin_collab_staff'))
+    db.execute("DELETE FROM client_collab_assignments WHERE user_id=?", (uid,))
+    db.execute("DELETE FROM users WHERE id=?", (uid,))
+    db.commit()
+    add_log(session['user_id'], session['username'], '删除协同专员',
+            f'专员: {user["username"]}', request.remote_addr)
+    flash(f'协同专员「{user["username"]}」已删除', 'success')
+    return redirect(url_for('admin_collab_staff'))
+
+
 @app.route('/account/add', methods=['POST'])
 @login_required
 @admin_required
