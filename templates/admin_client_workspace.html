@@ -223,7 +223,7 @@
                     合计 <strong class="text-danger">¥{{ "%.2f"|format(ws.pending_sync_amount) }}</strong>
                 </div>
                 {% if can_collab_authorize %}
-                <a href="{{ url_for('admin_client_deductions_sync', customer_id=ws.customer_id) }}" class="btn btn-sm btn-primary">同步至扣减</a>
+                <a href="{{ url_for('admin_client_deductions_sync', customer_id=ws.customer_id) }}" class="btn btn-sm btn-primary">查看并同步</a>
                 {% endif %}
             </div>
             {% endif %}

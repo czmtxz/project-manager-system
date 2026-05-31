@@ -158,6 +158,27 @@ def get_pending_sync_deductions(db, customer_id):
     ).fetchall()
 
 
+def list_pending_sync_scoped(db, user_id, role, customer_id=None):
+    """当前账号可见客户的待同步出库明细。"""
+    from client_collab_scope import list_company_summaries_scoped
+
+    companies = list_company_summaries_scoped(db, user_id, role)
+    if customer_id:
+        cid = int(customer_id)
+        companies = [c for c in companies if int(c.get('customer_id') or 0) == cid]
+    rows = []
+    for c in companies:
+        cid = int(c.get('customer_id') or 0)
+        if cid <= 0:
+            continue
+        for item in get_pending_sync_deductions(db, cid):
+            row = dict(item)
+            row['customer_id'] = cid
+            row['company_name'] = c.get('company_name') or ''
+            rows.append(row)
+    return rows
+
+
 def primary_client_for_customer(db, customer_id):
     """取该公司下首个已激活门户账号。"""
     if not customer_id:

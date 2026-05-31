@@ -40,7 +40,8 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('admin_client_deductions_sync') }}">
+                        <a class="nav-link {% if request.endpoint == 'admin_client_deductions_sync' %}active{% endif %}"
+                           href="{{ url_for('admin_client_deductions_sync') }}">
                             <i class="bi bi-arrow-repeat"></i> 同步扣减
                         </a>
                     </li>

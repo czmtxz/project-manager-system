@@ -39,6 +39,7 @@ from auth_utils import (
     MODULE_CLIENT_PORTAL,
     module_required,
     collab_admin_required,
+    collab_authorize_required,
     register_auth_hooks,
     login_redirect_for_role,
 )
@@ -99,6 +100,7 @@ from client_collab_ops import (
     ocr_rows_for_outbound,
     save_upload_file,
     primary_client_for_company,
+    list_pending_sync_scoped,
 )
 
 STAFF_ROLES = [
@@ -4476,23 +4478,46 @@ def _batch_recharge_action(action):
     return redirect(url_for('admin_client_recharges', status=redirect_status))
 
 
-@app.route('/admin/client-deductions/sync')
+@app.route('/admin/client-deductions/sync', methods=['GET', 'POST'])
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)
+@collab_authorize_required
 def admin_client_deductions_sync():
     db = get_db()
-    customer_id = request.args.get('customer_id', type=int)
-    count = sync_deductions_for_customer(db, customer_id)
-    db.commit()
-    add_log(session.get('user_id'), session.get('username', ''), '同步扣减',
-            f"同步 {count} 条", request.remote_addr)
-    if count == 0:
-        flash('没有需要同步的出库记录', 'info')
-    else:
-        flash(f'同步完成，共处理 {count} 条扣减记录', 'success')
+    uid, role = session.get('user_id'), session.get('role')
+    customer_id = request.values.get('customer_id', type=int)
+
     if customer_id:
-        return redirect(url_for('admin_client_workspace', customer_id=customer_id))
-    return redirect(url_for('admin_client_accounts'))
+        denied = assert_customer_access(db, uid, role, customer_id)
+        if denied:
+            return denied
+
+    if request.method == 'POST':
+        count = sync_deductions_for_customer(db, customer_id)
+        db.commit()
+        add_log(session.get('user_id'), session.get('username', ''), '同步扣减',
+                f"同步 {count} 条", request.remote_addr)
+        if count == 0:
+            flash('没有需要同步的出库记录', 'info')
+        else:
+            flash(f'同步完成，共处理 {count} 条扣减记录', 'success')
+        return redirect(url_for(
+            'admin_client_deductions_sync',
+            customer_id=customer_id or None,
+        ))
+
+    companies = list_company_summaries_scoped(db, uid, role)
+    pending = list_pending_sync_scoped(db, uid, role, customer_id)
+    pending_amount = sum(float(r.get('amount') or 0) for r in pending)
+
+    return render_template(
+        'admin_client_deductions_sync.html',
+        companies=companies,
+        pending=pending,
+        pending_count=len(pending),
+        pending_amount=pending_amount,
+        customer_id=customer_id or 0,
+    )
 
 
 # ==================== 采购管理 ====================
