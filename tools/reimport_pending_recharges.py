@@ -10,7 +10,24 @@ sys.path.insert(0, str(ROOT))
 
 from client_collab_ops import parse_collab_excel, import_recharge_rows, primary_client_for_company
 from client_portal_utils import company_scope_client_ids
-from tools.reimport_client_collab import recompute_client_balance
+
+
+def recompute_client_balance(c, client_id):
+    from datetime import datetime
+    rech = c.execute(
+        "SELECT COALESCE(SUM(amount),0) FROM client_recharges "
+        "WHERE client_id=? AND status='confirmed'",
+        (client_id,),
+    ).fetchone()[0]
+    ded = c.execute(
+        "SELECT COALESCE(SUM(amount),0) FROM client_deductions WHERE client_id=?",
+        (client_id,),
+    ).fetchone()[0]
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    c.execute(
+        "UPDATE client_accounts SET total_recharge=?, total_deduct=?, balance=?, updated_at=? WHERE id=?",
+        (rech, ded, float(rech) - float(ded), now, client_id),
+    )
 
 
 def purge_recharges(c, customer_id):
