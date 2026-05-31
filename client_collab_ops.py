@@ -529,10 +529,8 @@ def parse_collab_excel_standard(df):
         if sales_amount <= 0 and tons > 0 and unit_price > 0:
             sales_amount = round(tons * unit_price, 2)
 
-        # 销售单价与销售金额均为 0 时不导入出库扣减
-        if unit_price <= 0 and sales_amount <= 0:
-            pass
-        elif sales_amount > 0:
+        # 销售单价为 0 或销售金额为 0 时不导入出库扣减
+        if unit_price > 0 and sales_amount > 0:
             item_name = spec or '出库商品'
             if trucks > 0 and '车' not in item_name:
                 item_name = f'{item_name} {trucks:g}车'
@@ -803,7 +801,7 @@ def _parse_df_rows(df, mode):
             amount = _parse_float(r.get(c_amount)) if c_amount else 0
             if amount <= 0 and qty > 0 and price > 0:
                 amount = round(qty * price, 2)
-            if price <= 0 and amount <= 0:
+            if price <= 0:
                 continue
             if amount <= 0:
                 continue
