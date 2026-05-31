@@ -284,6 +284,73 @@ def record_client_recharge(db, client_id, amount, payment_method, payment_no='',
     return recharge_id
 
 
+def confirm_client_recharge(db, recharge_id, user_id):
+    r = db.execute("SELECT * FROM client_recharges WHERE id=?", (recharge_id,)).fetchone()
+    if not r:
+        raise ValueError('充值记录不存在')
+    if r['status'] != 'pending':
+        raise ValueError('不在待确认状态')
+    now = _now()
+    db.execute(
+        "UPDATE client_recharges SET status='confirmed', confirmed_by=?, confirmed_at=? WHERE id=?",
+        (user_id, now, recharge_id),
+    )
+    db.execute(
+        """UPDATE client_accounts SET balance=balance+?, total_recharge=total_recharge+?, updated_at=?
+           WHERE id=?""",
+        (r['amount'], r['amount'], now, r['client_id']),
+    )
+    db.execute(
+        """INSERT INTO client_messages (client_id, title, content, msg_type)
+           VALUES (?, '充值成功', ?, 'notice')""",
+        (r['client_id'], f'您的充值申请 {r["amount"]:.2f} 元已确认到账。'),
+    )
+    return dict(r)
+
+
+def unconfirm_client_recharge(db, recharge_id, user_id):
+    r = db.execute("SELECT * FROM client_recharges WHERE id=?", (recharge_id,)).fetchone()
+    if not r:
+        raise ValueError('充值记录不存在')
+    if r['status'] != 'confirmed':
+        raise ValueError('只能反审核已确认的记录')
+    now = _now()
+    db.execute(
+        """UPDATE client_accounts SET balance=balance-?, total_recharge=total_recharge-?, updated_at=?
+           WHERE id=?""",
+        (r['amount'], r['amount'], now, r['client_id']),
+    )
+    db.execute(
+        "UPDATE client_recharges SET status='pending', confirmed_by=NULL, confirmed_at=NULL WHERE id=?",
+        (recharge_id,),
+    )
+    db.execute(
+        """INSERT INTO client_messages (client_id, title, content, msg_type)
+           VALUES (?, '充值反审核', ?, 'notice')""",
+        (r['client_id'], f'充值 {r["amount"]:.2f} 元已退回待审核状态，请等待重新审核。'),
+    )
+    return dict(r)
+
+
+def reject_client_recharge(db, recharge_id, user_id):
+    r = db.execute("SELECT * FROM client_recharges WHERE id=?", (recharge_id,)).fetchone()
+    if not r:
+        raise ValueError('充值记录不存在')
+    if r['status'] != 'pending':
+        raise ValueError('不在待确认状态')
+    now = _now()
+    db.execute(
+        "UPDATE client_recharges SET status='rejected', confirmed_by=?, confirmed_at=? WHERE id=?",
+        (user_id, now, recharge_id),
+    )
+    db.execute(
+        """INSERT INTO client_messages (client_id, title, content, msg_type)
+           VALUES (?, '充值申请被拒绝', ?, 'notice')""",
+        (r['client_id'], f'您的充值申请 {r["amount"]:.2f} 元已被拒绝，请联系管理员了解详情。'),
+    )
+    return dict(r)
+
+
 def record_client_outbound(db, customer_id, client_id, items, order_date=None,
                            remark='', user_id=None):
     """

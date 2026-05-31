@@ -74,6 +74,9 @@ from client_collab_ops import (
     list_company_summaries,
     get_company_workspace,
     record_client_recharge,
+    confirm_client_recharge,
+    unconfirm_client_recharge,
+    reject_client_recharge,
     record_client_outbound,
     parse_collab_excel,
     summarize_collab_excel_sheets,
@@ -3491,6 +3494,17 @@ def _recompute_sales_order_totals(db, order_id):
                    (row['a'], row['q'], order_id))
 
 
+def _load_recharge_in_scope(db, user_id, role, rid):
+    scope_sql, scope_params = apply_client_id_scope_sql(db, user_id, role, 'cr')
+    return db.execute(
+        f"""SELECT cr.*, ca.customer_id, ca.company_name
+            FROM client_recharges cr
+            JOIN client_accounts ca ON cr.client_id = ca.id
+            WHERE cr.id=?{scope_sql}""",
+        [rid] + scope_params,
+    ).fetchone()
+
+
 def _load_scoped_recharge(db, customer_id, rid):
     return db.execute(
         "SELECT cr.*, ca.customer_id AS acc_customer_id FROM client_recharges cr "
@@ -4174,6 +4188,130 @@ def admin_client_recharges():
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)
 def admin_client_recharge_confirm(id):
+    db = get_db()
+    uid, role = session.get('user_id'), session.get('role')
+    recharge = _load_recharge_in_scope(db, uid, role, id)
+    if not recharge:
+        flash('充值记录不存在或无权限', 'danger')
+        return redirect(url_for('admin_client_recharges'))
+    try:
+        confirm_client_recharge(db, id, uid)
+        db.commit()
+        add_log(uid, session.get('username', ''), '确认充值',
+                f"充值单 {id} 金额 {recharge['amount']:.2f}", request.remote_addr)
+        flash('充值已确认', 'success')
+    except ValueError as e:
+        flash(str(e), 'warning')
+    return redirect(url_for('admin_client_recharges', status='pending'))
+
+
+@app.route('/admin/client-recharges/<int:id>/reject', methods=['GET', 'POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_recharge_reject(id):
+    db = get_db()
+    uid, role = session.get('user_id'), session.get('role')
+    recharge = _load_recharge_in_scope(db, uid, role, id)
+    if not recharge:
+        flash('充值记录不存在或无权限', 'danger')
+        return redirect(url_for('admin_client_recharges'))
+    try:
+        reject_client_recharge(db, id, uid)
+        db.commit()
+        add_log(uid, session.get('username', ''), '拒绝充值', f"充值单 {id}", request.remote_addr)
+        flash('已拒绝该充值申请', 'success')
+    except ValueError as e:
+        flash(str(e), 'warning')
+    return redirect(url_for('admin_client_recharges', status='pending'))
+
+
+@app.route('/admin/client-recharges/<int:id>/unconfirm', methods=['POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_recharge_unconfirm(id):
+    db = get_db()
+    uid, role = session.get('user_id'), session.get('role')
+    recharge = _load_recharge_in_scope(db, uid, role, id)
+    if not recharge:
+        flash('充值记录不存在或无权限', 'danger')
+        return redirect(url_for('admin_client_recharges'))
+    try:
+        unconfirm_client_recharge(db, id, uid)
+        db.commit()
+        add_log(uid, session.get('username', ''), '反审核充值',
+                f"充值单 {id} 金额 {recharge['amount']:.2f}", request.remote_addr)
+        flash('已反审核，记录退回待确认', 'success')
+    except ValueError as e:
+        flash(str(e), 'warning')
+    return redirect(url_for('admin_client_recharges', status=request.args.get('status', 'confirmed')))
+
+
+@app.route('/admin/client-recharges/batch/confirm', methods=['POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_recharge_batch_confirm():
+    return _batch_recharge_action('confirm')
+
+
+@app.route('/admin/client-recharges/batch/reject', methods=['POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_recharge_batch_reject():
+    return _batch_recharge_action('reject')
+
+
+@app.route('/admin/client-recharges/batch/unconfirm', methods=['POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_recharge_batch_unconfirm():
+    return _batch_recharge_action('unconfirm')
+
+
+def _batch_recharge_action(action):
+    db = get_db()
+    uid, role = session.get('user_id'), session.get('role')
+    ids = [int(x) for x in request.form.getlist('ids') if str(x).isdigit()]
+    redirect_status = request.form.get('redirect_status', '')
+    if not ids:
+        flash('请先勾选要操作的记录', 'warning')
+        return redirect(url_for('admin_client_recharges', status=redirect_status))
+    ok, skipped = 0, []
+    for rid in ids:
+        if not _load_recharge_in_scope(db, uid, role, rid):
+            skipped.append(f'#{rid}无权限')
+            continue
+        try:
+            if action == 'confirm':
+                confirm_client_recharge(db, rid, uid)
+            elif action == 'reject':
+                reject_client_recharge(db, rid, uid)
+            elif action == 'unconfirm':
+                unconfirm_client_recharge(db, rid, uid)
+            ok += 1
+        except ValueError as e:
+            skipped.append(f'#{rid}{e}')
+    if ok:
+        db.commit()
+        labels = {'confirm': '批量审核通过', 'reject': '批量拒绝', 'unconfirm': '批量反审核'}
+        add_log(uid, session.get('username', ''), labels.get(action, '批量充值操作'),
+                f'{ok} 条', request.remote_addr)
+        flash(f'{labels.get(action, "操作")} {ok} 条', 'success')
+    else:
+        db.rollback()
+        flash('没有记录被处理', 'warning')
+    if skipped:
+        flash('部分跳过：' + '; '.join(skipped[:5]), 'warning')
+    if action == 'confirm':
+        redirect_status = 'pending'
+    elif action == 'unconfirm':
+        redirect_status = redirect_status or 'confirmed'
+    return redirect(url_for('admin_client_recharges', status=redirect_status))
+
+
+@app.route('/admin/client-recharges/<int:id>/confirm_old', methods=['GET', 'POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_recharge_confirm_old(id):
     db = get_db()
     recharge = db.execute("SELECT * FROM client_recharges WHERE id=?", (id,)).fetchone()
     if not recharge:

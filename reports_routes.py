@@ -7,7 +7,7 @@ from flask import (
     flash, session, send_file, jsonify,
 )
 
-from auth_utils import ROLE_CLIENT_COLLAB
+from auth_utils import ROLE_CLIENT_COLLAB, ROLE_CLIENT_COLLAB_ADMIN
 from client_collab_scope import COLLAB_REPORT_SLUGS, report_allowed_for_role
 from report_registry import (
     FEATURED_SLUG,
@@ -42,6 +42,9 @@ def _get_db():
     return g.db
 
 
+COLLAB_REPORT_ROLES = frozenset({ROLE_CLIENT_COLLAB, ROLE_CLIENT_COLLAB_ADMIN})
+
+
 def report_view_required(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
@@ -49,13 +52,14 @@ def report_view_required(f):
             return redirect(url_for('login'))
         role = session.get('role', '')
         slug = (request.view_args or {}).get('slug')
-        if role == ROLE_CLIENT_COLLAB:
+        if role in COLLAB_REPORT_ROLES:
             if request.endpoint == 'reports.export':
                 flash('无权导出报表', 'danger')
                 return redirect(url_for('reports.hub'))
             if request.endpoint == 'reports.view' and slug not in COLLAB_REPORT_SLUGS:
                 flash('无权访问该报表', 'danger')
                 return redirect(url_for('reports.hub'))
+            return f(*args, **kwargs)
         elif role not in REPORT_VIEW_ROLES:
             flash('无权访问报表中心', 'danger')
             from auth_utils import login_redirect_for_role
@@ -92,7 +96,7 @@ def hub():
     role = session.get('role', '')
     grouped = reports_by_module(enabled_only=True, role=role)
     modules = REPORT_MODULES
-    if role == ROLE_CLIENT_COLLAB:
+    if role in COLLAB_REPORT_ROLES:
         modules = [('client', '客户协同')]
     report_cards = []
     for mod_code, mod_label in modules:
@@ -125,7 +129,7 @@ def hub():
         report_cards=report_cards,
         total_reports=len(report_cards),
         featured_slug=FEATURED_SLUG,
-        is_collab_report_hub=role == ROLE_CLIENT_COLLAB,
+        is_collab_report_hub=role in COLLAB_REPORT_ROLES,
         favorite_slugs=fav_slugs,
         hub_dark_mode=hub_prefs.get('dark_mode', False),
         preview_period=f'{default_filters.get("date_from", "")} ~ {default_filters.get("date_to", "")}',

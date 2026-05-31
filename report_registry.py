@@ -209,7 +209,7 @@ REPORTS = {
         'filters': ['date_from', 'date_to'],
         'phase': 2,
         'enabled': True,
-        'view_roles': ['admin', 'finance', 'client_collab'],
+        'view_roles': ['admin', 'finance', 'client_collab', 'client_collab_admin'],
     },
 }
 
