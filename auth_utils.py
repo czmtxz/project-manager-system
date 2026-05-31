@@ -5,15 +5,31 @@ from flask import session, redirect, url_for, flash, request
 
 ROLE_ADMIN = 'admin'
 ROLE_CLIENT_COLLAB = 'client_collab'
+ROLE_CLIENT_COLLAB_ADMIN = 'client_collab_admin'
 MODULE_CLIENT_PORTAL = 'client_portal'
+
+# 客户协同模块内部角色（仅可访问客户协同模块，不可进入其它业务模块）
+COLLAB_ONLY_ROLES = frozenset({ROLE_CLIENT_COLLAB, ROLE_CLIENT_COLLAB_ADMIN})
 
 ROLE_LABELS = {
     'admin': '系统管理员',
+    'client_collab_admin': '客户协同管理员',
     'client_collab': '客户协同专员',
     'finance': '财务',
     'manager': '项目经理',
     'user': '普通用户',
 }
+
+# 客户协同管理员额外可访问的「协同专员管理」端点
+COLLAB_ADMIN_STAFF_ENDPOINTS = frozenset({
+    'admin_collab_staff',
+    'admin_collab_staff_create',
+    'admin_collab_staff_assign',
+    'admin_collab_staff_reset',
+    'admin_collab_staff_toggle',
+    'admin_collab_staff_delete',
+    'admin_user_collab_scope',
+})
 
 # 客户协同专员可访问的内部路由
 CLIENT_PORTAL_ENDPOINTS = frozenset({
@@ -60,6 +76,16 @@ def can_access_endpoint(role, endpoint):
     if endpoint.startswith('static'):
         return True
 
+    if role == ROLE_CLIENT_COLLAB_ADMIN:
+        # 协同管理员：客户协同模块全部 + 协同专员管理 + 客户资金报表
+        if endpoint in CLIENT_PORTAL_ENDPOINTS:
+            return True
+        if endpoint in COLLAB_ADMIN_STAFF_ENDPOINTS:
+            return True
+        if endpoint and endpoint.startswith('reports.'):
+            return True
+        return False
+
     if role == ROLE_CLIENT_COLLAB:
         if endpoint in CLIENT_PORTAL_ENDPOINTS:
             return True
@@ -69,15 +95,13 @@ def can_access_endpoint(role, endpoint):
         return False
 
     if is_client_portal_admin_endpoint(endpoint):
-        return role in (ROLE_ADMIN, ROLE_CLIENT_COLLAB)
+        return role in (ROLE_ADMIN, ROLE_CLIENT_COLLAB, ROLE_CLIENT_COLLAB_ADMIN)
 
-    if role == ROLE_CLIENT_COLLAB:
-        return False
     return True
 
 
 def login_redirect_for_role(role):
-    if role == ROLE_CLIENT_COLLAB:
+    if role in COLLAB_ONLY_ROLES:
         return url_for('admin_client_dashboard')
     return url_for('dashboard')
 
