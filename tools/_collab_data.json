@@ -1,0 +1,79 @@
+{
+  "tables": {
+    "client_accounts": [
+      {
+        "id": 1,
+        "customer_id": 1,
+        "username": "czmtxz",
+        "password": "scrypt:32768:8:1$E33MGCfbfNP03qAo$c7e1ed4451278f3057c6cc298e7f96fe0dffe8e96dabe34a18fb7cf55899db8936f9e9dd95dd29aa8c65ca7458f488fdf219185cbf621a5637a247f45e6bf4da",
+        "phone": "15024921188",
+        "contact_name": "陈志明",
+        "company_name": "内蒙古泽永商贸有限公司",
+        "status": "approved",
+        "balance": 0.0,
+        "total_recharge": 0.0,
+        "total_deduct": 0.0,
+        "alert_threshold": 0.1,
+        "last_alert_at": null,
+        "approved_by": 1,
+        "approved_at": "2026-05-28 18:01:13",
+        "created_at": "2026-05-28 18:00:42",
+        "updated_at": "2026-05-28 18:04:43"
+      }
+    ],
+    "client_recharges": [],
+    "client_deductions": [],
+    "client_messages": [
+      {
+        "id": 1,
+        "client_id": 1,
+        "title": "账户审核通过",
+        "content": "您的账户已审核通过，可以正常登录使用系统。",
+        "msg_type": "notice",
+        "is_read": 0,
+        "created_at": "2026-05-28 10:01:13"
+      }
+    ],
+    "client_collab_assignments": []
+  },
+  "customers": [
+    {
+      "id": 1,
+      "name": "内蒙古泽永商贸有限公司",
+      "contact": "陈志明",
+      "phone": "15024921188",
+      "address": null,
+      "bank_name": null,
+      "bank_account": null,
+      "tax_no": null,
+      "remark": "客户协同门户自动创建",
+      "is_active": 1,
+      "created_at": "2026-05-28 18:00:42",
+      "email": null,
+      "delivery_address": null,
+      "bank_code": null,
+      "invoice_title": null,
+      "invoice_addr_phone": null,
+      "invoice_bank_account": null,
+      "tax_rate": null
+    }
+  ],
+  "collab_users": [
+    {
+      "id": 11,
+      "username": "zxl",
+      "password": "e10adc3949ba59abbe56e057f20f883e",
+      "real_name": null,
+      "phone": null,
+      "email": null,
+      "department": null,
+      "role": "client_collab",
+      "status": "active",
+      "created_by": null,
+      "approved_by": null,
+      "approved_at": null,
+      "last_login": "2026-05-31 18:25:57",
+      "created_at": "2026-05-28 10:25:59"
+    }
+  ]
+}
