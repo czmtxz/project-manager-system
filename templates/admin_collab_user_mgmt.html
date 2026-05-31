@@ -1,0 +1,40 @@
+{% extends staff_layout|default('nav_base.html') %}
+{% block title %}账号与专员{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <div>
+            <h4 class="mb-1"><i class="bi bi-people"></i> 账号与专员</h4>
+            <p class="text-muted small mb-0">管理客户门户注册账号与内部协同专员</p>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mb-3">
+        {% if can_collab_authorize %}
+        <li class="nav-item">
+            <a class="nav-link {% if tab == 'accounts' %}active{% endif %}"
+               href="{{ url_for('admin_collab_user_mgmt', tab='accounts', username=request.args.get('username',''), company_name=request.args.get('company_name',''), status=request.args.get('status','')) }}">
+                <i class="bi bi-person-badge"></i> 注册账号
+                {% if pending_count %}<span class="badge bg-warning text-dark ms-1">{{ pending_count }}</span>{% endif %}
+            </a>
+        </li>
+        {% endif %}
+        {% if is_collab_admin %}
+        <li class="nav-item">
+            <a class="nav-link {% if tab == 'staff' %}active{% endif %}"
+               href="{{ url_for('admin_collab_user_mgmt', tab='staff') }}">
+                <i class="bi bi-person-gear"></i> 协同专员
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+
+    {% if tab == 'accounts' and can_collab_authorize %}
+        {% include 'partials/collab_accounts_panel.html' %}
+    {% elif tab == 'staff' and is_collab_admin %}
+        {% include 'partials/collab_staff_panel.html' %}
+    {% else %}
+        <div class="alert alert-warning">无权访问该页签</div>
+    {% endif %}
+</div>
+{% endblock %}
