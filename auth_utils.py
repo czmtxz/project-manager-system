@@ -40,6 +40,7 @@ COLLAB_AUTHORIZE_ENDPOINTS = frozenset({
     'admin_client_account_disable',
     'admin_client_account_bind',
     'admin_client_account_reset_password',
+    'admin_client_account_update',
     'admin_client_recharge_confirm',
     'admin_client_recharge_reject',
     'admin_client_recharge_unconfirm',

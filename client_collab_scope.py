@@ -102,6 +102,30 @@ def can_access_client_account(db, user_id, role, account_id):
     return can_access_customer(db, user_id, role, row['customer_id'])
 
 
+def assert_client_account_access(db, user_id, role, account_id):
+    """无权限时 flash 并返回 redirect，否则返回 None。"""
+    if can_access_client_account(db, user_id, role, account_id):
+        return None
+    flash('无权操作该客户注册账号', 'danger')
+    return redirect(url_for('admin_client_accounts'))
+
+
+def list_customers_for_collab(db, user_id, role):
+    """协同账号可选的客户主数据（管理员全部，专员仅分配客户）。"""
+    allowed = get_assigned_customer_ids(db, user_id, role)
+    if allowed is None:
+        return db.execute(
+            "SELECT id, name FROM customers WHERE is_active=1 ORDER BY name"
+        ).fetchall()
+    if not allowed:
+        return []
+    ph = ','.join('?' * len(allowed))
+    return db.execute(
+        f"SELECT id, name FROM customers WHERE is_active=1 AND id IN ({ph}) ORDER BY name",
+        allowed,
+    ).fetchall()
+
+
 def can_access_customer(db, user_id, role, customer_id):
     if customer_id is None:
         return False

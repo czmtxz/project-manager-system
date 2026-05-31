@@ -72,6 +72,9 @@ from client_collab_reports import (
 )
 from client_collab_scope import (
     assert_customer_access,
+    list_customers_for_collab,
+    assert_client_account_access,
+    can_access_client_account,
     assign_customer_to_user,
     apply_client_account_scope_sql,
     apply_client_id_scope_sql,
@@ -4075,8 +4078,10 @@ def admin_client_company_ocr_apply(customer_id):
 @app.route('/admin/client-accounts')
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)
+@collab_authorize_required
 def admin_client_accounts():
     db = get_db()
+    uid, role = session.get('user_id'), session.get('role')
     username = request.args.get('username', '').strip()
     company_name = request.args.get('company_name', '').strip()
     status = request.args.get('status', '').strip()
@@ -4097,8 +4102,7 @@ def admin_client_accounts():
         else:
             sql += " AND ca.status=?"
             params.append(status)
-    scope_sql, scope_params = apply_client_account_scope_sql(
-        db, session.get('user_id'), session.get('role'), 'ca')
+    scope_sql, scope_params = apply_client_account_scope_sql(db, uid, role, 'ca')
     sql += scope_sql
     params.extend(scope_params)
     sql += " ORDER BY ca.created_at DESC"
@@ -4110,9 +4114,7 @@ def admin_client_accounts():
         if normalize_client_status(a['status']) == CLIENT_STATUS_APPROVED
     )
     total_balance = sum(float(a['balance'] or 0) for a in accounts)
-    customers = db.execute(
-        "SELECT id, name FROM customers WHERE is_active=1 ORDER BY name"
-    ).fetchall()
+    customers = list_customers_for_collab(db, uid, role)
     return render_template(
         'admin_client_accounts.html',
         accounts=accounts,
@@ -4127,6 +4129,7 @@ def admin_client_accounts():
 @app.route('/admin/client-accounts/create', methods=['POST'])
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)
+@collab_authorize_required
 def admin_client_accounts_create():
     username = request.form.get('username', '').strip()
     password = request.form.get('password', '').strip()
@@ -4145,6 +4148,9 @@ def admin_client_accounts_create():
         cust = db.execute("SELECT id FROM customers WHERE id=?", (customer_id,)).fetchone()
         if not cust:
             customer_id = None
+        elif not can_access_customer(db, session.get('user_id'), session.get('role'), customer_id):
+            flash('无权绑定该客户主数据', 'danger')
+            return redirect(url_for('admin_client_accounts'))
     if not customer_id:
         customer_id = resolve_or_create_customer(db, company_name, contact_name, phone)
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -4167,15 +4173,23 @@ def admin_client_accounts_create():
 @app.route('/admin/client-accounts/<int:id>/bind', methods=['POST'])
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)
+@collab_authorize_required
 def admin_client_account_bind(id):
     customer_id = request.form.get('customer_id', type=int)
     db = get_db()
+    denied = assert_client_account_access(
+        db, session.get('user_id'), session.get('role'), id)
+    if denied:
+        return denied
     account = db.execute("SELECT * FROM client_accounts WHERE id=?", (id,)).fetchone()
     if not account:
         flash('账户不存在', 'danger')
         return redirect(url_for('admin_client_accounts'))
     if not customer_id:
         flash('请选择客户主数据', 'warning')
+        return redirect(url_for('admin_client_accounts'))
+    if not can_access_customer(db, session.get('user_id'), session.get('role'), customer_id):
+        flash('无权绑定该客户主数据', 'danger')
         return redirect(url_for('admin_client_accounts'))
     cust = db.execute("SELECT name FROM customers WHERE id=?", (customer_id,)).fetchone()
     if not cust:
@@ -4191,21 +4205,67 @@ def admin_client_account_bind(id):
     return redirect(url_for('admin_client_accounts'))
 
 
+@app.route('/admin/client-accounts/<int:id>/update', methods=['POST'])
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+@collab_authorize_required
+def admin_client_account_update(id):
+    db = get_db()
+    denied = assert_client_account_access(
+        db, session.get('user_id'), session.get('role'), id)
+    if denied:
+        return denied
+    account = db.execute("SELECT * FROM client_accounts WHERE id=?", (id,)).fetchone()
+    if not account:
+        flash('账户不存在', 'danger')
+        return redirect(url_for('admin_client_accounts'))
+    contact_name = request.form.get('contact_name', '').strip()
+    phone = request.form.get('phone', '').strip()
+    company_name = request.form.get('company_name', '').strip()
+    if not company_name:
+        flash('公司名称不能为空', 'warning')
+        return redirect(url_for('admin_client_accounts'))
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    db.execute(
+        """UPDATE client_accounts
+           SET contact_name=?, phone=?, company_name=?, updated_at=?
+           WHERE id=?""",
+        (contact_name, phone, company_name, now, id),
+    )
+    db.commit()
+    add_log(session.get('user_id'), session.get('username', ''), '维护客户账号',
+            f"更新 {account['username']} 资料", request.remote_addr)
+    flash('账号信息已更新', 'success')
+    return redirect(url_for('admin_client_accounts'))
+
+
 @app.route('/admin/client-accounts/<int:id>/reset-password', methods=['POST'])
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)
+@collab_authorize_required
 def admin_client_account_reset_password(id):
     password = request.form.get('password', '').strip()
     if len(password) < 6:
         flash('密码至少 6 位', 'warning')
         return redirect(url_for('admin_client_accounts'))
     db = get_db()
+    denied = assert_client_account_access(
+        db, session.get('user_id'), session.get('role'), id)
+    if denied:
+        return denied
+    account = db.execute(
+        "SELECT username FROM client_accounts WHERE id=?", (id,)).fetchone()
+    if not account:
+        flash('账户不存在', 'danger')
+        return redirect(url_for('admin_client_accounts'))
     db.execute(
         "UPDATE client_accounts SET password=?, updated_at=? WHERE id=?",
         (generate_password_hash(password),
          datetime.now().strftime('%Y-%m-%d %H:%M:%S'), id),
     )
     db.commit()
+    add_log(session.get('user_id'), session.get('username', ''), '重置客户密码',
+            account['username'], request.remote_addr)
     flash('密码已重置', 'success')
     return redirect(url_for('admin_client_accounts'))
 
@@ -4213,8 +4273,13 @@ def admin_client_account_reset_password(id):
 @app.route('/admin/client-accounts/<int:id>/approve')
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)
+@collab_authorize_required
 def admin_client_account_approve(id):
     db = get_db()
+    denied = assert_client_account_access(
+        db, session.get('user_id'), session.get('role'), id)
+    if denied:
+        return denied
     account = db.execute("SELECT * FROM client_accounts WHERE id=?", (id,)).fetchone()
     if not account:
         flash('账户不存在', 'danger')
