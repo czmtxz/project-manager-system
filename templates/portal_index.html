@@ -9,7 +9,7 @@
         <div class="card stat-card primary position-relative">
             <i class="bi bi-wallet2 stat-icon"></i>
             <div class="stat-value">{{ "%.2f"|format(balance) }}</div>
-            <div class="stat-label">当前余额（元）</div>
+            <div class="stat-label">剩余余额（元）</div>
         </div>
     </div>
     
@@ -32,11 +32,16 @@
     </div>
 </div>
 
+<p class="text-muted small mb-4">
+    <i class="bi bi-calculator"></i>
+    资金计算：累计充值 {{ "%.2f"|format(total_recharge) }} 元 − 累计扣减 {{ "%.2f"|format(total_deduction) }} 元 = 剩余余额 {{ "%.2f"|format(balance) }} 元
+</p>
+
 <!-- 余额预警 -->
-{% if balance < 1000 %}
+{% if is_low_balance(balance) %}
 <div class="alert alert-danger alert-dismissible fade show" role="alert">
     <i class="bi bi-exclamation-triangle-fill"></i>
-    <strong>余额预警：</strong>当前余额不足 1000 元，请及时充值以避免影响业务！
+    <strong>余额预警：</strong>剩余余额不足 {{ LOW_BALANCE_THRESHOLD }} 元，请及时充值以避免影响业务！
     <a href="{{ url_for('portal_recharge') }}" class="btn btn-sm btn-outline-danger ms-3">
         <i class="bi bi-cash-stack"></i> 立即充值
     </a>

@@ -50,6 +50,8 @@ from client_portal_utils import (
     company_scope_client_ids,
     aggregate_company_balance,
     build_portal_transactions,
+    LOW_BALANCE_THRESHOLD,
+    is_low_balance,
     sync_deductions_for_customer,
     CLIENT_STATUS_APPROVED,
     CLIENT_STATUS_PENDING,
@@ -2966,23 +2968,26 @@ def client_login_required(f):
 
 
 def check_balance_alert(db, client):
-    """检查余额预警"""
-    if not client or client['total_recharge'] <= 0:
+    """剩余余额低于固定阈值时发送站内提醒（累计充值 − 累计扣减）。"""
+    if not client:
         return
-    threshold = client['alert_threshold'] or 10
-    if client['balance'] < client['total_recharge'] * threshold / 100:
-        now = datetime.now()
-        if client['last_alert_at']:
-            last = datetime.strptime(client['last_alert_at'], '%Y-%m-%d %H:%M:%S')
-            if (now - last).total_seconds() < 3600:
-                return
-        db.execute("""INSERT INTO client_messages (client_id, title, content, msg_type)
-                     VALUES (?, ?, ?, 'alert')""",
-                   (client['id'], '余额不足提醒',
-                    f'您的账户余额为 {client["balance"]:.2f} 元，已低于充值总额的 {threshold}%，请及时充值！'))
-        db.execute("UPDATE client_accounts SET last_alert_at=? WHERE id=?",
-                   (now.strftime('%Y-%m-%d %H:%M:%S'), client['id']))
-        db.commit()
+    client_d = dict(client)
+    balance, total_recharge, total_deduct = aggregate_company_balance(db, client_d)
+    if not is_low_balance(balance):
+        return
+    now = datetime.now()
+    if client_d.get('last_alert_at'):
+        last = datetime.strptime(client_d['last_alert_at'], '%Y-%m-%d %H:%M:%S')
+        if (now - last).total_seconds() < 3600:
+            return
+    db.execute("""INSERT INTO client_messages (client_id, title, content, msg_type)
+                 VALUES (?, ?, ?, 'alert')""",
+               (client_d['id'], '余额不足提醒',
+                f'账户剩余余额为 {balance:.2f} 元，已低于 {LOW_BALANCE_THRESHOLD:,.0f} 元预警线。'
+                f'（累计充值 {total_recharge:.2f} 元 − 累计扣减 {total_deduct:.2f} 元）请及时充值！'))
+    db.execute("UPDATE client_accounts SET last_alert_at=? WHERE id=?",
+               (now.strftime('%Y-%m-%d %H:%M:%S'), client_d['id']))
+    db.commit()
 
 
 # ---------- 客户端路由 ----------
@@ -6675,7 +6680,11 @@ def inject_public_urls():
     base = app.config.get('PUBLIC_BASE_URL') or ''
     if base and not base.endswith('/'):
         base += '/'
-    return {'public_base_url': base}
+    return {
+        'public_base_url': base,
+        'LOW_BALANCE_THRESHOLD': LOW_BALANCE_THRESHOLD,
+        'is_low_balance': is_low_balance,
+    }
 
 
 from reports_routes import register_reports_blueprint

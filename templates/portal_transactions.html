@@ -39,20 +39,53 @@
     </div>
 </div>
 
+</div>
+
+{% if is_low_balance(current_balance) %}
+<div class="alert alert-danger d-flex flex-wrap align-items-center gap-2 mb-4" role="alert">
+    <i class="bi bi-exclamation-triangle-fill"></i>
+    <span>
+        <strong>余额预警：</strong>剩余余额 {{ "%.2f"|format(current_balance) }} 元，已低于 {{ LOW_BALANCE_THRESHOLD }} 元预警线，请及时充值！
+    </span>
+    <a href="{{ url_for('portal_recharge') }}" class="btn btn-sm btn-outline-danger ms-auto">
+        <i class="bi bi-cash-stack"></i> 立即充值
+    </a>
+</div>
+{% endif %}
+
+<!-- 资金汇总：累计充值 − 累计扣减 = 剩余余额 -->
+<div class="card mb-4 border-primary border-opacity-25">
+    <div class="card-body py-3">
+        <div class="text-muted small mb-2"><i class="bi bi-calculator"></i> 资金汇总（全部流水）</div>
+        <div class="d-flex flex-wrap align-items-center gap-2 fs-5 fw-semibold">
+            <span class="text-success">累计充值 {{ "%.2f"|format(total_recharge) }}</span>
+            <span class="text-muted">−</span>
+            <span class="text-danger">累计扣减 {{ "%.2f"|format(total_deduction) }}</span>
+            <span class="text-muted">=</span>
+            <span class="{% if is_low_balance(current_balance) %}text-danger{% else %}text-primary{% endif %}">
+                剩余余额 {{ "%.2f"|format(current_balance) }}
+            </span>
+        </div>
+        {% if request.args.get('type') or request.args.get('start_date') or request.args.get('end_date') %}
+        <div class="text-muted small mt-2">下方明细为筛选结果；汇总按全部已确认充值与扣减计算。</div>
+        {% endif %}
+    </div>
+</div>
+
 <!-- 统计卡片 -->
 <div class="row mb-4">
     <div class="col-md-4">
         <div class="card">
             <div class="card-body text-center">
-                <div class="text-muted">当前余额</div>
-                <div class="h3 mb-0 text-primary">{{ "%.2f"|format(current_balance) }}</div>
+                <div class="text-muted">剩余余额</div>
+                <div class="h3 mb-0 {% if is_low_balance(current_balance) %}text-danger{% else %}text-primary{% endif %}">{{ "%.2f"|format(current_balance) }}</div>
             </div>
         </div>
     </div>
     <div class="col-md-4">
         <div class="card">
             <div class="card-body text-center">
-                <div class="text-muted">筛选期间充值</div>
+                <div class="text-muted">累计充值（已确认）</div>
                 <div class="h3 mb-0 text-success">+{{ "%.2f"|format(total_recharge) }}</div>
             </div>
         </div>
@@ -60,7 +93,7 @@
     <div class="col-md-4">
         <div class="card">
             <div class="card-body text-center">
-                <div class="text-muted">筛选期间扣减</div>
+                <div class="text-muted">累计扣减</div>
                 <div class="h3 mb-0 text-danger">-{{ "%.2f"|format(total_deduction) }}</div>
             </div>
         </div>
@@ -78,7 +111,7 @@
                         <th>时间</th>
                         <th>类型</th>
                         <th>金额</th>
-                        <th>余额</th>
+                        <th>剩余余额</th>
                         <th>备注</th>
                     </tr>
                 </thead>

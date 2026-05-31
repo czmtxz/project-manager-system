@@ -287,10 +287,10 @@
     <!-- 主内容区 -->
     <div class="main-wrapper">
         <!-- 余额预警横幅 -->
-        {% if session.client_balance is defined and session.client_balance < 1000 %}
+        {% if session.client_balance is defined and is_low_balance(session.client_balance) %}
         <div class="balance-alert-banner">
             <i class="bi bi-exclamation-triangle-fill"></i>
-            余额不足预警：当前余额 {{ "%.2f"|format(session.client_balance or 0) }} 元，请及时充值！
+            余额不足预警：剩余余额 {{ "%.2f"|format(session.client_balance or 0) }} 元，已低于 {{ LOW_BALANCE_THRESHOLD }} 元预警线，请及时充值！
         </div>
         {% endif %}
         
@@ -302,8 +302,8 @@
                 </span>
                 <div class="balance-display">
                     <i class="bi bi-wallet2 text-secondary"></i>
-                    当前余额：
-                    {% if session.client_balance is defined and session.client_balance < 1000 %}
+                    剩余余额：
+                    {% if session.client_balance is defined and is_low_balance(session.client_balance) %}
                     <span class="balance-warning">{{ "%.2f"|format(session.client_balance or 0) }}</span>
                     {% else %}
                     <span class="text-success">{{ "%.2f"|format(session.client_balance or 0) }}</span>
