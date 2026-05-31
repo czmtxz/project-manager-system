@@ -3494,6 +3494,9 @@ def admin_client_company_excel_import(customer_id):
         flash('未找到激活的客户账号，无法导入', 'danger')
         return redirect(url_for('admin_client_workspace', customer_id=customer_id))
     split_orders = request.form.get('split_orders') == '1'
+    sheet_note = f'（页签：{used_sheet}）' if used_sheet else ''
+    if other_sheets:
+        sheet_note += f' 其它页签 [{"、".join(other_sheets)}] 未导入，如需导入请在「页签名称」中分别指定。'
 
     if parsed.get('template') == 'standard':
         ok, msg, errs = import_standard_excel_bundle(
@@ -3502,7 +3505,7 @@ def admin_client_company_excel_import(customer_id):
         )
         if ok:
             db.commit()
-            flash(f'标准模板导入完成：{msg}', 'success')
+            flash(f'标准模板导入完成：{msg}{sheet_note}', 'success')
             if errs:
                 flash(f'部分行失败：{"; ".join(errs[:5])}', 'warning')
         else:
@@ -3514,7 +3517,7 @@ def admin_client_company_excel_import(customer_id):
     if mode == 'recharge':
         ok, errs = import_recharge_rows(db, client['id'], rows, session.get('user_id'))
         db.commit()
-        flash(f'充值导入完成：成功 {ok} 条，失败 {len(errs)} 条', 'success' if ok else 'warning')
+        flash(f'充值导入完成：成功 {ok} 条，失败 {len(errs)} 条{sheet_note}', 'success' if ok else 'warning')
     else:
         cnt, total, order_no, errs = import_outbound_rows(
             db, customer_id, client['id'], rows, session.get('user_id'),
@@ -3527,7 +3530,7 @@ def admin_client_company_excel_import(customer_id):
                 msg += f'，单号 {order_no}'
             if errs:
                 msg += f'（部分失败：{"; ".join(errs[:3])}）'
-            flash(msg, 'success')
+            flash(msg + sheet_note, 'success')
         else:
             db.rollback()
             flash(f'出库导入失败：{"; ".join(errs) if errs else "无有效数据"}', 'danger')
