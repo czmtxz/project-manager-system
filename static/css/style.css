@@ -349,6 +349,27 @@ body {
     vertical-align: middle;
 }
 
+/* 充值审核：操作列固定在右侧，避免被宽表挤出可视区 */
+.recharge-review-table {
+    overflow-x: auto;
+}
+.recharge-review-table .table-op-col {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    min-width: 150px;
+    white-space: nowrap;
+    background: #fff;
+    box-shadow: -6px 0 8px -4px rgba(0, 0, 0, 0.12);
+}
+.recharge-review-table thead .table-op-col {
+    background: #f8f9fa;
+    z-index: 3;
+}
+.recharge-review-table tbody tr:hover .table-op-col {
+    background: #f8f9fa;
+}
+
 /* ==================== Tab 样式 ==================== */
 .nav-tabs .nav-link {
     color: #6c757d;

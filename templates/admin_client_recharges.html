@@ -28,10 +28,9 @@
                 <div class="col-md-2">
                     <select class="form-select" name="payment_method">
                         <option value="">全部方式</option>
-                        <option value="bank_transfer" {% if request.args.get('payment_method') == 'bank_transfer' %}selected{% endif %}>银行转账</option>
-                        <option value="alipay" {% if request.args.get('payment_method') == 'alipay' %}selected{% endif %}>支付宝</option>
-                        <option value="wechat" {% if request.args.get('payment_method') == 'wechat' %}selected{% endif %}>微信支付</option>
-                        <option value="cash" {% if request.args.get('payment_method') == 'cash' %}selected{% endif %}>现金</option>
+                        {% for key, label in payment_methods.items() %}
+                        <option value="{{ key }}" {% if request.args.get('payment_method') == key %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
                     </select>
                 </div>
                 <div class="col-md-2"><input type="date" class="form-control" name="start_date" value="{{ request.args.get('start_date', '') }}"></div>
@@ -47,39 +46,56 @@
     <div class="card">
         <div class="card-body p-0">
             {% if recharges %}
-            <div class="table-responsive">
-                <table class="table table-hover mb-0">
+            <div class="table-responsive recharge-review-table">
+                <table class="table table-hover mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th>时间</th><th>公司</th><th class="text-end">金额</th><th>方式</th>
-                            <th>流水号</th><th>状态</th><th>附件</th><th>审核人</th><th>审核时间</th><th>操作</th>
+                            <th>时间</th>
+                            <th>公司</th>
+                            <th class="text-end">金额</th>
+                            <th>方式</th>
+                            <th>流水号</th>
+                            <th>状态</th>
+                            <th>附件</th>
+                            <th class="table-op-col">操作</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for r in recharges %}
                         <tr>
-                            <td>{{ (r.created_at or '')[:16] }}</td>
+                            <td class="small text-nowrap">{{ (r.created_at or '')[:16] }}</td>
                             <td>{{ r.company_name or '-' }}</td>
-                            <td class="text-end">{{ "%.2f"|format(r.amount or 0) }}</td>
-                            <td>{{ r.payment_method or '-' }}</td>
-                            <td>{{ r.payment_no or '-' }}</td>
+                            <td class="text-end text-success fw-semibold">{{ "%.2f"|format(r.amount or 0) }}</td>
+                            <td class="small">{{ payment_methods.get(r.payment_method, r.payment_method or '-') }}</td>
+                            <td class="small">{{ r.payment_no or '-' }}</td>
                             <td>
-                                {% if r.status == 'pending' %}<span class="badge bg-warning">待审核</span>
+                                {% if r.status == 'pending' %}<span class="badge bg-warning text-dark">待审核</span>
                                 {% elif r.status == 'confirmed' %}<span class="badge bg-success">已确认</span>
                                 {% else %}<span class="badge bg-danger">已拒绝</span>{% endif %}
                             </td>
                             <td>{% if r.attachment %}<a target="_blank" href="/uploads/{{ r.attachment }}">查看</a>{% else %}-{% endif %}</td>
-                            <td>{{ r.confirmer_name or '-' }}</td>
-                            <td>{{ (r.confirmed_at or '')[:16] }}</td>
-                            <td>
+                            <td class="table-op-col">
                                 {% if r.status == 'pending' %}
-                                <form method="POST" action="{{ url_for('admin_client_recharge_confirm', id=r.id) }}" class="d-inline">
-                                    <button type="submit" class="btn btn-sm btn-success">通过</button>
-                                </form>
-                                <form method="POST" action="{{ url_for('admin_client_recharge_reject', id=r.id) }}" class="d-inline">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">拒绝</button>
-                                </form>
-                                {% else %}-{% endif %}
+                                <a href="{{ url_for('admin_client_recharge_confirm', id=r.id) }}"
+                                   class="btn btn-sm btn-success"
+                                   onclick="return confirm('确认通过该充值 {{ '%.2f'|format(r.amount or 0) }} 元？')">通过</a>
+                                <a href="{{ url_for('admin_client_recharge_reject', id=r.id) }}"
+                                   class="btn btn-sm btn-outline-danger"
+                                   onclick="return confirm('确认拒绝该充值申请？')">拒绝</a>
+                                {% else %}
+                                <span class="text-muted small">
+                                    {% if r.confirmer_name or r.confirmed_at %}
+                                        {% if r.confirmer_name %}{{ r.confirmer_name }}{% endif %}
+                                        {% if r.confirmed_at %}<br>{{ (r.confirmed_at or '')[:16] }}{% endif %}
+                                    {% else %}
+                                        已审核
+                                    {% endif %}
+                                </span>
+                                {% if r.customer_id %}
+                                <a href="{{ url_for('admin_client_workspace', customer_id=r.customer_id) }}"
+                                   class="btn btn-sm btn-outline-secondary ms-1">工作台</a>
+                                {% endif %}
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}

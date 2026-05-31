@@ -4105,7 +4105,7 @@ def admin_client_recharges():
     payment_method = request.args.get('payment_method', '').strip()
     start_date = request.args.get('start_date', '').strip()
     end_date = request.args.get('end_date', '').strip()
-    sql = """SELECT cr.*, ca.username, ca.company_name, ca.contact_name,
+    sql = """SELECT cr.*, ca.username, ca.company_name, ca.contact_name, ca.customer_id,
                     u.username as confirmer_name
              FROM client_recharges cr
              LEFT JOIN client_accounts ca ON cr.client_id = ca.id
@@ -4140,10 +4140,15 @@ def admin_client_recharges():
     clients_params.extend(cscope_p)
     clients_sql += " ORDER BY company_name"
     clients = db.execute(clients_sql, clients_params).fetchall()
-    return render_template('admin_client_recharges.html', recharges=recharges, clients=clients)
+    return render_template(
+        'admin_client_recharges.html',
+        recharges=recharges,
+        clients=clients,
+        payment_methods=PAYMENT_METHODS,
+    )
 
 
-@app.route('/admin/client-recharges/<int:id>/confirm')
+@app.route('/admin/client-recharges/<int:id>/confirm', methods=['GET', 'POST'])
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)
 def admin_client_recharge_confirm(id):
@@ -4178,7 +4183,7 @@ def admin_client_recharge_confirm(id):
     return redirect(url_for('admin_client_recharges'))
 
 
-@app.route('/admin/client-recharges/<int:id>/reject')
+@app.route('/admin/client-recharges/<int:id>/reject', methods=['GET', 'POST'])
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)
 def admin_client_recharge_reject(id):
