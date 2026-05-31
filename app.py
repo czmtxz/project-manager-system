@@ -104,6 +104,7 @@ app.config['DATABASE'] = 'project_manager.db'
 app.config['BACKUP_DIR'] = 'backups'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024  # 8MB
+app.config['PUBLIC_BASE_URL'] = os.environ.get('PUBLIC_BASE_URL', '').strip()
 
 # 确保目录存在
 os.makedirs(app.config['BACKUP_DIR'], exist_ok=True)
@@ -6629,6 +6630,16 @@ def api_project_purchases(pid):
 
 
 register_auth_hooks(app)
+
+
+@app.context_processor
+def inject_public_urls():
+    """对外访问基址（客户门户链接等）。生产环境请设 PUBLIC_BASE_URL=http://IP:888/"""
+    base = app.config.get('PUBLIC_BASE_URL') or ''
+    if base and not base.endswith('/'):
+        base += '/'
+    return {'public_base_url': base}
+
 
 from reports_routes import register_reports_blueprint
 register_reports_blueprint(app, get_db)

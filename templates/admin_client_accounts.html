@@ -83,7 +83,7 @@
                             <td class="text-end text-success">{{ "%.2f"|format(acc.total_recharge or 0) }}</td>
                             <td class="text-end text-danger">{{ "%.2f"|format(acc.total_deduct or 0) }}</td>
                             <td class="text-nowrap">
-                                {% set portal_url = request.url_root ~ 'portal/login' %}
+                                {% set portal_url = (public_base_url or request.url_root) ~ 'portal/login' %}
                                 <a href="{{ portal_url }}" target="_blank" class="small text-decoration-none" title="客户登录入口">
                                     <i class="bi bi-box-arrow-up-right"></i> 登录入口
                                 </a>
