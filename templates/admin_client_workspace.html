@@ -436,7 +436,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.edit-recharge').forEach(function (b) {
         b.addEventListener('click', function () {
             var d = this.dataset;
-            document.getElementById('editRechargeForm').action = rBase.replace(/0$/, d.id);
+            document.getElementById('editRechargeForm').action = rBase.replace('/0/update', '/' + d.id + '/update');
             document.getElementById('er_amount').value = d.amount;
             document.getElementById('er_method').value = d.method;
             document.getElementById('er_no').value = d.no;
@@ -448,7 +448,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.edit-deduction').forEach(function (b) {
         b.addEventListener('click', function () {
             var d = this.dataset;
-            document.getElementById('editDeductionForm').action = dBase.replace(/0$/, d.id);
+            document.getElementById('editDeductionForm').action = dBase.replace('/0/update', '/' + d.id + '/update');
             document.getElementById('ed_amount').value = d.amount;
             document.getElementById('ed_qty').value = d.qty;
             document.getElementById('ed_price').value = d.price;
