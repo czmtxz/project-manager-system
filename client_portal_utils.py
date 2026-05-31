@@ -26,6 +26,8 @@ def ensure_schema_extensions(db):
     for col, typ in user_cols.items():
         if not table_has_column(db, 'users', col):
             cur.execute(f"ALTER TABLE users ADD COLUMN {col} {typ}")
+    if not table_has_column(db, 'client_deductions', 'truck_count'):
+        cur.execute("ALTER TABLE client_deductions ADD COLUMN truck_count REAL DEFAULT 0")
     db.commit()
 
 

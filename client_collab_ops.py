@@ -74,6 +74,7 @@ DEDUCTION_GROUP_FIELDS = {
     'date': '日期',
     'month': '月份',
     'item_name': '品名',
+    'truck_count': '车数',
     'unit_price': '单价',
 }
 
@@ -88,6 +89,7 @@ def deduction_rows_for_summary(deductions):
             'date': _date_key(dt),
             'month': _month_key(dt),
             'item_name': (d.get('item_name') or '').strip() or '未填写',
+            'truck_count': float(d.get('truck_count') or 0),
             'unit_price': float(d.get('unit_price') or 0),
             'quantity': float(d.get('quantity') or 0),
             'amount': float(d.get('amount') or 0),
@@ -99,13 +101,16 @@ def summarize_deduction_records(deductions):
     """扣减记录合计。"""
     total_amount = 0.0
     total_qty = 0.0
+    total_trucks = 0.0
     for row in deductions:
         d = dict(row)
         total_amount += float(d.get('amount') or 0)
         total_qty += float(d.get('quantity') or 0)
+        total_trucks += float(d.get('truck_count') or 0)
     return {
         'total_count': len(deductions),
         'total_qty': total_qty,
+        'total_trucks': total_trucks,
         'total_amount': total_amount,
     }
 
@@ -392,6 +397,7 @@ def record_client_outbound(db, customer_id, client_id, items, order_date=None,
             'quantity': qty,
             'unit_price': price,
             'amount': amount,
+            'truck_count': float(it.get('truck_count') or 0),
             'deduct_date': it.get('deduct_date') or order_date,
         })
         total_amount += amount
@@ -425,11 +431,11 @@ def record_client_outbound(db, customer_id, client_id, items, order_date=None,
         db.execute(
             """INSERT INTO client_deductions
                (client_id, sales_order_id, sales_item_id, amount, quantity,
-                unit_price, item_name, deduct_date, remark, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                unit_price, item_name, truck_count, deduct_date, remark, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 client_id, order_id, item_id, it['amount'], it['quantity'],
-                it['unit_price'], it['item_name'], it['deduct_date'],
+                it['unit_price'], it['item_name'], it['truck_count'], it['deduct_date'],
                 remark, now,
             ),
         )
@@ -584,14 +590,14 @@ def parse_collab_excel_standard(df):
         extra = []
         if balance_note:
             extra.append(f'余款:{balance_note}')
-        if trucks > 0:
-            extra.append(f'{trucks:g}车')
         extra_txt = ' '.join(extra)
 
         if pay_amount > 0:
             pay_remark = remark
             if extra_txt and not sales_amount and not tons:
                 pay_remark = f'{pay_remark} {extra_txt}'.strip()
+            if trucks > 0 and not extra_txt:
+                pay_remark = f'{pay_remark} {trucks:g}车'.strip()
             recharge_rows.append({
                 'amount': pay_amount,
                 'payment_method': 'bank_transfer',
@@ -606,8 +612,6 @@ def parse_collab_excel_standard(df):
         # 销售单价为 0 或销售金额为 0 时不导入出库扣减
         if unit_price > 0 and sales_amount > 0:
             item_name = spec or '出库商品'
-            if trucks > 0 and '车' not in item_name:
-                item_name = f'{item_name} {trucks:g}车'
             ob_remark = remark
             if extra_txt:
                 ob_remark = f'{ob_remark} {extra_txt}'.strip()
@@ -616,6 +620,7 @@ def parse_collab_excel_standard(df):
                 'quantity': tons,
                 'unit_price': unit_price,
                 'amount': sales_amount,
+                'truck_count': trucks,
                 'deduct_date': _cell_date(r.get(c_sales_date)) if c_sales_date else '',
                 'remark': ob_remark,
             })
@@ -879,13 +884,12 @@ def _parse_df_rows(df, mode):
                 continue
             if amount <= 0:
                 continue
-            if trucks > 0 and '车' not in name:
-                name = f'{name} {trucks:g}车'
             rows.append({
                 'item_name': name[:120],
                 'quantity': qty,
                 'unit_price': price,
                 'amount': amount,
+                'truck_count': trucks,
                 'deduct_date': _cell_date(r.get(c_date)) if c_date else '',
             })
 
