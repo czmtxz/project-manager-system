@@ -213,6 +213,11 @@
                             <div class="mb-3">
                                 <input class="form-control" type="file" name="excel_file" accept=".xlsx,.xls" required>
                             </div>
+                            <div class="mb-3">
+                                <label class="form-label small mb-1">页签名称（多页签时指定，留空=自动取首个有效页签）</label>
+                                <input class="form-control form-control-sm" type="text" name="sheet" placeholder="例如：收款 (4)">
+                                <small class="text-muted">标题行会自动跳过；每次导入一个页签，避免重复。</small>
+                            </div>
                             <label class="form-check mb-3">
                                 <input class="form-check-input" type="checkbox" name="split_orders" value="1">
                                 <span class="form-check-label small">表中销售明细：每条单独生成出库单</span>
@@ -277,6 +282,11 @@
                             <input type="hidden" name="mode" value="standard">
                             <div class="mb-3">
                                 <input class="form-control" type="file" name="excel_file" accept=".xlsx,.xls" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small mb-1">页签名称（多页签时指定，留空=自动取首个有效页签）</label>
+                                <input class="form-control form-control-sm" type="text" name="sheet" placeholder="例如：收款 (4)">
+                                <small class="text-muted">标题行会自动跳过；每次导入一个页签，避免重复。</small>
                             </div>
                             <label class="form-check mb-3">
                                 <input class="form-check-input" type="checkbox" name="split_orders" value="1">
