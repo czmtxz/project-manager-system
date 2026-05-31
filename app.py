@@ -1217,23 +1217,78 @@ def import_from_excel(records, project_name=None, user_id=None):
 
 # ==================== 路由：登录/登出 ====================
 
-def pick_login_bg():
-    """从 static/img 下随机挑选一张登录背景（文件名形如 login-bg*.png/jpg）。"""
+# 登录页宣传主题：背景图 + 配色风格 + 文案，随机整套切换
+LOGIN_THEMES = [
+    {
+        'cls': 'login-theme-indigo',
+        'bg': 'img/login-bg.png',
+        'badge': '企业级 · 安全可信',
+        'subtitle': '一站式打通 <b>项目 · 投资 · 销售 · 采购 · 财务 · 报表</b><br>让每一笔资金都看得清，让每一分利润都算得准。',
+        'features': [
+            ['bi-graph-up-arrow', '经营驾驶舱，毛利实时可视'],
+            ['bi-magic', '发票 / 合同 OCR 智能识别录入'],
+            ['bi-people-fill', '客户协同门户，资金对账透明'],
+            ['bi-clipboard-data', '多维报表分析，决策一目了然'],
+        ],
+        'stats': [['10+', '业务模块'], ['OCR', '智能录入'], ['实时', '报表分析']],
+    },
+    {
+        'cls': 'login-theme-teal',
+        'bg': 'img/login-bg-2.png',
+        'badge': '数据驱动 · 稳健增长',
+        'subtitle': '用数据看清经营全貌，<br>让每一个项目都<b>稳健增长、利润可期</b>。',
+        'features': [
+            ['bi-calculator', '项目毛利实时测算'],
+            ['bi-arrow-left-right', '采购销售对账一体化'],
+            ['bi-pie-chart', '投资分红清晰透明'],
+            ['bi-bell', '经营预警主动提醒'],
+        ],
+        'stats': [['100%', '数据在线'], ['多维', '盈亏分析'], ['秒级', '指标刷新']],
+    },
+    {
+        'cls': 'login-theme-gold',
+        'bg': 'img/login-bg-3.png',
+        'badge': '智能财务 · 创造价值',
+        'subtitle': '从合同到回款全程在线，<br>让<b>每一分投入都创造价值</b>。',
+        'features': [
+            ['bi-file-earmark-check', '合同执行全程追踪'],
+            ['bi-cash-coin', '销售回款进度清晰'],
+            ['bi-receipt', '费用归集自动核算'],
+            ['bi-graph-up', '投资回报一键测算'],
+        ],
+        'stats': [['全程', '业务闭环'], ['透明', '资金往来'], ['高效', '决策提速']],
+    },
+    {
+        'cls': 'login-theme-neon',
+        'bg': 'img/login-bg-4.png',
+        'badge': 'AI 提效 · 面向未来',
+        'subtitle': 'AI 智能录单 + 实时报表，<br>开启<b>数字化经营新时代</b>。',
+        'features': [
+            ['bi-robot', 'OCR 票据秒级识别'],
+            ['bi-speedometer2', '数据看板实时刷新'],
+            ['bi-shield-lock', '多角色权限安全可控'],
+            ['bi-diagram-3', '全链路业务闭环'],
+        ],
+        'stats': [['AI', '智能录入'], ['实时', '数据看板'], ['闭环', '业务流转']],
+    },
+]
+
+
+def pick_login_theme():
+    """随机挑选一套登录宣传主题（背景图 + 配色 + 文案），仅返回背景图存在的主题。"""
     try:
         img_dir = os.path.join(app.static_folder, 'img')
-        candidates = [
-            f for f in os.listdir(img_dir)
-            if f.lower().startswith('login-bg') and f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))
-        ]
-        if candidates:
-            return 'img/' + random.choice(candidates)
+        available = [t for t in LOGIN_THEMES
+                     if os.path.exists(os.path.join(img_dir, os.path.basename(t['bg'])))]
+        if available:
+            return random.choice(available)
     except OSError:
         pass
-    return 'img/login-bg.png'
+    return LOGIN_THEMES[0]
 
 
 def render_login():
-    return render_template('login.html', login_bg=pick_login_bg())
+    return render_template('login.html', login_theme=pick_login_theme())
 
 
 @app.route('/login', methods=['GET', 'POST'])

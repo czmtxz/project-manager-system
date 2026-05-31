@@ -30,6 +30,11 @@ body {
 
 /* ==================== 登录页 ==================== */
 .login-wrapper {
+    /* 主题强调色（默认 indigo），各 login-theme-* 会覆盖 */
+    --la1: #4361ee;
+    --la2: #7209b7;
+    --la-glow: rgba(67, 97, 238, 0.42);
+    --lt: #e0b3ff;
     min-height: 100vh;
     display: flex;
     align-items: center;
@@ -41,6 +46,12 @@ body {
     background-repeat: no-repeat;
     background-attachment: fixed;
 }
+
+/* 登录宣传主题配色 */
+.login-theme-indigo { --la1: #4361ee; --la2: #7209b7; --la-glow: rgba(67,97,238,0.42); --lt: #e0b3ff; }
+.login-theme-teal   { --la1: #2ec4b6; --la2: #0d9488; --la-glow: rgba(20,184,166,0.42); --lt: #9af7e6; }
+.login-theme-gold   { --la1: #f59e0b; --la2: #d97706; --la-glow: rgba(245,158,11,0.42); --lt: #ffe2a8; }
+.login-theme-neon   { --la1: #4361ee; --la2: #d6249f; --la-glow: rgba(214,36,159,0.42); --lt: #ff9ae0; }
 
 .login-stage {
     width: 100%;
@@ -84,11 +95,11 @@ body {
     font-weight: 800;
     line-height: 1.15;
     margin-bottom: 18px;
-    background: linear-gradient(90deg, #ffffff 0%, #c4d0ff 60%, #e0b3ff 100%);
+    background: linear-gradient(90deg, #ffffff 0%, #ffffff 35%, var(--lt) 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    text-shadow: 0 2px 30px rgba(67, 97, 238, 0.35);
+    text-shadow: 0 2px 30px var(--la-glow);
 }
 
 .login-hero-subtitle {
@@ -125,8 +136,8 @@ body {
     border-radius: 9px;
     font-size: 1rem;
     color: #fff;
-    background: linear-gradient(135deg, #4361ee, #7209b7);
-    box-shadow: 0 6px 16px rgba(67, 97, 238, 0.4);
+    background: linear-gradient(135deg, var(--la1), var(--la2));
+    box-shadow: 0 6px 16px var(--la-glow);
 }
 
 .login-hero-stats {
@@ -181,8 +192,8 @@ body {
     justify-content: center;
     font-size: 2.2rem;
     color: #fff;
-    background: linear-gradient(135deg, #4361ee 0%, #7209b7 100%);
-    box-shadow: 0 12px 28px rgba(67, 97, 238, 0.45);
+    background: linear-gradient(135deg, var(--la1) 0%, var(--la2) 100%);
+    box-shadow: 0 12px 28px var(--la-glow);
 }
 
 .login-card .form-label {
