@@ -1,0 +1,96 @@
+{% extends staff_layout|default('nav_base.html') %}
+{% block title %}选择导入页签 - 客户协同{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="bi bi-file-earmark-spreadsheet"></i> 选择要导入的页签</h4>
+        <a href="{{ url_for('admin_client_workspace', customer_id=customer_id) }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> 返回工作台
+        </a>
+    </div>
+
+    <div class="alert alert-light border small">
+        <i class="bi bi-info-circle text-info"></i>
+        系统已识别以下页签的数据（标题行已自动跳过）。请勾选需要导入的页签，确认后将<strong>一次性导入所选页签的全部数据</strong>。
+        请核对各页签的<strong>日期范围</strong>与<strong>金额</strong>，避免勾选内容重复的页签造成重复扣减。
+    </div>
+
+    <form method="POST" action="{{ url_for('admin_client_company_excel_import_confirm', customer_id=customer_id) }}">
+        <input type="hidden" name="file_rel" value="{{ file_rel }}">
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="checkAll" checked>
+                    <label class="form-check-label fw-bold" for="checkAll">全选 / 全不选</label>
+                </div>
+                <span class="text-muted small">共 {{ sheets|length }} 个可导入页签</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:48px"></th>
+                                <th>页签</th>
+                                <th>日期范围</th>
+                                <th class="text-end">充值笔数</th>
+                                <th class="text-end">充值金额</th>
+                                <th class="text-end">出库笔数</th>
+                                <th class="text-end">出库金额</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in sheets %}
+                            <tr>
+                                <td>
+                                    <input class="form-check-input sheet-check" type="checkbox"
+                                           name="sheets" value="{{ s.sheet }}" id="sheet{{ loop.index }}" checked>
+                                </td>
+                                <td><label for="sheet{{ loop.index }}" class="fw-bold mb-0">{{ s.sheet }}</label></td>
+                                <td class="small text-muted">
+                                    {% if s.date_min %}{{ s.date_min }} ~ {{ s.date_max }}{% else %}-{% endif %}
+                                </td>
+                                <td class="text-end">{{ s.recharge_count }}</td>
+                                <td class="text-end text-success">{{ "%.2f"|format(s.recharge_amount) }}</td>
+                                <td class="text-end">{{ s.outbound_count }}</td>
+                                <td class="text-end text-danger">{{ "%.2f"|format(s.outbound_amount) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-3 mt-3">
+            <label class="form-check mb-0">
+                <input class="form-check-input" type="checkbox" name="split_orders" value="1" {% if split_orders %}checked{% endif %}>
+                <span class="form-check-label small">每条销售明细单独生成一张出库单</span>
+            </label>
+            <button type="submit" class="btn btn-success">
+                <i class="bi bi-check2-circle"></i> 确认导入所选页签
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var all = document.getElementById('checkAll');
+    var boxes = document.querySelectorAll('.sheet-check');
+    if (all) {
+        all.addEventListener('change', function () {
+            boxes.forEach(function (b) { b.checked = all.checked; });
+        });
+    }
+    boxes.forEach(function (b) {
+        b.addEventListener('change', function () {
+            all.checked = Array.prototype.every.call(boxes, function (x) { return x.checked; });
+        });
+    });
+})();
+</script>
+{% endblock %}
