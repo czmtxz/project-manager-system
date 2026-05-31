@@ -115,7 +115,7 @@ def module_required(module_name):
                 return redirect(url_for('login'))
             role = session.get('role')
             if module_name == MODULE_CLIENT_PORTAL:
-                if role not in (ROLE_ADMIN, ROLE_CLIENT_COLLAB):
+                if role not in (ROLE_ADMIN, ROLE_CLIENT_COLLAB, ROLE_CLIENT_COLLAB_ADMIN):
                     flash('无权访问客户协同管理', 'danger')
                     return redirect(url_for('dashboard'))
             return f(*args, **kwargs)
@@ -128,17 +128,31 @@ def admin_or_collab_required(f):
     def wrapped(*args, **kwargs):
         if 'user_id' not in session:
             return redirect(url_for('login'))
-        if session.get('role') not in (ROLE_ADMIN, ROLE_CLIENT_COLLAB):
+        if session.get('role') not in (ROLE_ADMIN, ROLE_CLIENT_COLLAB, ROLE_CLIENT_COLLAB_ADMIN):
             flash('权限不足', 'danger')
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
     return wrapped
 
 
+def collab_admin_required(f):
+    """仅系统管理员或客户协同管理员可访问（用于协同专员管理）。"""
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        role = session.get('role')
+        if role not in (ROLE_ADMIN, ROLE_CLIENT_COLLAB_ADMIN):
+            flash('权限不足，仅协同管理员可操作', 'danger')
+            return redirect(login_redirect_for_role(role))
+        return f(*args, **kwargs)
+    return wrapped
+
+
 def staff_layout_template():
-    """内部员工页面布局：协同专员使用独立导航，与 ERP 完全分离。"""
+    """内部员工页面布局：协同角色使用独立导航，与 ERP 完全分离。"""
     from flask import session
-    if session.get('role') == ROLE_CLIENT_COLLAB:
+    if session.get('role') in COLLAB_ONLY_ROLES:
         return 'collab_base.html'
     return 'nav_base.html'
 
@@ -151,7 +165,8 @@ def register_auth_hooks(app):
         return {
             'staff_layout': staff_layout_template() if role else 'nav_base.html',
             'role_display': ROLE_LABELS.get(role, role),
-            'is_collab_staff': role == ROLE_CLIENT_COLLAB,
+            'is_collab_staff': role in COLLAB_ONLY_ROLES,
+            'is_collab_admin': role == ROLE_CLIENT_COLLAB_ADMIN,
             'is_system_admin': role == ROLE_ADMIN,
         }
 

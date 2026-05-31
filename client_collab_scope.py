@@ -8,13 +8,13 @@
 """
 from flask import session, flash, redirect, url_for
 
-from auth_utils import ROLE_ADMIN, ROLE_CLIENT_COLLAB
+from auth_utils import ROLE_ADMIN, ROLE_CLIENT_COLLAB, ROLE_CLIENT_COLLAB_ADMIN
 
-# 可查看全部协同公司数据的内部角色
-COLLAB_DATA_ALL_ROLES = frozenset({ROLE_ADMIN, 'finance'})
+# 可查看全部协同公司数据的内部角色（协同管理员拥有协同模块全部数据权限）
+COLLAB_DATA_ALL_ROLES = frozenset({ROLE_ADMIN, 'finance', ROLE_CLIENT_COLLAB_ADMIN})
 
 # 可访问「客户资金」报表的角色
-COLLAB_FUNDS_REPORT_ROLES = frozenset({ROLE_ADMIN, 'finance', ROLE_CLIENT_COLLAB})
+COLLAB_FUNDS_REPORT_ROLES = frozenset({ROLE_ADMIN, 'finance', ROLE_CLIENT_COLLAB, ROLE_CLIENT_COLLAB_ADMIN})
 
 # 协同专员在报表中心仅开放的 slug
 COLLAB_REPORT_SLUGS = frozenset({'client-collab-funds'})
@@ -201,7 +201,7 @@ def get_user_assignments(db, user_id):
 
 
 def report_allowed_for_role(slug, role):
-    if role == ROLE_CLIENT_COLLAB:
+    if role in (ROLE_CLIENT_COLLAB, ROLE_CLIENT_COLLAB_ADMIN):
         return slug in COLLAB_REPORT_SLUGS
     if slug == 'client-collab-funds':
         return role in COLLAB_FUNDS_REPORT_ROLES
