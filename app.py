@@ -60,6 +60,14 @@ from client_portal_utils import (
     normalize_client_status,
     get_client_by_id,
 )
+from client_collab_reports import (
+    REPORT_CATALOG,
+    REPORT_SLUGS,
+    get_report_meta,
+    default_date_range,
+    resolve_client_for_report,
+    build_report_payload,
+)
 from client_collab_scope import (
     assert_customer_access,
     assign_customer_to_user,
@@ -3315,37 +3323,153 @@ def portal_messages_read_all():
 @app.route('/portal/report')
 @client_login_required
 def portal_report():
+    """客户门户报表中心（仅本账户充值/扣减数据）。"""
     db = get_db()
     client = get_client_by_id(db, session['client_id'])
     balance, total_recharge, total_deduct = aggregate_company_balance(db, client)
-    scope_ids = company_scope_client_ids(db, client)
-    ph = ','.join('?' * len(scope_ids))
-    deductions = db.execute(
-        f"""SELECT item_name, SUM(quantity) as total_qty,
-                   SUM(amount) as total_amount, unit_price
-            FROM client_deductions WHERE client_id IN ({ph})
-            GROUP BY item_name ORDER BY total_amount DESC""",
-        scope_ids,
-    ).fetchall()
-    monthly = db.execute(
-        f"""SELECT strftime('%Y-%m', COALESCE(deduct_date, created_at)) as month,
-                   SUM(amount) as month_amount
-            FROM client_deductions WHERE client_id IN ({ph})
-            GROUP BY month ORDER BY month DESC LIMIT 12""",
-        scope_ids,
-    ).fetchall()
-    client_view = dict(client)
-    client_view['balance'] = balance
-    client_view['total_recharge'] = total_recharge
-    client_view['total_deduct'] = total_deduct
     return render_template(
-        'portal_report.html', client=client_view,
-        total_recharge=total_recharge, total_deduct=total_deduct, balance=balance,
-        deductions=deductions, monthly=monthly,
+        'portal_reports/hub.html',
+        reports=REPORT_CATALOG,
+        balance=balance,
+        total_recharge=total_recharge,
+        total_deduct=total_deduct,
+    )
+
+
+@app.route('/portal/reports/<slug>')
+@client_login_required
+def portal_reports_view(slug):
+    if slug not in REPORT_SLUGS:
+        flash('报表不存在', 'warning')
+        return redirect(url_for('portal_report'))
+    db = get_db()
+    client = get_client_by_id(db, session['client_id'])
+    start_date = request.args.get('start_date', '').strip()
+    end_date = request.args.get('end_date', '').strip()
+    granularity = request.args.get('granularity', 'day').strip() or 'day'
+    if granularity not in ('day', 'month'):
+        granularity = 'day'
+    if not start_date and not end_date:
+        start_date, end_date = default_date_range(90)
+    report = get_report_meta(slug)
+    payload = build_report_payload(db, slug, client, start_date, end_date, granularity)
+    company_name = client.get('company_name') or session.get('client_company_name') or '我的账户'
+    return render_template(
+        'portal_reports/view.html',
+        slug=slug,
+        report=report,
+        payload=payload,
+        company_name=company_name,
+        customer_id=client.get('customer_id') or 0,
+        start_date=start_date,
+        end_date=end_date,
+        granularity=granularity,
+        reset_url=url_for('portal_reports_view', slug=slug),
     )
 
 
 # ---------- 管理端客户协同路由 ----------
+
+def _enrich_company_balances(db, companies):
+    """报表/看板使用实时汇总余额（充值 − 扣减）。"""
+    out = []
+    for c in companies:
+        row = dict(c)
+        client = resolve_client_for_report(db, customer_id=row.get('customer_id'))
+        if client:
+            bal, rech, ded = aggregate_company_balance(db, client)
+            row['balance'] = bal
+            row['total_recharge'] = rech
+            row['total_deduct'] = ded
+        out.append(row)
+    return out
+
+
+@app.route('/admin/client-reports')
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_reports():
+    db = get_db()
+    uid, role = session.get('user_id'), session.get('role')
+    companies = _enrich_company_balances(db, list_company_summaries_scoped(db, uid, role))
+    if not companies:
+        return render_template(
+            'collab_reports/hub.html',
+            companies=[],
+            reports=REPORT_CATALOG,
+            selected_customer_id=0,
+            selected_company={'balance': 0, 'total_recharge': 0, 'total_deduct': 0},
+        )
+    try:
+        selected_id = int(request.args.get('customer_id') or companies[0]['customer_id'] or 0)
+    except (TypeError, ValueError):
+        selected_id = int(companies[0]['customer_id'] or 0)
+    allowed_ids = {int(c['customer_id'] or 0) for c in companies}
+    if selected_id not in allowed_ids:
+        selected_id = int(companies[0]['customer_id'] or 0)
+    selected = next((c for c in companies if int(c.get('customer_id') or 0) == selected_id), companies[0])
+    return render_template(
+        'collab_reports/hub.html',
+        companies=companies,
+        reports=REPORT_CATALOG,
+        selected_customer_id=selected_id,
+        selected_company=selected,
+    )
+
+
+@app.route('/admin/client-reports/<slug>')
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_client_reports_view(slug):
+    if slug not in REPORT_SLUGS:
+        flash('报表不存在', 'warning')
+        return redirect(url_for('admin_client_reports'))
+    db = get_db()
+    uid, role = session.get('user_id'), session.get('role')
+    companies = _enrich_company_balances(db, list_company_summaries_scoped(db, uid, role))
+    if not companies:
+        flash('暂无可见客户', 'warning')
+        return redirect(url_for('admin_client_reports'))
+    try:
+        customer_id = int(request.args.get('customer_id') or companies[0]['customer_id'] or 0)
+    except (TypeError, ValueError):
+        customer_id = int(companies[0]['customer_id'] or 0)
+    denied = assert_customer_access(db, uid, role, customer_id)
+    if denied:
+        return denied
+    client = resolve_client_for_report(db, customer_id=customer_id)
+    if not client:
+        flash('客户不存在', 'danger')
+        return redirect(url_for('admin_client_reports'))
+    start_date = request.args.get('start_date', '').strip()
+    end_date = request.args.get('end_date', '').strip()
+    granularity = request.args.get('granularity', 'day').strip() or 'day'
+    if granularity not in ('day', 'month'):
+        granularity = 'day'
+    if not start_date and not end_date:
+        start_date, end_date = default_date_range(90)
+    report = get_report_meta(slug)
+    payload = build_report_payload(db, slug, client, start_date, end_date, granularity)
+    company_name = next(
+        (c['company_name'] for c in companies if int(c.get('customer_id') or 0) == customer_id),
+        client.get('company_name') or '',
+    )
+    return render_template(
+        'collab_reports/view.html',
+        slug=slug,
+        report=report,
+        payload=payload,
+        companies=companies,
+        company_name=company_name,
+        customer_id=customer_id,
+        start_date=start_date,
+        end_date=end_date,
+        granularity=granularity,
+        show_customer_select=True,
+        show_granularity=(slug == 'trend'),
+        reset_url=url_for('admin_client_reports_view', slug=slug, customer_id=customer_id),
+    )
+
 
 @app.route('/admin/client-dashboard')
 @login_required

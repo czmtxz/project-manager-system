@@ -1,0 +1,318 @@
+{% extends staff_layout|default('nav_base.html') %}
+{% block title %}{{ report.title }} - 协同报表{% endblock %}
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb small mb-0">
+            <li class="breadcrumb-item"><a href="{{ url_for('admin_client_reports') }}">协同报表</a></li>
+            <li class="breadcrumb-item active">{{ report.title }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <h4 class="mb-0"><i class="bi {{ report.icon }}"></i> {{ report.title }}</h4>
+        <span class="text-muted small">{{ company_name }}</span>
+    </div>
+
+    {% include 'collab_reports/_filters.html' %}
+
+    {% if slug == 'overview' %}
+    {% set p = payload %}
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-md-3">
+            <div class="card h-100 border-primary border-opacity-25">
+                <div class="card-body">
+                    <div class="text-muted small">剩余余额</div>
+                    <div class="h4 mb-0 {% if p.low_balance %}text-danger{% else %}text-primary{% endif %}">
+                        ¥{{ "%.2f"|format(p.balance) }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small">累计充值（已确认）</div>
+                    <div class="h4 mb-0 text-success">¥{{ "%.2f"|format(p.total_recharge) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small">累计扣减</div>
+                    <div class="h4 mb-0 text-danger">¥{{ "%.2f"|format(p.total_deduct) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card h-100 {% if p.pending_recharge > 0 %}border-warning{% endif %}">
+                <div class="card-body">
+                    <div class="text-muted small">待确认充值</div>
+                    <div class="h4 mb-0 text-warning">¥{{ "%.2f"|format(p.pending_recharge) }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class="card-body py-3">
+            <div class="text-muted small mb-1">资金公式（全量）</div>
+            <div class="fw-semibold">
+                累计充值 ¥{{ "%.2f"|format(p.total_recharge) }}
+                − 累计扣减 ¥{{ "%.2f"|format(p.total_deduct) }}
+                = 剩余余额 ¥{{ "%.2f"|format(p.balance) }}
+            </div>
+            {% if start_date or end_date %}
+            <div class="text-muted small mt-2">
+                筛选期间：充值 ¥{{ "%.2f"|format(p.period_recharge) }} ·
+                扣减 ¥{{ "%.2f"|format(p.period_deduct) }} ·
+                净变动 ¥{{ "%.2f"|format(p.period_net) }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% if p.low_balance %}
+    <div class="alert alert-danger"><i class="bi bi-exclamation-triangle-fill"></i>
+        剩余余额低于 ¥{{ p.threshold }} 预警线，请及时联系客户充值。</div>
+    {% endif %}
+    <div class="card">
+        <div class="card-header"><i class="bi bi-bar-chart"></i> 期间收支趋势</div>
+        <div class="card-body"><canvas id="chartMain" height="120"></canvas></div>
+    </div>
+
+    {% elif slug == 'trend' %}
+    {% set p = payload %}
+    <div class="row g-3 mb-3">
+        <div class="col-md-4"><div class="card"><div class="card-body text-center">
+            <div class="text-muted small">期间充值</div>
+            <div class="h4 text-success mb-0">+¥{{ "%.2f"|format(p.total_recharge) }}</div>
+        </div></div></div>
+        <div class="col-md-4"><div class="card"><div class="card-body text-center">
+            <div class="text-muted small">期间扣减</div>
+            <div class="h4 text-danger mb-0">-¥{{ "%.2f"|format(p.total_deduction) }}</div>
+        </div></div></div>
+        <div class="col-md-4"><div class="card"><div class="card-body text-center">
+            <div class="text-muted small">净变动</div>
+            {% set net = p.total_recharge - p.total_deduction %}
+            <div class="h4 mb-0 {% if net >= 0 %}text-primary{% else %}text-danger{% endif %}">
+                {% if net >= 0 %}+{% endif %}¥{{ "%.2f"|format(net) }}
+            </div>
+        </div></div></div>
+    </div>
+    <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-bar-chart-line"></i> 收支对比（{{ '按月' if granularity == 'month' else '按日' }}）</div>
+        <div class="card-body"><canvas id="chartMain" height="120"></canvas></div>
+    </div>
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light"><tr>
+                        <th>周期</th><th class="text-end">充值</th><th class="text-end">扣减</th><th class="text-end">净变动</th>
+                    </tr></thead>
+                    <tbody>
+                    {% for row in p.rows|reverse %}
+                    <tr>
+                        <td>{{ row.period }}</td>
+                        <td class="text-end text-success">+{{ "%.2f"|format(row.recharge) }}</td>
+                        <td class="text-end text-danger">-{{ "%.2f"|format(row.deduction) }}</td>
+                        <td class="text-end {% if row.net >= 0 %}text-primary{% else %}text-danger{% endif %}">
+                            {% if row.net >= 0 %}+{% endif %}{{ "%.2f"|format(row.net) }}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-center text-muted py-4">暂无数据</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% elif slug == 'balance' %}
+    {% set p = payload %}
+    <div class="card mb-3 border-primary border-opacity-25">
+        <div class="card-body py-3">
+            <span class="text-muted small">当前剩余余额</span>
+            <span class="h4 ms-2 {% if p.low_balance %}text-danger{% else %}text-primary{% endif %}">
+                ¥{{ "%.2f"|format(p.current_balance) }}
+            </span>
+            {% if p.low_balance %}
+            <span class="badge bg-danger ms-2">低于 ¥{{ p.threshold }} 预警线</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-graph-up-arrow"></i> 余额走势</div>
+        <div class="card-body"><canvas id="chartMain" height="120"></canvas></div>
+    </div>
+
+    {% elif slug == 'deduction' %}
+    {% set p = payload %}
+    <div class="row g-3 mb-3">
+        <div class="col-md-8">
+            <div class="card h-100">
+                <div class="card-header"><i class="bi bi-bar-chart"></i> 品项 TOP</div>
+                <div class="card-body"><canvas id="chartBar" height="120"></canvas></div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header"><i class="bi bi-pie-chart"></i> 扣减类型</div>
+                <div class="card-body"><canvas id="chartPie" height="120"></canvas></div>
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light"><tr>
+                        <th>品项</th><th class="text-end">笔数</th><th class="text-end">数量</th><th class="text-end">金额</th>
+                    </tr></thead>
+                    <tbody>
+                    {% for row in p.top_items %}
+                    <tr>
+                        <td>{{ row.name }}</td>
+                        <td class="text-end">{{ row.count }}</td>
+                        <td class="text-end">{{ "%.2f"|format(row.qty) }}</td>
+                        <td class="text-end text-danger">¥{{ "%.2f"|format(row.amount) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-center text-muted py-4">暂无扣减数据</td></tr>
+                    {% endfor %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr><th>合计</th><th class="text-end">{{ p.count }}</th><th></th>
+                            <th class="text-end text-danger">¥{{ "%.2f"|format(p.total) }}</th></tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% elif slug == 'recharge' %}
+    {% set p = payload %}
+    <div class="row g-3 mb-3">
+        <div class="col-md-4"><div class="card"><div class="card-body text-center">
+            <div class="text-muted small">累计已确认充值</div>
+            <div class="h4 text-success mb-0">¥{{ "%.2f"|format(p.total_confirmed) }}</div>
+        </div></div></div>
+        <div class="col-md-4"><div class="card"><div class="card-body text-center">
+            <div class="text-muted small">期间充值（含待审）</div>
+            <div class="h4 text-primary mb-0">¥{{ "%.2f"|format(p.period_total) }}</div>
+        </div></div></div>
+        <div class="col-md-4"><div class="card"><div class="card-body text-center">
+            <div class="text-muted small">剩余余额</div>
+            <div class="h4 mb-0">¥{{ "%.2f"|format(p.balance) }}</div>
+        </div></div></div>
+    </div>
+    <div class="row g-3 mb-3">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header"><i class="bi bi-pie-chart"></i> 支付方式</div>
+                <div class="card-body"><canvas id="chartPie" height="120"></canvas></div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header"><i class="bi bi-check2-circle"></i> 审核状态</div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                        {% for row in p.by_status %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td class="text-end">¥{{ "%.2f"|format(row.amount) }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var slug = {{ slug|tojson }};
+    var payload = {{ payload|tojson }};
+    var colors = {
+        green: 'rgba(25, 135, 84, 0.75)',
+        red: 'rgba(220, 53, 69, 0.75)',
+        blue: 'rgba(13, 110, 253, 0.75)',
+        palette: ['#0d6efd','#198754','#dc3545','#fd7e14','#6f42c1','#20c997']
+    };
+
+    function barChart(id, labels, datasets) {
+        var el = document.getElementById(id);
+        if (!el || !labels.length) return;
+        new Chart(el, {
+            type: 'bar',
+            data: { labels: labels, datasets: datasets },
+            options: { responsive: true, scales: { y: { beginAtZero: true } } }
+        });
+    }
+
+    function lineChart(id, labels, values) {
+        var el = document.getElementById(id);
+        if (!el || !labels.length) return;
+        new Chart(el, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '剩余余额',
+                    data: values,
+                    borderColor: colors.blue,
+                    backgroundColor: 'rgba(13,110,253,0.1)',
+                    fill: true,
+                    tension: 0.25
+                }]
+            },
+            options: { responsive: true, scales: { y: { beginAtZero: false } } }
+        });
+    }
+
+    function pieChart(id, labels, values) {
+        var el = document.getElementById(id);
+        if (!el || !labels.length) return;
+        new Chart(el, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{ data: values, backgroundColor: colors.palette }]
+            },
+            options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        });
+    }
+
+    if (slug === 'overview' && payload.mini_trend) {
+        var mt = payload.mini_trend;
+        barChart('chartMain', mt.labels, [
+            { label: '充值', data: mt.recharge, backgroundColor: colors.green },
+            { label: '扣减', data: mt.deduction, backgroundColor: colors.red }
+        ]);
+    } else if (slug === 'trend') {
+        barChart('chartMain', payload.labels, [
+            { label: '充值', data: payload.recharge, backgroundColor: colors.green },
+            { label: '扣减', data: payload.deduction, backgroundColor: colors.red }
+        ]);
+    } else if (slug === 'balance') {
+        lineChart('chartMain', payload.labels, payload.values);
+    } else if (slug === 'deduction') {
+        var items = payload.top_items || [];
+        barChart('chartBar', items.map(function (r) { return r.name; }), [{
+            label: '金额', data: items.map(function (r) { return r.amount; }), backgroundColor: colors.red
+        }]);
+        pieChart('chartPie', payload.type_labels || [], payload.type_amounts || []);
+    } else if (slug === 'recharge') {
+        pieChart('chartPie', payload.method_labels || [], payload.method_amounts || []);
+    }
+})();
+</script>
+{% endblock %}

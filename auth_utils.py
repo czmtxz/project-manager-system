@@ -66,6 +66,8 @@ COLLAB_DATA_ENDPOINTS = frozenset({
     'admin_client_recharge_delete',
     'admin_client_deduction_update',
     'admin_client_deduction_delete',
+    'admin_client_reports',
+    'admin_client_reports_view',
     'login',
     'logout',
     'static',

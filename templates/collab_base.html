@@ -46,9 +46,9 @@
                     </li>
                     {% endif %}
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('reports.') %}active{% endif %}"
-                           href="{{ url_for('reports.view', slug='client-collab-funds') }}">
-                            <i class="bi bi-graph-up"></i> 资金报表
+                        <a class="nav-link {% if request.endpoint in ('admin_client_reports', 'admin_client_reports_view') %}active{% endif %}"
+                           href="{{ url_for('admin_client_reports') }}">
+                            <i class="bi bi-graph-up"></i> 协同报表
                         </a>
                     </li>
                     {% if is_collab_admin %}
