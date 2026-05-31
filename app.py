@@ -3437,6 +3437,7 @@ def admin_client_company_outbound(customer_id):
     item_name = request.form.get('item_name', '').strip() or '出库商品'
     quantity = request.form.get('quantity', '').strip()
     unit_price = request.form.get('unit_price', '').strip()
+    truck_count = request.form.get('truck_count', '').strip()
     amount = request.form.get('amount', '').strip()
     deduct_date = request.form.get('deduct_date', '').strip()
     remark = request.form.get('remark', '').strip()
@@ -3445,6 +3446,7 @@ def admin_client_company_outbound(customer_id):
             'item_name': item_name,
             'quantity': float(quantity or 0),
             'unit_price': float(unit_price or 0),
+            'truck_count': float(truck_count or 0),
             'amount': float(amount or 0),
             'deduct_date': deduct_date,
         }]
@@ -3591,6 +3593,7 @@ def admin_client_deduction_update(customer_id, did):
         amount = float(request.form.get('amount', 0) or 0)
         qty = float(request.form.get('quantity', 0) or 0)
         price = float(request.form.get('unit_price', 0) or 0)
+        trucks = float(request.form.get('truck_count', 0) or 0)
         if amount <= 0:
             raise ValueError('金额须大于 0')
     except ValueError as e:
@@ -3600,8 +3603,8 @@ def admin_client_deduction_update(customer_id, did):
     ddate = request.form.get('deduct_date', '').strip() or r['deduct_date']
     remark = request.form.get('remark', '').strip()
     db.execute(
-        "UPDATE client_deductions SET amount=?, quantity=?, unit_price=?, item_name=?, deduct_date=?, remark=? WHERE id=?",
-        (amount, qty, price, item_name, ddate, remark, did))
+        "UPDATE client_deductions SET amount=?, quantity=?, unit_price=?, truck_count=?, item_name=?, deduct_date=?, remark=? WHERE id=?",
+        (amount, qty, price, trucks, item_name, ddate, remark, did))
     if r['sales_item_id']:
         db.execute(
             "UPDATE sales_order_items SET item_name=?, quantity=?, unit_price=?, amount=? WHERE id=?",

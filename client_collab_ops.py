@@ -594,9 +594,9 @@ def parse_collab_excel_standard(df):
 
         if pay_amount > 0:
             pay_remark = remark
-            if extra_txt and not sales_amount and not tons:
-                pay_remark = f'{pay_remark} {extra_txt}'.strip()
-            if trucks > 0 and not extra_txt:
+            if balance_note and not sales_amount and not tons:
+                pay_remark = f'{pay_remark} 余款:{balance_note}'.strip()
+            if trucks > 0 and not sales_amount and not tons:
                 pay_remark = f'{pay_remark} {trucks:g}车'.strip()
             recharge_rows.append({
                 'amount': pay_amount,

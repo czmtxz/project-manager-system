@@ -53,7 +53,7 @@
                     <thead class="table-light">
                         <tr>
                             {% if preview.mode == 'outbound' %}
-                            <th>品名</th><th class="text-end">数量</th><th class="text-end">单价</th><th class="text-end">金额</th><th>日期</th>
+                            <th>品名</th><th class="text-end">车数</th><th class="text-end">数量</th><th class="text-end">单价</th><th class="text-end">金额</th><th>日期</th>
                             {% else %}
                             <th class="text-end">金额</th><th>方式</th><th>备注</th>
                             {% endif %}
@@ -64,6 +64,7 @@
                         <tr>
                             {% if preview.mode == 'outbound' %}
                             <td>{{ r.item_name }}</td>
+                            <td class="text-end">{{ "%g"|format(r.truck_count or 0) if r.truck_count else '-' }}</td>
                             <td class="text-end">{{ r.quantity or 0 }}</td>
                             <td class="text-end">{{ "%.2f"|format(r.unit_price or 0) }}</td>
                             <td class="text-end text-danger">{{ "%.2f"|format(r.amount or 0) }}</td>
@@ -138,8 +139,9 @@
                 <div class="card-body">
                     <form method="POST" action="{{ url_for('admin_client_company_outbound', customer_id=ws.customer_id) }}">
                         <div class="row g-2">
-                            <div class="col-md-6"><input class="form-control form-control-sm" name="item_name" placeholder="品名" required></div>
-                            <div class="col-md-3"><input class="form-control form-control-sm" name="quantity" type="number" step="0.01" min="0" placeholder="吨数"></div>
+                            <div class="col-md-5"><input class="form-control form-control-sm" name="item_name" placeholder="品名/规格" required></div>
+                            <div class="col-md-2"><input class="form-control form-control-sm" name="truck_count" type="number" step="1" min="0" placeholder="车数"></div>
+                            <div class="col-md-2"><input class="form-control form-control-sm" name="quantity" type="number" step="0.01" min="0" placeholder="吨数"></div>
                             <div class="col-md-3"><input class="form-control form-control-sm" name="unit_price" type="number" step="0.01" min="0" placeholder="单价"></div>
                             <div class="col-md-6"><input class="form-control form-control-sm" name="amount" type="number" step="0.01" min="0.01" placeholder="金额" required></div>
                             <div class="col-md-6"><input class="form-control form-control-sm" name="deduct_date" type="date"></div>
@@ -252,13 +254,14 @@
                     <div class="table-responsive" style="max-height: 360px;">
                         <table class="table table-sm table-hover mb-0">
                             <thead class="table-light sticky-top">
-                                <tr><th>日期</th><th>品名</th><th class="text-end">吨数</th><th class="text-end">单价</th><th class="text-end">金额</th><th class="text-nowrap">操作</th></tr>
+                                <tr><th>日期</th><th>品名</th><th class="text-end">车数</th><th class="text-end">吨数</th><th class="text-end">单价</th><th class="text-end">金额</th><th class="text-nowrap">操作</th></tr>
                             </thead>
                             <tbody>
                             {% for d in ws.deductions %}
                             <tr>
                                 <td class="small">{{ (d.deduct_date or d.created_at or '')[:10] }}</td>
                                 <td class="small">{{ d.item_name or '-' }}</td>
+                                <td class="text-end">{{ "%g"|format(d.truck_count) if d.truck_count else '-' }}</td>
                                 <td class="text-end">{{ "%g"|format(d.quantity or 0) }}</td>
                                 <td class="text-end">{{ "%g"|format(d.unit_price or 0) }}</td>
                                 <td class="text-end text-danger">{{ "%.2f"|format(d.amount or 0) }}</td>
@@ -266,6 +269,7 @@
                                     <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 edit-deduction"
                                             data-id="{{ d.id }}" data-amount="{{ d.amount or 0 }}"
                                             data-qty="{{ d.quantity or 0 }}" data-price="{{ d.unit_price or 0 }}"
+                                            data-trucks="{{ d.truck_count or 0 }}"
                                             data-item="{{ d.item_name or '' }}" data-date="{{ (d.deduct_date or '')[:10] }}"
                                             data-remark="{{ d.remark or '' }}">
                                         <i class="bi bi-pencil"></i>
@@ -277,7 +281,7 @@
                                 </td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="6" class="text-center text-muted py-4">暂无扣减记录</td></tr>
+                            <tr><td colspan="7" class="text-center text-muted py-4">暂无扣减记录</td></tr>
                             {% endfor %}
                             </tbody>
                         </table>
@@ -302,7 +306,9 @@
                         <div class="d-flex justify-content-between align-items-center small fw-semibold mb-2">
                             <span>合计</span>
                             <span id="deductionSummaryTotal">
-                                {{ ws.deduction_summary.total_count }} 笔 · {{ "%g"|format(ws.deduction_summary.total_qty) }} 吨 ·
+                                {{ ws.deduction_summary.total_count }} 笔 ·
+                                {% if ws.deduction_summary.total_trucks %}{{ "%g"|format(ws.deduction_summary.total_trucks) }} 车 · {% endif %}
+                                {{ "%g"|format(ws.deduction_summary.total_qty) }} 吨 ·
                                 <span class="text-danger">{{ "%.2f"|format(ws.deduction_summary.total_amount) }}</span> 元
                             </span>
                         </div>
@@ -312,6 +318,7 @@
                                     <tr>
                                         <th id="deductionGroupColHead">日期</th>
                                         <th class="text-end">笔数</th>
+                                        <th class="text-end">车数</th>
                                         <th class="text-end">吨数</th>
                                         <th class="text-end">金额</th>
                                     </tr>
@@ -365,9 +372,11 @@
                     <div class="mb-2"><label class="form-label small">品名/规格</label>
                         <input type="text" name="item_name" id="ed_item" class="form-control form-control-sm"></div>
                     <div class="row g-2">
-                        <div class="col-6 mb-2"><label class="form-label small">吨数</label>
+                        <div class="col-4 mb-2"><label class="form-label small">车数</label>
+                            <input type="number" step="1" min="0" name="truck_count" id="ed_trucks" class="form-control form-control-sm"></div>
+                        <div class="col-4 mb-2"><label class="form-label small">吨数</label>
                             <input type="number" step="0.01" name="quantity" id="ed_qty" class="form-control form-control-sm"></div>
-                        <div class="col-6 mb-2"><label class="form-label small">单价</label>
+                        <div class="col-4 mb-2"><label class="form-label small">单价</label>
                             <input type="number" step="0.01" name="unit_price" id="ed_price" class="form-control form-control-sm"></div>
                     </div>
                     <div class="mb-2"><label class="form-label small">金额 *</label>
@@ -559,6 +568,7 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('ed_amount').value = d.amount;
             document.getElementById('ed_qty').value = d.qty;
             document.getElementById('ed_price').value = d.price;
+            document.getElementById('ed_trucks').value = d.trucks || '';
             document.getElementById('ed_item').value = d.item;
             document.getElementById('ed_date').value = d.date;
             document.getElementById('ed_remark').value = d.remark;
@@ -589,6 +599,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (field === 'unit_price') {
                 return formatQty(raw);
             }
+            if (field === 'truck_count') {
+                return raw > 0 ? formatQty(raw) : '0';
+            }
             return raw;
         }
 
@@ -596,7 +609,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (field === 'date' || field === 'month') {
                 return raw === '未知' ? '' : String(raw);
             }
-            if (field === 'unit_price') {
+            if (field === 'unit_price' || field === 'truck_count') {
                 return Number(raw);
             }
             return String(raw);
@@ -618,6 +631,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 if (field === 'unit_price') {
                     return Number(a) - Number(b);
+                }
+                if (field === 'truck_count') {
+                    return Number(b) - Number(a);
                 }
                 return a.localeCompare(b, 'zh-CN');
             });
