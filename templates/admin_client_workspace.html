@@ -255,44 +255,41 @@
                         </table>
                     </div>
                     {% if ws.deduction_summary.total_count %}
-                    <div class="border-top bg-light p-2">
+                    <div class="border-top bg-light p-2" id="deductionSummaryPanel">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                            <span class="small fw-semibold">分类汇总</span>
+                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                <label class="small text-muted mb-0" for="deductionGroupField">汇总字段</label>
+                                <select id="deductionGroupField" class="form-select form-select-sm" style="width: auto; min-width: 6rem;">
+                                    {% for key, label in ws.deduction_group_fields.items() %}
+                                    <option value="{{ key }}"{% if key == 'date' %} selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <label class="small text-muted mb-0" for="deductionFilterValue">筛选</label>
+                                <select id="deductionFilterValue" class="form-select form-select-sm" style="width: auto; min-width: 7rem;">
+                                    <option value="">全部</option>
+                                </select>
+                            </div>
+                        </div>
                         <div class="d-flex justify-content-between align-items-center small fw-semibold mb-2">
                             <span>合计</span>
-                            <span>{{ ws.deduction_summary.total_count }} 笔 · {{ "%g"|format(ws.deduction_summary.total_qty) }} 吨 · <span class="text-danger">{{ "%.2f"|format(ws.deduction_summary.total_amount) }}</span> 元</span>
+                            <span id="deductionSummaryTotal">
+                                {{ ws.deduction_summary.total_count }} 笔 · {{ "%g"|format(ws.deduction_summary.total_qty) }} 吨 ·
+                                <span class="text-danger">{{ "%.2f"|format(ws.deduction_summary.total_amount) }}</span> 元
+                            </span>
                         </div>
-                        <div class="row g-2">
-                            <div class="col-md-6">
-                                <div class="small text-muted mb-1">按日期</div>
-                                <table class="table table-sm table-bordered mb-0 bg-white">
-                                    <thead><tr><th>日期</th><th class="text-end">笔数</th><th class="text-end">吨数</th><th class="text-end">金额</th></tr></thead>
-                                    <tbody>
-                                    {% for row in ws.deduction_summary.by_date %}
+                        <div class="table-responsive" style="max-height: 220px;">
+                            <table class="table table-sm table-bordered mb-0 bg-white">
+                                <thead class="table-light sticky-top">
                                     <tr>
-                                        <td>{{ row.date }}</td>
-                                        <td class="text-end">{{ row.count }}</td>
-                                        <td class="text-end">{{ "%g"|format(row.qty) }}</td>
-                                        <td class="text-end text-danger">{{ "%.2f"|format(row.amount) }}</td>
+                                        <th id="deductionGroupColHead">日期</th>
+                                        <th class="text-end">笔数</th>
+                                        <th class="text-end">吨数</th>
+                                        <th class="text-end">金额</th>
                                     </tr>
-                                    {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="small text-muted mb-1">按月份</div>
-                                <table class="table table-sm table-bordered mb-0 bg-white">
-                                    <thead><tr><th>月份</th><th class="text-end">笔数</th><th class="text-end">吨数</th><th class="text-end">金额</th></tr></thead>
-                                    <tbody>
-                                    {% for row in ws.deduction_summary.by_month %}
-                                    <tr>
-                                        <td>{{ row.month }}</td>
-                                        <td class="text-end">{{ row.count }}</td>
-                                        <td class="text-end">{{ "%g"|format(row.qty) }}</td>
-                                        <td class="text-end text-danger">{{ "%.2f"|format(row.amount) }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
+                                </thead>
+                                <tbody id="deductionSummaryBody"></tbody>
+                            </table>
                         </div>
                     </div>
                     {% endif %}
@@ -540,6 +537,133 @@ document.addEventListener('DOMContentLoaded', function () {
             new bootstrap.Modal(dModal).show();
         });
     });
+
+    var deductionPanel = document.getElementById('deductionSummaryPanel');
+    if (deductionPanel) {
+        var deductionRows = {{ ws.deduction_summary_rows | tojson }};
+        var groupLabels = {{ ws.deduction_group_fields | tojson }};
+        var fieldSelect = document.getElementById('deductionGroupField');
+        var filterSelect = document.getElementById('deductionFilterValue');
+        var colHead = document.getElementById('deductionGroupColHead');
+        var summaryBody = document.getElementById('deductionSummaryBody');
+        var summaryTotal = document.getElementById('deductionSummaryTotal');
+
+        function formatQty(n) {
+            var s = Number(n).toFixed(4).replace(/\.?0+$/, '');
+            return s || '0';
+        }
+
+        function formatMoney(n) {
+            return Number(n).toFixed(2);
+        }
+
+        function displayValue(field, raw) {
+            if (field === 'unit_price') {
+                return formatQty(raw);
+            }
+            return raw;
+        }
+
+        function sortKey(field, raw) {
+            if (field === 'date' || field === 'month') {
+                return raw === '未知' ? '' : String(raw);
+            }
+            if (field === 'unit_price') {
+                return Number(raw);
+            }
+            return String(raw);
+        }
+
+        function refreshFilterOptions() {
+            var field = fieldSelect.value;
+            var prev = filterSelect.value;
+            var values = {};
+            deductionRows.forEach(function (r) {
+                var v = displayValue(field, r[field]);
+                values[v] = true;
+            });
+            var sorted = Object.keys(values).sort(function (a, b) {
+                var ka = sortKey(field, a);
+                var kb = sortKey(field, b);
+                if (field === 'date' || field === 'month') {
+                    return kb > ka ? 1 : kb < ka ? -1 : 0;
+                }
+                if (field === 'unit_price') {
+                    return Number(a) - Number(b);
+                }
+                return a.localeCompare(b, 'zh-CN');
+            });
+            filterSelect.innerHTML = '<option value="">全部</option>';
+            sorted.forEach(function (v) {
+                var opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v;
+                filterSelect.appendChild(opt);
+            });
+            if (prev && values[prev]) {
+                filterSelect.value = prev;
+            }
+        }
+
+        function renderSummary() {
+            var field = fieldSelect.value;
+            var filterVal = filterSelect.value;
+            colHead.textContent = groupLabels[field] || field;
+            var filtered = deductionRows.filter(function (r) {
+                if (!filterVal) {
+                    return true;
+                }
+                return displayValue(field, r[field]) === filterVal;
+            });
+            var groups = {};
+            filtered.forEach(function (r) {
+                var key = displayValue(field, r[field]);
+                if (!groups[key]) {
+                    groups[key] = { count: 0, qty: 0, amount: 0 };
+                }
+                groups[key].count += 1;
+                groups[key].qty += r.quantity;
+                groups[key].amount += r.amount;
+            });
+            var rows = Object.keys(groups).map(function (key) {
+                return { key: key, count: groups[key].count, qty: groups[key].qty, amount: groups[key].amount };
+            });
+            rows.sort(function (a, b) {
+                if (field === 'date' || field === 'month') {
+                    return b.key > a.key ? 1 : b.key < a.key ? -1 : 0;
+                }
+                if (field === 'unit_price') {
+                    return Number(b.key) - Number(a.key);
+                }
+                return b.amount - a.amount;
+            });
+            var totalCount = 0;
+            var totalQty = 0;
+            var totalAmount = 0;
+            summaryBody.innerHTML = rows.map(function (row) {
+                totalCount += row.count;
+                totalQty += row.qty;
+                totalAmount += row.amount;
+                return '<tr><td>' + row.key + '</td>' +
+                    '<td class="text-end">' + row.count + '</td>' +
+                    '<td class="text-end">' + formatQty(row.qty) + '</td>' +
+                    '<td class="text-end text-danger">' + formatMoney(row.amount) + '</td></tr>';
+            }).join('');
+            if (!rows.length) {
+                summaryBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">无匹配数据</td></tr>';
+            }
+            summaryTotal.innerHTML = totalCount + ' 笔 · ' + formatQty(totalQty) + ' 吨 · ' +
+                '<span class="text-danger">' + formatMoney(totalAmount) + '</span> 元';
+        }
+
+        fieldSelect.addEventListener('change', function () {
+            refreshFilterOptions();
+            renderSummary();
+        });
+        filterSelect.addEventListener('change', renderSummary);
+        refreshFilterOptions();
+        renderSummary();
+    }
 })();
 </script>
 {% endblock %}

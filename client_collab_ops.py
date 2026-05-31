@@ -70,43 +70,43 @@ def _date_key(dt_str):
     return s[:10] if len(s) >= 10 else s
 
 
-def summarize_deduction_records(deductions):
-    """扣减记录汇总：按日期、月份"""
-    total_amount = 0.0
-    total_qty = 0.0
-    by_date = {}
-    by_month = {}
+DEDUCTION_GROUP_FIELDS = {
+    'date': '日期',
+    'month': '月份',
+    'item_name': '品名',
+    'unit_price': '单价',
+}
+
+
+def deduction_rows_for_summary(deductions):
+    """扣减明细（供前端按字段动态汇总）。"""
+    rows = []
     for row in deductions:
         d = dict(row)
-        amt = float(d.get('amount') or 0)
-        qty = float(d.get('quantity') or 0)
-        total_amount += amt
-        total_qty += qty
-        dt = d.get('deduct_date') or d.get('created_at')
-        dk = _date_key(dt)
-        db = by_date.setdefault(dk, {'count': 0, 'qty': 0.0, 'amount': 0.0})
-        db['count'] += 1
-        db['qty'] += qty
-        db['amount'] += amt
-        mk = _month_key(dt)
-        mb = by_month.setdefault(mk, {'count': 0, 'qty': 0.0, 'amount': 0.0})
-        mb['count'] += 1
-        mb['qty'] += qty
-        mb['amount'] += amt
+        dt = d.get('deduct_date') or d.get('created_at') or ''
+        rows.append({
+            'date': _date_key(dt),
+            'month': _month_key(dt),
+            'item_name': (d.get('item_name') or '').strip() or '未填写',
+            'unit_price': float(d.get('unit_price') or 0),
+            'quantity': float(d.get('quantity') or 0),
+            'amount': float(d.get('amount') or 0),
+        })
+    return rows
+
+
+def summarize_deduction_records(deductions):
+    """扣减记录合计。"""
+    total_amount = 0.0
+    total_qty = 0.0
+    for row in deductions:
+        d = dict(row)
+        total_amount += float(d.get('amount') or 0)
+        total_qty += float(d.get('quantity') or 0)
     return {
         'total_count': len(deductions),
         'total_qty': total_qty,
         'total_amount': total_amount,
-        'by_date': sorted(
-            [{'date': k, **v} for k, v in by_date.items()],
-            key=lambda x: x['date'],
-            reverse=True,
-        ),
-        'by_month': sorted(
-            [{'month': k, **v} for k, v in by_month.items()],
-            key=lambda x: x['month'],
-            reverse=True,
-        ),
     }
 
 
@@ -226,6 +226,8 @@ def get_company_workspace(db, customer_id=0, client_id=None):
         'deductions': deductions,
         'recharge_summary': summarize_recharge_records(recharges),
         'deduction_summary': summarize_deduction_records(deductions),
+        'deduction_summary_rows': deduction_rows_for_summary(deductions),
+        'deduction_group_fields': DEDUCTION_GROUP_FIELDS,
         'accounts': accounts,
         'payment_methods': PAYMENT_METHODS,
     }
