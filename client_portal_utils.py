@@ -244,6 +244,102 @@ def build_portal_transactions(db, client, tx_type='', start_date='', end_date=''
     return filtered, balance, total_recharge, total_deduct
 
 
+def _fetch_recharge_rows(db, ids, start_date='', end_date='', date_filter=True):
+    ph = ','.join('?' * len(ids))
+    rows = []
+    for r in db.execute(
+        f"""SELECT id, created_at, amount, payment_method, payment_no, remark
+            FROM client_recharges
+            WHERE client_id IN ({ph}) AND status='confirmed'
+            ORDER BY created_at, id""",
+        ids,
+    ).fetchall():
+        row = dict(r)
+        if not date_filter or _in_range(row.get('created_at'), start_date, end_date):
+            rows.append(row)
+    return rows
+
+
+def _fetch_deduction_rows(db, ids, start_date='', end_date='', date_filter=True):
+    ph = ','.join('?' * len(ids))
+    rows = []
+    for r in db.execute(
+        f"""SELECT id, amount, quantity, item_name, remark,
+                   COALESCE(deduct_date, created_at) AS created_at,
+                   COALESCE(deduct_type, 'outbound') AS deduct_type
+            FROM client_deductions
+            WHERE client_id IN ({ph})
+            ORDER BY COALESCE(deduct_date, created_at), id""",
+        ids,
+    ).fetchall():
+        row = dict(r)
+        label = deduct_type_label(row.get('deduct_type'))
+        base = row.get('item_name') or row.get('remark') or ''
+        row['remark'] = f'[{label}] {base}'.strip() if base else f'[{label}]'
+        if not date_filter or _in_range(row.get('created_at'), start_date, end_date):
+            rows.append(row)
+    return rows
+
+
+def _in_range(date_str, start_date, end_date):
+    d = (date_str or '')[:10]
+    if not d:
+        return not start_date and not end_date
+    if start_date and d < start_date:
+        return False
+    if end_date and d > end_date:
+        return False
+    return True
+
+
+def build_ledger_flow(db, client, start_date='', end_date=''):
+    """
+    三段式资金流水：
+    1. 充值总金额汇总（含可展开明细）
+    2. 在充值总额基础上逐笔扣减并显示余额
+    3. 结余（剩余金额）
+    """
+    ids = company_scope_client_ids(db, client)
+    if not ids:
+        return {
+            'total_recharge': 0.0,
+            'total_deduct': 0.0,
+            'balance': 0.0,
+            'recharges': [],
+            'deductions': [],
+            'recharge_count': 0,
+            'deduction_count': 0,
+        }
+
+    balance, total_recharge, total_deduct = compute_balance_totals(db, client)
+    recharges = _fetch_recharge_rows(db, ids, start_date, end_date)
+
+    all_deductions = _fetch_deduction_rows(db, ids, date_filter=False)
+    running = float(total_recharge)
+    for d in all_deductions:
+        amt = float(d.get('amount') or 0)
+        running -= amt
+        d['balance_after'] = running
+
+    if start_date or end_date:
+        deductions = [
+            d for d in all_deductions
+            if _in_range(d.get('created_at'), start_date, end_date)
+        ]
+    else:
+        deductions = all_deductions
+
+    return {
+        'total_recharge': total_recharge,
+        'total_deduct': total_deduct,
+        'balance': balance,
+        'recharges': recharges,
+        'deductions': deductions,
+        'recharge_count': len(recharges),
+        'deduction_count': len(deductions),
+    }
+
+
 def sync_deductions_for_customer(db, customer_id=None):
     """按 customer_id 同步出库扣减（管理端）。"""
     sql = """SELECT si.id as sales_item_id, si.sales_order_id, si.item_name,
