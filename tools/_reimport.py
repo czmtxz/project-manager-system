@@ -26,6 +26,7 @@ db.row_factory = sqlite3.Row
 before = db.execute("SELECT COUNT(*) FROM client_recharges WHERE client_id=?", (CLIENT_ID,)).fetchone()[0]
 db.execute("DELETE FROM client_recharges WHERE client_id=?", (CLIENT_ID,))
 db.execute("DELETE FROM client_deductions WHERE client_id=?", (CLIENT_ID,))
+db.execute("DELETE FROM client_messages WHERE client_id=? AND title='充值到账'", (CLIENT_ID,))
 db.execute("UPDATE client_accounts SET balance=0, total_recharge=0, total_deduct=0 WHERE id=?", (CLIENT_ID,))
 db.commit()
 print('cleared %d old recharges; balance reset to 0' % before)

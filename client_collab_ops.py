@@ -252,9 +252,9 @@ def record_client_outbound(db, customer_id, client_id, items, order_date=None,
     for idx, it in enumerate(parsed):
         ic = db.execute(
             """INSERT INTO sales_order_items
-               (sales_order_id, item_name, quantity, unit_price, amount, sort_order)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (order_id, it['item_name'], it['quantity'], it['unit_price'],
+               (order_id, sales_order_id, item_name, quantity, unit_price, amount, sort_order)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (order_id, order_id, it['item_name'], it['quantity'], it['unit_price'],
              it['amount'], idx),
         )
         item_id = ic.lastrowid
