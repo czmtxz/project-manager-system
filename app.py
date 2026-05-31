@@ -5962,6 +5962,7 @@ register_missing_routes(app, {
     'send_from_directory': send_from_directory,
     'os': os,
     'uuid': uuid,
+    'recalc_investment_ratios': recalc_investment_ratios,
 })
 
 

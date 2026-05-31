@@ -134,6 +134,7 @@ def register_missing_routes(app, ctx):
     send_from_directory = ctx['send_from_directory']
     os = ctx['os']
     uuid = ctx['uuid']
+    recalc_investment_ratios = ctx.get('recalc_investment_ratios')
     app_config = app.config
 
     # ---------- 参与人 ----------
@@ -849,6 +850,8 @@ def register_missing_routes(app, ctx):
                         request.form.get('payment_method', ''),
                         request.form.get('remark', ''), id))
             db.commit()
+            if recalc_investment_ratios:
+                recalc_investment_ratios(db, pid)
             flash('投资记录已更新', 'success')
             return redirect(url_for('project_detail', pid=pid))
         project = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
@@ -861,6 +864,8 @@ def register_missing_routes(app, ctx):
         db = get_db()
         db.execute("DELETE FROM investments WHERE id=? AND project_id=?", (id, pid))
         db.commit()
+        if recalc_investment_ratios:
+            recalc_investment_ratios(db, pid)
         flash('投资记录已删除', 'success')
         return redirect(url_for('project_detail', pid=pid))
 
