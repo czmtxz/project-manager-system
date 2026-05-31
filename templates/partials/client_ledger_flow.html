@@ -1,0 +1,136 @@
+{# 三段式资金流水：充值汇总 → 逐笔扣减 → 结余 #}
+{% set ledger = ledger_flow %}
+<div class="client-ledger-flow">
+    <!-- 一、充值汇总 -->
+    <div class="card mb-3">
+        <div class="card-header py-2 bg-success bg-opacity-10">
+            <button class="btn btn-link text-decoration-none text-dark w-100 text-start p-0 d-flex flex-wrap align-items-center justify-content-between gap-2"
+                    type="button" data-bs-toggle="collapse" data-bs-target="#ledgerRechargeDetail"
+                    aria-expanded="false">
+                <span>
+                    <span class="badge bg-success me-2">一</span>
+                    <strong>充值汇总</strong>
+                    <span class="text-muted small ms-1">（{{ ledger.recharge_count }} 笔）</span>
+                </span>
+                <span class="text-success fw-bold fs-5">+¥{{ "%.2f"|format(ledger.total_recharge) }}</span>
+            </button>
+        </div>
+        <div class="collapse" id="ledgerRechargeDetail">
+            <div class="card-body p-0 border-top">
+                {% if ledger.recharges %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>日期</th>
+                                <th>付款方式</th>
+                                <th>流水号</th>
+                                <th>备注</th>
+                                <th class="text-end">金额</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for r in ledger.recharges %}
+                            <tr>
+                                <td class="text-nowrap small">{{ (r.created_at or '')[:10] }}</td>
+                                <td class="small">{{ r.payment_method or '-' }}</td>
+                                <td class="small">{{ r.payment_no or '-' }}</td>
+                                <td class="small">{{ r.remark or '-' }}</td>
+                                <td class="text-end text-success fw-semibold">+{{ "%.2f"|format(r.amount or 0) }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th colspan="4" class="text-end">充值合计</th>
+                                <th class="text-end text-success">+{{ "%.2f"|format(ledger.total_recharge) }}</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4 small">暂无充值记录</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 二、扣减明细（逐笔扣减余额） -->
+    <div class="card mb-3">
+        <div class="card-header py-2 bg-danger bg-opacity-10">
+            <span class="badge bg-danger me-2">二</span>
+            <strong>扣减明细</strong>
+            <span class="text-muted small">在充值总额基础上逐笔扣减（{{ ledger.deduction_count }} 笔）</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>序号</th>
+                            <th>日期</th>
+                            <th>说明</th>
+                            <th class="text-end">扣减金额</th>
+                            <th class="text-end">扣后余额</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="table-success bg-opacity-10">
+                            <td>—</td>
+                            <td colspan="2"><strong>充值总额</strong></td>
+                            <td class="text-end text-success fw-semibold">+{{ "%.2f"|format(ledger.total_recharge) }}</td>
+                            <td class="text-end fw-semibold text-primary">{{ "%.2f"|format(ledger.total_recharge) }}</td>
+                        </tr>
+                        {% for d in ledger.deductions %}
+                        <tr>
+                            <td class="text-muted small">{{ loop.index }}</td>
+                            <td class="text-nowrap small">{{ (d.created_at or '')[:10] }}</td>
+                            <td class="small">{{ d.remark or '-' }}</td>
+                            <td class="text-end text-danger fw-semibold">-{{ "%.2f"|format(d.amount or 0) }}</td>
+                            <td class="text-end fw-semibold {% if is_low_balance(d.balance_after) %}text-danger{% else %}text-muted{% endif %}">
+                                {{ "%.2f"|format(d.balance_after or 0) }}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-4 small">暂无扣减记录</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if ledger.deductions %}
+                    <tfoot class="table-light">
+                        <tr>
+                            <th colspan="3" class="text-end">扣减合计</th>
+                            <th class="text-end text-danger">-{{ "%.2f"|format(ledger.total_deduct) }}</th>
+                            <th></th>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 三、结余 -->
+    <div class="card border-primary border-2 mb-0">
+        <div class="card-body py-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div>
+                <span class="badge bg-primary me-2">三</span>
+                <strong class="fs-5">结余（剩余金额）</strong>
+                <div class="text-muted small mt-1">
+                    充值 ¥{{ "%.2f"|format(ledger.total_recharge) }}
+                    − 扣减 ¥{{ "%.2f"|format(ledger.total_deduct) }}
+                    = 结余
+                </div>
+            </div>
+            <div class="text-end">
+                <div class="fs-3 fw-bold {% if is_low_balance(ledger.balance) %}text-danger{% else %}text-primary{% endif %}">
+                    ¥{{ "%.2f"|format(ledger.balance) }}
+                </div>
+                {% if is_low_balance(ledger.balance) %}
+                <span class="badge bg-danger">低于 ¥{{ LOW_BALANCE_THRESHOLD }} 预警线</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>

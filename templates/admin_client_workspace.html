@@ -272,30 +272,23 @@
                 <div class="col-lg-6">
                     <div class="card h-100">
                         <div class="card-header py-2 d-flex justify-content-between">
-                            <span><i class="bi bi-clock-history"></i> 最近流水</span>
-                            <button type="button" class="btn btn-link btn-sm p-0" data-ws-tab="flow">全部</button>
+                            <span><i class="bi bi-clock-history"></i> 最近扣减</span>
+                            <button type="button" class="btn btn-link btn-sm p-0" data-ws-tab="flow">全部流水</button>
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive">
                                 <table class="table table-sm table-hover mb-0">
-                                    <thead class="table-light"><tr><th>时间</th><th>类型</th><th class="text-end">金额</th></tr></thead>
+                                    <thead class="table-light"><tr><th>日期</th><th>说明</th><th class="text-end">扣减</th><th class="text-end">余额</th></tr></thead>
                                     <tbody>
-                                    {% for tx in ws.transactions[:8] %}
+                                    {% for d in ws.ledger_flow.deductions[-8:]|reverse %}
                                     <tr>
-                                        <td class="small text-nowrap">{{ (tx.created_at or '')[:16] }}</td>
-                                        <td class="small">
-                                            {% if tx.type == 'recharge' %}
-                                            <span class="badge bg-success bg-opacity-75">充值</span>
-                                            {% else %}
-                                            <span class="badge bg-danger bg-opacity-75">扣减</span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="text-end small {% if tx.type == 'recharge' %}text-success{% else %}text-danger{% endif %}">
-                                            {% if tx.type == 'recharge' %}+{% else %}-{% endif %}{{ "%.2f"|format(tx.amount or 0) }}
-                                        </td>
+                                        <td class="small text-nowrap">{{ (d.created_at or '')[:10] }}</td>
+                                        <td class="small text-truncate" style="max-width:120px">{{ d.remark or '-' }}</td>
+                                        <td class="text-end small text-danger">-{{ "%.2f"|format(d.amount or 0) }}</td>
+                                        <td class="text-end small text-muted">{{ "%.2f"|format(d.balance_after or 0) }}</td>
                                     </tr>
                                     {% else %}
-                                    <tr><td colspan="3" class="text-center text-muted py-3">暂无流水</td></tr>
+                                    <tr><td colspan="4" class="text-center text-muted py-3">暂无扣减</td></tr>
                                     {% endfor %}
                                     </tbody>
                                 </table>
@@ -601,64 +594,8 @@
 
         <!-- ========== 流水 ========== -->
         <div class="tab-pane fade" id="tab-flow" role="tabpanel">
-            <div class="card mb-3 border-primary border-opacity-25">
-                <div class="card-body py-3">
-                    <div class="text-muted small mb-2"><i class="bi bi-calculator"></i> 资金汇总</div>
-                    <div class="d-flex flex-wrap align-items-center gap-2 fw-semibold">
-                        <span class="text-success">累计充值 ¥{{ "%.2f"|format(ws.total_recharge) }}</span>
-                        <span class="text-muted">−</span>
-                        <span class="text-danger">累计扣减 ¥{{ "%.2f"|format(ws.total_deduct) }}</span>
-                        <span class="text-muted">=</span>
-                        <span class="{% if is_low_balance(ws.balance) %}text-danger{% else %}text-primary{% endif %}">
-                            剩余余额 ¥{{ "%.2f"|format(ws.balance) }}
-                        </span>
-                    </div>
-                    {% if is_low_balance(ws.balance) %}
-                    <div class="alert alert-danger py-2 px-3 mt-3 mb-0 small">
-                        <i class="bi bi-exclamation-triangle-fill"></i>
-                        剩余余额不足 {{ LOW_BALANCE_THRESHOLD }} 元，请提前预警并联系客户充值。
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-            <div class="card">
-                <div class="card-header">
-                    <i class="bi bi-journal-text"></i> 资金流水（充值 + 扣减，按时间倒序）
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive workspace-table-wrap">
-                        <table class="table table-sm table-hover mb-0">
-                            <thead class="table-light sticky-top">
-                                <tr>
-                                    <th>时间</th><th>类型</th><th>说明</th>
-                                    <th class="text-end">金额</th><th class="text-end">剩余余额</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                            {% for tx in ws.transactions %}
-                            <tr>
-                                <td class="small text-nowrap">{{ (tx.created_at or '')[:16] }}</td>
-                                <td>
-                                    {% if tx.type == 'recharge' %}
-                                    <span class="badge bg-success">充值</span>
-                                    {% else %}
-                                    <span class="badge bg-danger">扣减</span>
-                                    {% endif %}
-                                </td>
-                                <td class="small">{{ tx.remark or '-' }}</td>
-                                <td class="text-end {% if tx.type == 'recharge' %}text-success{% else %}text-danger{% endif %}">
-                                    {% if tx.type == 'recharge' %}+{% else %}-{% endif %}{{ "%.2f"|format(tx.amount or 0) }}
-                                </td>
-                                <td class="text-end small text-muted">{{ "%.2f"|format(tx.balance_after or 0) }}</td>
-                            </tr>
-                            {% else %}
-                            <tr><td colspan="5" class="text-center text-muted py-5">暂无流水</td></tr>
-                            {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+            {% set ledger_flow = ws.ledger_flow %}
+            {% include 'partials/client_ledger_flow.html' %}
         </div>
     </div>
 </div>

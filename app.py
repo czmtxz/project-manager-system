@@ -50,6 +50,7 @@ from client_portal_utils import (
     company_scope_client_ids,
     aggregate_company_balance,
     build_portal_transactions,
+    build_ledger_flow,
     LOW_BALANCE_THRESHOLD,
     is_low_balance,
     sync_deductions_for_customer,
@@ -3261,17 +3262,17 @@ def portal_delivery_detail(id):
 def portal_transactions():
     db = get_db()
     client = get_client_by_id(db, session['client_id'])
-    tx_type = request.args.get('type', '')
-    start_date = request.args.get('start_date', '')
-    end_date = request.args.get('end_date', '')
-    transactions, current_balance, total_recharge, total_deduction = build_portal_transactions(
-        db, client, tx_type, start_date, end_date)
+    start_date = request.args.get('start_date', '').strip()
+    end_date = request.args.get('end_date', '').strip()
+    ledger_flow = build_ledger_flow(db, client, start_date, end_date)
     return render_template(
         'portal_transactions.html',
-        transactions=transactions,
-        current_balance=current_balance,
-        total_recharge=total_recharge,
-        total_deduction=total_deduction,
+        ledger_flow=ledger_flow,
+        current_balance=ledger_flow['balance'],
+        total_recharge=ledger_flow['total_recharge'],
+        total_deduction=ledger_flow['total_deduct'],
+        start_date=start_date,
+        end_date=end_date,
     )
 
 

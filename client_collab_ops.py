@@ -8,6 +8,7 @@ from datetime import datetime
 from client_portal_utils import (
     resolve_or_create_customer,
     build_portal_transactions,
+    build_ledger_flow,
     company_scope_client_ids,
     DEDUCT_TYPE_OUTBOUND,
     DEDUCT_TYPE_OTHER,
@@ -238,6 +239,7 @@ def get_company_workspace(db, customer_id=0, client_id=None):
         total_deduct = float(client.get('total_deduct') or 0)
 
     transactions, _, _, _ = build_portal_transactions(db, client)
+    ledger_flow = build_ledger_flow(db, client)
     scope_ids = company_scope_client_ids(db, client)
     ph = ','.join('?' * len(scope_ids))
     recharges = db.execute(
@@ -283,6 +285,7 @@ def get_company_workspace(db, customer_id=0, client_id=None):
         'deduct_by_type': summarize_deductions_by_type(deductions),
         'deduct_type_labels': DEDUCT_TYPE_LABELS,
         'transactions': transactions[:80],
+        'ledger_flow': ledger_flow,
         'recharges': recharges,
         'deductions': deductions,
         'recharge_summary': summarize_recharge_records(recharges),
