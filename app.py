@@ -8,6 +8,7 @@ import os
 import json
 import sqlite3
 import hashlib
+import random
 import shutil
 import threading
 import schedule
@@ -1216,6 +1217,25 @@ def import_from_excel(records, project_name=None, user_id=None):
 
 # ==================== 路由：登录/登出 ====================
 
+def pick_login_bg():
+    """从 static/img 下随机挑选一张登录背景（文件名形如 login-bg*.png/jpg）。"""
+    try:
+        img_dir = os.path.join(app.static_folder, 'img')
+        candidates = [
+            f for f in os.listdir(img_dir)
+            if f.lower().startswith('login-bg') and f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))
+        ]
+        if candidates:
+            return 'img/' + random.choice(candidates)
+    except OSError:
+        pass
+    return 'img/login-bg.png'
+
+
+def render_login():
+    return render_template('login.html', login_bg=pick_login_bg())
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -1224,7 +1244,7 @@ def login():
 
         if not username or not password:
             flash('请输入用户名和密码', 'warning')
-            return render_template('login.html')
+            return render_login()
 
         hashed = hashlib.md5(password.encode()).hexdigest()
         db = get_db()
@@ -1237,7 +1257,7 @@ def login():
             status = user['status'] if 'status' in user.keys() and user['status'] else 'active'
             if status in ('pending', 'disabled'):
                 flash('账号未启用或待审批，请联系管理员', 'danger')
-                return render_template('login.html')
+                return render_login()
             session['user_id'] = user['id']
             session['username'] = user['username']
             session['role'] = user['role']
