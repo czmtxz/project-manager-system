@@ -154,11 +154,6 @@
                             <li><a class="dropdown-item" href="{{ url_for('admin_client_dashboard') }}">
                                 <i class="bi bi-speedometer2"></i> 协同总览
                             </a></li>
-                            {% if can_collab_authorize %}
-                            <li><a class="dropdown-item" href="{{ url_for('admin_client_accounts') }}">
-                                <i class="bi bi-person-badge"></i> 注册账号管理
-                            </a></li>
-                            {% endif %}
                             <li><a class="dropdown-item" href="{{ url_for('admin_client_recharges') }}">
                                 <i class="bi bi-cash-stack"></i> {% if can_collab_authorize %}充值审核{% else %}充值记录{% endif %}
                             </a></li>
@@ -166,9 +161,12 @@
                                 <i class="bi bi-graph-up"></i> 协同报表
                             </a></li>
                             {% if can_collab_authorize %}
-                            <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{{ url_for('admin_client_deductions_sync') }}">
                                 <i class="bi bi-arrow-repeat"></i> 同步扣减
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('admin_collab_user_mgmt') }}">
+                                <i class="bi bi-people"></i> 账号与专员
                             </a></li>
                             {% endif %}
                         </ul>

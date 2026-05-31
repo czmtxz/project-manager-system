@@ -42,6 +42,7 @@ from auth_utils import (
     collab_authorize_required,
     register_auth_hooks,
     login_redirect_for_role,
+    can_collab_authorize,
 )
 from client_portal_utils import (
     ensure_schema_extensions,
@@ -2542,11 +2543,57 @@ def _collab_customers(db):
     ).fetchall()
 
 
-@app.route('/admin/collab/staff')
-@login_required
-@collab_admin_required
-def admin_collab_staff():
-    db = get_db()
+def _redirect_collab_user_mgmt(tab='accounts'):
+    if tab == 'staff':
+        return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
+    params = {'tab': 'accounts'}
+    for key in ('username', 'company_name', 'status'):
+        val = request.args.get(key, '').strip()
+        if val:
+            params[key] = val
+    return redirect(url_for('admin_collab_user_mgmt', **params))
+
+
+def _collab_accounts_context(db, uid, role):
+    username = request.args.get('username', '').strip()
+    company_name = request.args.get('company_name', '').strip()
+    status = request.args.get('status', '').strip()
+    sql = """SELECT ca.*, c.name as customer_master_name, u.username as approver_name
+             FROM client_accounts ca
+             LEFT JOIN customers c ON ca.customer_id = c.id
+             LEFT JOIN users u ON ca.approved_by = u.id WHERE 1=1"""
+    params = []
+    if username:
+        sql += " AND ca.username LIKE ?"
+        params.append(f'%{username}%')
+    if company_name:
+        sql += " AND ca.company_name LIKE ?"
+        params.append(f'%{company_name}%')
+    if status:
+        if status == 'approved':
+            sql += " AND ca.status IN ('approved', 'active')"
+        else:
+            sql += " AND ca.status=?"
+            params.append(status)
+    scope_sql, scope_params = apply_client_account_scope_sql(db, uid, role, 'ca')
+    sql += scope_sql
+    params.extend(scope_params)
+    sql += " ORDER BY ca.created_at DESC"
+    accounts = db.execute(sql, params).fetchall()
+    return {
+        'accounts': accounts,
+        'customers': list_customers_for_collab(db, uid, role),
+        'total_accounts': len(accounts),
+        'pending_count': sum(1 for a in accounts if a['status'] == CLIENT_STATUS_PENDING),
+        'active_count': sum(
+            1 for a in accounts
+            if normalize_client_status(a['status']) == CLIENT_STATUS_APPROVED
+        ),
+        'total_balance': sum(float(a['balance'] or 0) for a in accounts),
+    }
+
+
+def _collab_staff_context(db):
     ensure_collab_scope_schema(db)
     staff = db.execute(
         """SELECT id, username, real_name, phone, email,
@@ -2557,14 +2604,42 @@ def admin_collab_staff():
     assignments = {}
     for s in staff:
         rows = get_user_assignments(db, s['id'])
-        assignments[s['id']] = [{'customer_id': r['customer_id'], 'customer_name': r['customer_name']} for r in rows]
-    customers = _collab_customers(db)
-    return render_template(
-        'admin_collab_staff.html',
-        staff=staff,
-        assignments=assignments,
-        customers=customers,
-    )
+        assignments[s['id']] = [
+            {'customer_id': r['customer_id'], 'customer_name': r['customer_name']}
+            for r in rows
+        ]
+    return {
+        'staff': staff,
+        'assignments': assignments,
+        'staff_customers': _collab_customers(db),
+    }
+
+
+@app.route('/admin/collab-users')
+@login_required
+@module_required(MODULE_CLIENT_PORTAL)
+def admin_collab_user_mgmt():
+    role = session.get('role')
+    if not can_collab_authorize(role):
+        flash('无权访问账号与专员管理', 'danger')
+        return redirect(login_redirect_for_role(role))
+    tab = request.args.get('tab', 'accounts')
+    if tab == 'staff' and role not in (ROLE_ADMIN, ROLE_CLIENT_COLLAB_ADMIN):
+        tab = 'accounts'
+    db = get_db()
+    uid = session.get('user_id')
+    ctx = {'tab': tab}
+    ctx.update(_collab_accounts_context(db, uid, role))
+    if role in (ROLE_ADMIN, ROLE_CLIENT_COLLAB_ADMIN):
+        ctx.update(_collab_staff_context(db))
+    return render_template('admin_collab_user_mgmt.html', **ctx)
+
+
+@app.route('/admin/collab/staff')
+@login_required
+@collab_admin_required
+def admin_collab_staff():
+    return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
 
 
 @app.route('/admin/collab/staff/create', methods=['POST'])
@@ -2577,10 +2652,10 @@ def admin_collab_staff_create():
     phone = request.form.get('phone', '').strip()
     if not username or not password:
         flash('用户名和密码不能为空', 'warning')
-        return redirect(url_for('admin_collab_staff'))
+        return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
     if len(password) < 4:
         flash('密码至少 4 位', 'warning')
-        return redirect(url_for('admin_collab_staff'))
+        return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
     hashed = hashlib.md5(password.encode()).hexdigest()
     db = get_db()
     try:
@@ -2595,7 +2670,7 @@ def admin_collab_staff_create():
         flash(f'协同专员「{username}」已创建，请为其分配负责客户', 'success')
     except sqlite3.IntegrityError:
         flash('用户名已存在', 'danger')
-    return redirect(url_for('admin_collab_staff'))
+    return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
 
 
 def _get_collab_staff_or_redirect(db, uid):
@@ -2616,7 +2691,7 @@ def admin_collab_staff_assign(uid):
     db = get_db()
     user = _get_collab_staff_or_redirect(db, uid)
     if not user:
-        return redirect(url_for('admin_collab_staff'))
+        return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
     # 仅允许分配客户协同涉及的客户
     valid_ids = {str(r['id']) for r in _collab_customers(db)}
     ids = [cid for cid in request.form.getlist('customer_ids') if cid in valid_ids]
@@ -2625,7 +2700,7 @@ def admin_collab_staff_assign(uid):
     add_log(session['user_id'], session['username'], '分配协同客户',
             f'专员{user["username"]}负责{len(ids)}家客户', request.remote_addr)
     flash(f'已更新「{user["username"]}」的负责客户（{len(ids)} 家）', 'success')
-    return redirect(url_for('admin_collab_staff'))
+    return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
 
 
 @app.route('/admin/collab/staff/<int:uid>/reset', methods=['POST'])
@@ -2635,18 +2710,18 @@ def admin_collab_staff_reset(uid):
     db = get_db()
     user = _get_collab_staff_or_redirect(db, uid)
     if not user:
-        return redirect(url_for('admin_collab_staff'))
+        return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
     password = request.form.get('password', '').strip()
     if len(password) < 4:
         flash('密码至少 4 位', 'warning')
-        return redirect(url_for('admin_collab_staff'))
+        return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
     hashed = hashlib.md5(password.encode()).hexdigest()
     db.execute("UPDATE users SET password=? WHERE id=?", (hashed, uid))
     db.commit()
     add_log(session['user_id'], session['username'], '重置专员密码',
             f'专员: {user["username"]}', request.remote_addr)
     flash(f'{user["username"]} 的密码已重置', 'success')
-    return redirect(url_for('admin_collab_staff'))
+    return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
 
 
 @app.route('/admin/collab/staff/<int:uid>/toggle', methods=['POST'])
@@ -2656,14 +2731,14 @@ def admin_collab_staff_toggle(uid):
     db = get_db()
     user = _get_collab_staff_or_redirect(db, uid)
     if not user:
-        return redirect(url_for('admin_collab_staff'))
+        return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
     new_status = 'disabled' if user['status'] == 'active' else 'active'
     db.execute("UPDATE users SET status=? WHERE id=?", (new_status, uid))
     db.commit()
     add_log(session['user_id'], session['username'], '启停协同专员',
             f'专员{user["username"]} -> {new_status}', request.remote_addr)
     flash(f'{user["username"]} 已{"禁用" if new_status == "disabled" else "启用"}', 'success')
-    return redirect(url_for('admin_collab_staff'))
+    return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
 
 
 @app.route('/admin/collab/staff/<int:uid>/delete', methods=['POST'])
@@ -2673,14 +2748,14 @@ def admin_collab_staff_delete(uid):
     db = get_db()
     user = _get_collab_staff_or_redirect(db, uid)
     if not user:
-        return redirect(url_for('admin_collab_staff'))
+        return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
     db.execute("DELETE FROM client_collab_assignments WHERE user_id=?", (uid,))
     db.execute("DELETE FROM users WHERE id=?", (uid,))
     db.commit()
     add_log(session['user_id'], session['username'], '删除协同专员',
             f'专员: {user["username"]}', request.remote_addr)
     flash(f'协同专员「{user["username"]}」已删除', 'success')
-    return redirect(url_for('admin_collab_staff'))
+    return redirect(url_for('admin_collab_user_mgmt', tab='staff'))
 
 
 @app.route('/account/add', methods=['POST'])
@@ -4080,50 +4155,7 @@ def admin_client_company_ocr_apply(customer_id):
 @module_required(MODULE_CLIENT_PORTAL)
 @collab_authorize_required
 def admin_client_accounts():
-    db = get_db()
-    uid, role = session.get('user_id'), session.get('role')
-    username = request.args.get('username', '').strip()
-    company_name = request.args.get('company_name', '').strip()
-    status = request.args.get('status', '').strip()
-    sql = """SELECT ca.*, c.name as customer_master_name, u.username as approver_name
-             FROM client_accounts ca
-             LEFT JOIN customers c ON ca.customer_id = c.id
-             LEFT JOIN users u ON ca.approved_by = u.id WHERE 1=1"""
-    params = []
-    if username:
-        sql += " AND ca.username LIKE ?"
-        params.append(f'%{username}%')
-    if company_name:
-        sql += " AND ca.company_name LIKE ?"
-        params.append(f'%{company_name}%')
-    if status:
-        if status == 'approved':
-            sql += " AND ca.status IN ('approved', 'active')"
-        else:
-            sql += " AND ca.status=?"
-            params.append(status)
-    scope_sql, scope_params = apply_client_account_scope_sql(db, uid, role, 'ca')
-    sql += scope_sql
-    params.extend(scope_params)
-    sql += " ORDER BY ca.created_at DESC"
-    accounts = db.execute(sql, params).fetchall()
-    total_accounts = len(accounts)
-    pending_count = sum(1 for a in accounts if a['status'] == CLIENT_STATUS_PENDING)
-    active_count = sum(
-        1 for a in accounts
-        if normalize_client_status(a['status']) == CLIENT_STATUS_APPROVED
-    )
-    total_balance = sum(float(a['balance'] or 0) for a in accounts)
-    customers = list_customers_for_collab(db, uid, role)
-    return render_template(
-        'admin_client_accounts.html',
-        accounts=accounts,
-        customers=customers,
-        total_accounts=total_accounts,
-        pending_count=pending_count,
-        active_count=active_count,
-        total_balance=total_balance,
-    )
+    return _redirect_collab_user_mgmt('accounts')
 
 
 @app.route('/admin/client-accounts/create', methods=['POST'])
@@ -4139,18 +4171,18 @@ def admin_client_accounts_create():
     customer_id = request.form.get('customer_id', type=int)
     if not all([username, password, company_name]):
         flash('用户名、密码、公司名称为必填', 'warning')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     db = get_db()
     if db.execute("SELECT id FROM client_accounts WHERE username=?", (username,)).fetchone():
         flash('用户名已存在', 'danger')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     if customer_id:
         cust = db.execute("SELECT id FROM customers WHERE id=?", (customer_id,)).fetchone()
         if not cust:
             customer_id = None
         elif not can_access_customer(db, session.get('user_id'), session.get('role'), customer_id):
             flash('无权绑定该客户主数据', 'danger')
-            return redirect(url_for('admin_client_accounts'))
+            return _redirect_collab_user_mgmt('accounts')
     if not customer_id:
         customer_id = resolve_or_create_customer(db, company_name, contact_name, phone)
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -4167,7 +4199,7 @@ def admin_client_accounts_create():
     add_log(session.get('user_id'), session.get('username', ''), '代建客户账号',
             f'{username} / {company_name}', request.remote_addr)
     flash('客户账号已创建并激活', 'success')
-    return redirect(url_for('admin_client_accounts'))
+    return _redirect_collab_user_mgmt('accounts')
 
 
 @app.route('/admin/client-accounts/<int:id>/bind', methods=['POST'])
@@ -4184,17 +4216,17 @@ def admin_client_account_bind(id):
     account = db.execute("SELECT * FROM client_accounts WHERE id=?", (id,)).fetchone()
     if not account:
         flash('账户不存在', 'danger')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     if not customer_id:
         flash('请选择客户主数据', 'warning')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     if not can_access_customer(db, session.get('user_id'), session.get('role'), customer_id):
         flash('无权绑定该客户主数据', 'danger')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     cust = db.execute("SELECT name FROM customers WHERE id=?", (customer_id,)).fetchone()
     if not cust:
         flash('客户主数据不存在', 'danger')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     db.execute(
         """UPDATE client_accounts SET customer_id=?, company_name=?, updated_at=? WHERE id=?""",
@@ -4202,7 +4234,7 @@ def admin_client_account_bind(id):
     )
     db.commit()
     flash('已绑定客户主数据', 'success')
-    return redirect(url_for('admin_client_accounts'))
+    return _redirect_collab_user_mgmt('accounts')
 
 
 @app.route('/admin/client-accounts/<int:id>/update', methods=['POST'])
@@ -4218,13 +4250,13 @@ def admin_client_account_update(id):
     account = db.execute("SELECT * FROM client_accounts WHERE id=?", (id,)).fetchone()
     if not account:
         flash('账户不存在', 'danger')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     contact_name = request.form.get('contact_name', '').strip()
     phone = request.form.get('phone', '').strip()
     company_name = request.form.get('company_name', '').strip()
     if not company_name:
         flash('公司名称不能为空', 'warning')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     db.execute(
         """UPDATE client_accounts
@@ -4236,7 +4268,7 @@ def admin_client_account_update(id):
     add_log(session.get('user_id'), session.get('username', ''), '维护客户账号',
             f"更新 {account['username']} 资料", request.remote_addr)
     flash('账号信息已更新', 'success')
-    return redirect(url_for('admin_client_accounts'))
+    return _redirect_collab_user_mgmt('accounts')
 
 
 @app.route('/admin/client-accounts/<int:id>/reset-password', methods=['POST'])
@@ -4247,7 +4279,7 @@ def admin_client_account_reset_password(id):
     password = request.form.get('password', '').strip()
     if len(password) < 6:
         flash('密码至少 6 位', 'warning')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     db = get_db()
     denied = assert_client_account_access(
         db, session.get('user_id'), session.get('role'), id)
@@ -4257,7 +4289,7 @@ def admin_client_account_reset_password(id):
         "SELECT username FROM client_accounts WHERE id=?", (id,)).fetchone()
     if not account:
         flash('账户不存在', 'danger')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     db.execute(
         "UPDATE client_accounts SET password=?, updated_at=? WHERE id=?",
         (generate_password_hash(password),
@@ -4267,7 +4299,7 @@ def admin_client_account_reset_password(id):
     add_log(session.get('user_id'), session.get('username', ''), '重置客户密码',
             account['username'], request.remote_addr)
     flash('密码已重置', 'success')
-    return redirect(url_for('admin_client_accounts'))
+    return _redirect_collab_user_mgmt('accounts')
 
 
 @app.route('/admin/client-accounts/<int:id>/approve')
@@ -4283,10 +4315,10 @@ def admin_client_account_approve(id):
     account = db.execute("SELECT * FROM client_accounts WHERE id=?", (id,)).fetchone()
     if not account:
         flash('账户不存在', 'danger')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     if account['status'] != CLIENT_STATUS_PENDING:
         flash('该账户不在待审核状态', 'warning')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     customer_id = account['customer_id']
     if not customer_id:
         customer_id = resolve_or_create_customer(
@@ -4313,7 +4345,7 @@ def admin_client_account_approve(id):
     add_log(session.get('user_id'), session.get('username', ''), '审核客户账户',
             f"通过 {account['username']}", request.remote_addr)
     flash('已审核通过', 'success')
-    return redirect(url_for('admin_client_accounts'))
+    return _redirect_collab_user_mgmt('accounts')
 
 
 @app.route('/admin/client-accounts/<int:id>/reject')
@@ -4329,10 +4361,10 @@ def admin_client_account_reject(id):
     account = db.execute("SELECT * FROM client_accounts WHERE id=?", (id,)).fetchone()
     if not account:
         flash('账户不存在', 'danger')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     if account['status'] != CLIENT_STATUS_PENDING:
         flash('该账户不在待审核状态', 'warning')
-        return redirect(url_for('admin_client_accounts'))
+        return _redirect_collab_user_mgmt('accounts')
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     db.execute(
         """UPDATE client_accounts SET status=?, approved_by=?, approved_at=?, updated_at=?
@@ -4348,7 +4380,7 @@ def admin_client_account_reject(id):
     add_log(session.get('user_id'), session.get('username', ''), '审核客户账户',
             f"拒绝 {account['username']}", request.remote_addr)
     flash('已拒绝该账户', 'success')
-    return redirect(url_for('admin_client_accounts'))
+    return _redirect_collab_user_mgmt('accounts')
 
 
 @app.route('/admin/client-recharges')

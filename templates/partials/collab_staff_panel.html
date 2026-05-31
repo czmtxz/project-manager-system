@@ -1,0 +1,106 @@
+<div class="d-flex flex-wrap justify-content-end mb-3">
+    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addStaffModal">
+        <i class="bi bi-plus-lg"></i> 新建协同专员
+    </button>
+</div>
+
+<div class="alert alert-light border small mb-3">
+    <i class="bi bi-info-circle text-info"></i>
+    协同专员仅能查看分配给自己的客户数据，请为每位专员勾选负责的客户公司。
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if staff %}
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>用户名</th><th>姓名</th><th>手机</th><th>状态</th><th>负责客户</th><th>最近登录</th><th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for s in staff %}
+                    <tr>
+                        <td><strong>{{ s.username }}</strong></td>
+                        <td>{{ s.real_name or '-' }}</td>
+                        <td>{{ s.phone or '-' }}</td>
+                        <td>{% if s.status == 'active' %}<span class="badge bg-success">启用</span>{% else %}<span class="badge bg-secondary">已禁用</span>{% endif %}</td>
+                        <td style="max-width:280px">
+                            {% set alist = assignments.get(s.id, []) %}
+                            {% if alist %}{% for a in alist %}<span class="badge bg-info-subtle text-info-emphasis">{{ a.customer_name or a.customer_id }}</span> {% endfor %}
+                            {% else %}<span class="text-muted small">未分配</span>{% endif %}
+                        </td>
+                        <td class="small text-muted">{{ (s.last_login or '')[:16] or '从未' }}</td>
+                        <td class="text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0" data-bs-toggle="modal" data-bs-target="#assign{{ s.id }}">授权</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-bs-toggle="modal" data-bs-target="#reset{{ s.id }}">密码</button>
+                            <form method="POST" action="{{ url_for('admin_collab_staff_toggle', uid=s.id) }}" class="d-inline">
+                                <button type="submit" class="btn btn-sm py-0 {% if s.status == 'active' %}btn-outline-warning{% else %}btn-outline-success{% endif %}">{% if s.status == 'active' %}禁用{% else %}启用{% endif %}</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('admin_collab_staff_delete', uid=s.id) }}" class="d-inline" onsubmit="return confirm('确定删除？');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">暂无协同专员</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="modal fade" id="addStaffModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin_collab_staff_create') }}">
+                <div class="modal-header"><h5 class="modal-title">新建协同专员</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">用户名 *</label><input type="text" name="username" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label">密码 *</label><input type="password" name="password" class="form-control" required minlength="4"></div>
+                    <div class="mb-3"><label class="form-label">姓名</label><input type="text" name="real_name" class="form-control"></div>
+                    <div class="mb-3"><label class="form-label">手机</label><input type="text" name="phone" class="form-control"></div>
+                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-primary">创建</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% for s in staff or [] %}
+<div class="modal fade" id="assign{{ s.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin_collab_staff_assign', uid=s.id) }}">
+                <div class="modal-header"><h6 class="modal-title">授权 — {{ s.username }}</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    {% if staff_customers %}
+                        {% set assigned_ids = assignments.get(s.id, [])|map(attribute='customer_id')|list %}
+                        {% for c in staff_customers %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="customer_ids" value="{{ c.id }}" id="cust{{ s.id }}_{{ c.id }}" {% if c.id in assigned_ids %}checked{% endif %}>
+                            <label class="form-check-label" for="cust{{ s.id }}_{{ c.id }}">{{ c.name }}</label>
+                        </div>
+                        {% endfor %}
+                    {% else %}<p class="text-muted mb-0">暂无可分配的客户公司</p>{% endif %}
+                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">保存</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="reset{{ s.id }}" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin_collab_staff_reset', uid=s.id) }}">
+                <div class="modal-header"><h6 class="modal-title">重置密码 — {{ s.username }}</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body"><input type="password" name="password" class="form-control" placeholder="新密码" required minlength="4"></div>
+                <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">确定</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}

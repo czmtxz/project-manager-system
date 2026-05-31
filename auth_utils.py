@@ -33,6 +33,7 @@ COLLAB_ADMIN_STAFF_ENDPOINTS = frozenset({
 # 需协同管理员或系统管理员才可操作（账户授权、充值审核、同步等）
 COLLAB_AUTHORIZE_ENDPOINTS = frozenset({
     'admin_client_accounts',
+    'admin_collab_user_mgmt',
     'admin_client_accounts_create',
     'admin_client_account_approve',
     'admin_client_account_reject',

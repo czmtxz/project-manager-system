@@ -34,12 +34,6 @@
                     </li>
                     {% if can_collab_authorize %}
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'admin_client_accounts' %}active{% endif %}"
-                           href="{{ url_for('admin_client_accounts') }}">
-                            <i class="bi bi-person-badge"></i> 注册账号
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'admin_client_deductions_sync' %}active{% endif %}"
                            href="{{ url_for('admin_client_deductions_sync') }}">
                             <i class="bi bi-arrow-repeat"></i> 同步扣减
@@ -52,11 +46,11 @@
                             <i class="bi bi-graph-up"></i> 协同报表
                         </a>
                     </li>
-                    {% if is_collab_admin %}
+                    {% if can_collab_authorize %}
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'admin_collab_staff' %}active{% endif %}"
-                           href="{{ url_for('admin_collab_staff') }}">
-                            <i class="bi bi-person-gear"></i> 协同专员
+                        <a class="nav-link {% if request.endpoint in ('admin_collab_user_mgmt', 'admin_client_accounts', 'admin_collab_staff') %}active{% endif %}"
+                           href="{{ url_for('admin_collab_user_mgmt') }}">
+                            <i class="bi bi-people"></i> 账号与专员
                         </a>
                     </li>
                     {% endif %}
