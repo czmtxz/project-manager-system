@@ -63,11 +63,18 @@ def summarize_recharge_records(recharges):
     }
 
 
+def _date_key(dt_str):
+    if not dt_str:
+        return '未知'
+    s = str(dt_str).strip()
+    return s[:10] if len(s) >= 10 else s
+
+
 def summarize_deduction_records(deductions):
-    """扣减记录汇总：按品名、月份"""
+    """扣减记录汇总：按日期、月份"""
     total_amount = 0.0
     total_qty = 0.0
-    by_item = {}
+    by_date = {}
     by_month = {}
     for row in deductions:
         d = dict(row)
@@ -75,12 +82,12 @@ def summarize_deduction_records(deductions):
         qty = float(d.get('quantity') or 0)
         total_amount += amt
         total_qty += qty
-        item = (d.get('item_name') or '').strip() or '未填写'
-        ib = by_item.setdefault(item, {'count': 0, 'qty': 0.0, 'amount': 0.0})
-        ib['count'] += 1
-        ib['qty'] += qty
-        ib['amount'] += amt
         dt = d.get('deduct_date') or d.get('created_at')
+        dk = _date_key(dt)
+        db = by_date.setdefault(dk, {'count': 0, 'qty': 0.0, 'amount': 0.0})
+        db['count'] += 1
+        db['qty'] += qty
+        db['amount'] += amt
         mk = _month_key(dt)
         mb = by_month.setdefault(mk, {'count': 0, 'qty': 0.0, 'amount': 0.0})
         mb['count'] += 1
@@ -90,9 +97,10 @@ def summarize_deduction_records(deductions):
         'total_count': len(deductions),
         'total_qty': total_qty,
         'total_amount': total_amount,
-        'by_item': sorted(
-            [{'item_name': k, **v} for k, v in by_item.items()],
-            key=lambda x: -x['amount'],
+        'by_date': sorted(
+            [{'date': k, **v} for k, v in by_date.items()],
+            key=lambda x: x['date'],
+            reverse=True,
         ),
         'by_month': sorted(
             [{'month': k, **v} for k, v in by_month.items()],

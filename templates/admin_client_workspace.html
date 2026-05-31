@@ -262,13 +262,13 @@
                         </div>
                         <div class="row g-2">
                             <div class="col-md-6">
-                                <div class="small text-muted mb-1">按品名</div>
+                                <div class="small text-muted mb-1">按日期</div>
                                 <table class="table table-sm table-bordered mb-0 bg-white">
-                                    <thead><tr><th>品名</th><th class="text-end">笔数</th><th class="text-end">吨数</th><th class="text-end">金额</th></tr></thead>
+                                    <thead><tr><th>日期</th><th class="text-end">笔数</th><th class="text-end">吨数</th><th class="text-end">金额</th></tr></thead>
                                     <tbody>
-                                    {% for row in ws.deduction_summary.by_item %}
+                                    {% for row in ws.deduction_summary.by_date %}
                                     <tr>
-                                        <td>{{ row.item_name }}</td>
+                                        <td>{{ row.date }}</td>
                                         <td class="text-end">{{ row.count }}</td>
                                         <td class="text-end">{{ "%g"|format(row.qty) }}</td>
                                         <td class="text-end text-danger">{{ "%.2f"|format(row.amount) }}</td>
