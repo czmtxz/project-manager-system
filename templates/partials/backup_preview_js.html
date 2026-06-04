@@ -126,16 +126,24 @@
         return parts.length ? '<div class="small mt-1">' + parts.join('') + '</div>' : '';
     }
 
-    function bindProjectDetailButtons(container, filename) {
+    function backupQueryParams(filename, uploadToken) {
+        if (uploadToken) return 'upload_token=' + encodeURIComponent(uploadToken);
+        if (filename) return 'filename=' + encodeURIComponent(filename);
+        return '';
+    }
+
+    function bindProjectDetailButtons(container, filename, uploadToken) {
         container.querySelectorAll('[data-backup-preview-project]').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 const pid = parseInt(btn.getAttribute('data-backup-preview-project'), 10);
-                if (filename && pid) openBackupPreview(filename, pid);
+                if (pid && (filename || uploadToken)) {
+                    openBackupPreview(filename, pid, uploadToken);
+                }
             });
         });
     }
 
-    function renderFilePreview(data, filename) {
+    function renderFilePreview(data, filename, uploadToken) {
         let html = '';
         if (data.summary && Object.keys(data.summary).length) {
             html += renderSummaryPanel(data.summary, data.summary_labels);
@@ -185,8 +193,9 @@
         });
     }
 
-    window.openBackupPreview = function(filename, projectId) {
-        if (!filename) return;
+    window.openBackupPreview = function(filename, projectId, uploadToken, displayName) {
+        const q = backupQueryParams(filename, uploadToken);
+        if (!q) return;
         const m = getModal();
         if (!m) return;
 
@@ -194,14 +203,15 @@
         const errorEl = document.getElementById('backupPreviewError');
         const contentEl = document.getElementById('backupPreviewContent');
         const titleEl = document.getElementById('backupPreviewModalLabel');
+        const label = displayName || filename || '本地上传备份';
 
         loadingEl.classList.remove('d-none');
         errorEl.classList.add('d-none');
         contentEl.innerHTML = '';
-        titleEl.innerHTML = '<i class="bi bi-eye"></i> 预览：' + esc(filename) + (projectId ? ' / 项目 #' + projectId : '');
+        titleEl.innerHTML = '<i class="bi bi-eye"></i> 预览：' + esc(label) + (projectId ? ' / 项目 #' + projectId : '');
         m.inst.show();
 
-        let url = PREVIEW_URL + '?filename=' + encodeURIComponent(filename);
+        let url = PREVIEW_URL + '?' + q;
         if (projectId) url += '&project_id=' + encodeURIComponent(projectId);
 
         fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
@@ -220,8 +230,8 @@
                     return;
                 }
                 if (d.mode === 'file') {
-                    contentEl.innerHTML = renderFilePreview(d, filename);
-                    bindProjectDetailButtons(contentEl, filename);
+                    contentEl.innerHTML = renderFilePreview(d, filename, uploadToken);
+                    bindProjectDetailButtons(contentEl, filename, uploadToken);
                 } else if (d.mode === 'project') {
                     contentEl.innerHTML = renderProjectPreview(d);
                 } else {
@@ -235,10 +245,11 @@
             });
     };
 
-    window.loadBackupProjects = function(selectEl, filename) {
-        if (!filename || !selectEl) return;
+    window.loadBackupProjects = function(selectEl, filename, uploadToken) {
+        const q = backupQueryParams(filename, uploadToken);
+        if (!q || !selectEl) return;
         selectEl.innerHTML = '<option value="">加载中…</option>';
-        fetch(PROJECTS_URL + '?filename=' + encodeURIComponent(filename), {
+        fetch(PROJECTS_URL + '?' + q, {
             credentials: 'same-origin',
             headers: { 'Accept': 'application/json' }
         })

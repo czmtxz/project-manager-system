@@ -9,7 +9,7 @@
                     <h5 class="mb-0"><i class="bi bi-{% if project %}pencil{% else %}plus-circle{% endif %}"></i> {% if project %}编辑项目{% else %}新增项目{% endif %}</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST" id="projectForm" action="{% if project %}{{ url_for('project_edit', pid=project.id) }}{% else %}{{ url_for('project_add') }}{% endif %}">
+                    <form method="POST" id="projectForm" enctype="multipart/form-data" action="{% if project %}{{ url_for('project_edit', pid=project.id) }}{% else %}{{ url_for('project_add') }}{% endif %}">
                         <div class="mb-3">
                             <label class="form-label">项目名称 <span class="text-danger">*</span></label>
                             <input type="text" name="name" class="form-control" placeholder="请输入项目名称" required value="{{ project.name if project else '' }}">
@@ -90,29 +90,53 @@
                             </div>
                         </div>
                         
-                        {% if can_import_backup and backup_files %}
+                        {% if can_import_backup and not project %}
                         <div class="card mb-3 border-info border-opacity-50">
                             <div class="card-header py-2 bg-info bg-opacity-10">
                                 <h6 class="mb-0"><i class="bi bi-database-down"></i> 从备份引入业务数据（可选）</h6>
                             </div>
                             <div class="card-body">
                                 <p class="text-muted small mb-3">
-                                    新建项目保存后，可将备份库中<strong>某一历史项目</strong>的采购、销售、合同、费用等数据复制到新项目。
-                                    请先预览确认再勾选引入。
+                                    新建项目保存后，可将<strong>服务器备份</strong>或<strong>本机文件夹中的 .db 备份</strong>里某一历史项目的
+                                    采购、销售、合同、费用等数据复制到新项目。请先预览确认再勾选引入。
                                 </p>
-                                <div class="mb-2">
-                                    <label class="form-label">备份文件</label>
-                                    <select class="form-select" id="importBackupFile" name="import_backup_file">
-                                        <option value="">不引入，仅创建空项目</option>
-                                        {% for b in backup_files %}
-                                        <option value="{{ b.name }}">{{ b.name }}（{{ b.time }}）</option>
-                                        {% endfor %}
-                                    </select>
+                                <div class="mb-3">
+                                    <label class="form-label d-block">备份来源</label>
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <input type="radio" class="btn-check" name="import_source_type" id="importSrcServer" value="server" checked autocomplete="off">
+                                        <label class="btn btn-outline-secondary" for="importSrcServer">服务器备份</label>
+                                        <input type="radio" class="btn-check" name="import_source_type" id="importSrcLocal" value="local" autocomplete="off">
+                                        <label class="btn btn-outline-secondary" for="importSrcLocal">本地上传 .db</label>
+                                    </div>
+                                </div>
+                                <div id="importServerBlock">
+                                    <div class="mb-2">
+                                        <label class="form-label">服务器备份文件</label>
+                                        <select class="form-select" id="importBackupFile" name="import_backup_file">
+                                            <option value="">不引入，仅创建空项目</option>
+                                            {% for b in backup_files %}
+                                            <option value="{{ b.name }}">{{ b.name }}（{{ b.time }}）</option>
+                                            {% endfor %}
+                                        </select>
+                                        {% if not backup_files %}
+                                        <div class="form-text">服务器暂无 .db 备份，可切换为「本地上传」。</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div id="importLocalBlock" class="d-none">
+                                    <div class="mb-2">
+                                        <label class="form-label">选择本机备份文件</label>
+                                        <input type="file" class="form-control" id="importLocalFile" accept=".db,application/x-sqlite3,application/vnd.sqlite3">
+                                        <input type="hidden" name="import_upload_token" id="importUploadToken" value="">
+                                        <input type="hidden" name="import_upload_name" id="importUploadName" value="">
+                                        <div class="form-text">支持从电脑任意文件夹选择 <code>*.db</code>（SQLite 备份），上传后可预览与引入。</div>
+                                        <div id="localUploadStatus" class="small mt-1 text-muted"></div>
+                                    </div>
                                 </div>
                                 <div class="mb-2">
                                     <label class="form-label">源项目（备份内）</label>
                                     <select class="form-select" id="importSourceProject" name="import_source_project_id" disabled>
-                                        <option value="">请先选择备份文件</option>
+                                        <option value="">请先选择或上传备份文件</option>
                                     </select>
                                 </div>
                                 <div class="mb-2">
@@ -244,7 +268,7 @@
 .tree-container .form-check-label { cursor: pointer; }
 .tree-container .form-check-input:checked + label { color: #0d6efd; font-weight: 500; }
 </style>
-{% if can_import_backup and backup_files %}
+{% if can_import_backup and not project %}
 {% include 'partials/backup_preview_modal.html' %}
 {% endif %}
 {% endblock %}
@@ -301,38 +325,142 @@ function collapseAll() {
     document.querySelectorAll('[id^="children_"]').forEach(el => el.classList.add('collapse'));
 }
 </script>
-{% if can_import_backup and backup_files %}
+{% if can_import_backup and not project %}
 {% include 'partials/backup_preview_js.html' %}
 <script>
 (function() {
+    const UPLOAD_URL = {{ url_for('api_backup_upload')|tojson }};
     const fileSel = document.getElementById('importBackupFile');
+    const localFile = document.getElementById('importLocalFile');
+    const uploadToken = document.getElementById('importUploadToken');
+    const uploadName = document.getElementById('importUploadName');
+    const uploadStatus = document.getElementById('localUploadStatus');
     const projSel = document.getElementById('importSourceProject');
     const btnPreview = document.getElementById('btnPreviewImport');
     const confirmCb = document.getElementById('confirmImport');
+    const srcServer = document.getElementById('importSrcServer');
+    const srcLocal = document.getElementById('importSrcLocal');
+    const serverBlock = document.getElementById('importServerBlock');
+    const localBlock = document.getElementById('importLocalBlock');
     if (!fileSel) return;
 
+    let mode = 'server';
+    let localReady = false;
+
+    function isServerMode() { return mode === 'server'; }
+
+    function hasBackupSelected() {
+        return isServerMode() ? !!fileSel.value : localReady;
+    }
+
+    function resetProjects() {
+        projSel.innerHTML = '<option value="">请先选择或上传备份文件</option>';
+        projSel.disabled = true;
+        btnPreview.disabled = true;
+        confirmCb.checked = false;
+        confirmCb.disabled = true;
+    }
+
     function syncState() {
-        const hasFile = !!fileSel.value;
+        const hasBackup = hasBackupSelected();
         const hasProj = !!projSel.value;
-        projSel.disabled = !hasFile;
-        btnPreview.disabled = !hasFile || !hasProj;
-        if (!hasFile) {
+        if (!hasBackup) {
+            resetProjects();
+            return;
+        }
+        btnPreview.disabled = !hasProj;
+        if (!hasProj) {
             confirmCb.checked = false;
             confirmCb.disabled = true;
         }
     }
 
+    function switchMode(next) {
+        mode = next;
+        const server = isServerMode();
+        serverBlock.classList.toggle('d-none', !server);
+        localBlock.classList.toggle('d-none', server);
+        if (server) {
+            fileSel.disabled = false;
+            localFile.value = '';
+            uploadToken.value = '';
+            uploadName.value = '';
+            localReady = false;
+            if (uploadStatus) uploadStatus.textContent = '';
+            if (fileSel.value) {
+                loadBackupProjects(projSel, fileSel.value, null);
+            } else {
+                resetProjects();
+            }
+        } else {
+            fileSel.value = '';
+            fileSel.disabled = true;
+            resetProjects();
+        }
+        syncState();
+    }
+
+    document.querySelectorAll('input[name="import_source_type"]').forEach(function(r) {
+        r.addEventListener('change', function() {
+            if (this.checked) switchMode(this.value);
+        });
+    });
+
     fileSel.addEventListener('change', function() {
         confirmCb.checked = false;
         confirmCb.disabled = true;
         if (this.value) {
-            loadBackupProjects(projSel, this.value);
+            loadBackupProjects(projSel, this.value, null);
         } else {
-            projSel.innerHTML = '<option value="">请先选择备份文件</option>';
-            projSel.disabled = true;
-            btnPreview.disabled = true;
+            resetProjects();
         }
         syncState();
+    });
+
+    localFile.addEventListener('change', function() {
+        const f = this.files && this.files[0];
+        localReady = false;
+        uploadToken.value = '';
+        uploadName.value = '';
+        confirmCb.checked = false;
+        confirmCb.disabled = true;
+        resetProjects();
+        if (!f) {
+            if (uploadStatus) uploadStatus.textContent = '';
+            return;
+        }
+        if (!f.name.toLowerCase().endsWith('.db')) {
+            if (uploadStatus) uploadStatus.textContent = '请选择 .db 格式的备份文件';
+            this.value = '';
+            return;
+        }
+        if (uploadStatus) uploadStatus.innerHTML = '<span class="text-muted">正在上传…</span>';
+        const fd = new FormData();
+        fd.append('file', f);
+        fetch(UPLOAD_URL, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function(r) {
+                const ct = (r.headers.get('content-type') || '').toLowerCase();
+                if (!r.ok) return r.text().then(function(t) { throw new Error(t || ('HTTP ' + r.status)); });
+                if (ct.indexOf('application/json') >= 0) return r.json();
+                throw new Error('上传失败');
+            })
+            .then(function(res) {
+                if (!res.success) {
+                    if (uploadStatus) uploadStatus.textContent = res.message || '上传失败';
+                    localFile.value = '';
+                    return;
+                }
+                uploadToken.value = res.upload_token;
+                uploadName.value = res.display_name || f.name;
+                localReady = true;
+                if (uploadStatus) uploadStatus.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> 已上传：' + (res.display_name || f.name) + '</span>';
+                loadBackupProjects(projSel, null, res.upload_token);
+                syncState();
+            })
+            .catch(function(err) {
+                if (uploadStatus) uploadStatus.textContent = '上传失败：' + (err.message || err);
+                localFile.value = '';
+            });
     });
 
     projSel.addEventListener('change', function() {
@@ -342,18 +470,32 @@ function collapseAll() {
     });
 
     btnPreview.addEventListener('click', function() {
-        if (fileSel.value && projSel.value) {
-            openBackupPreview(fileSel.value, projSel.value);
+        if (!hasBackupSelected() || !projSel.value) return;
+        if (isServerMode()) {
+            openBackupPreview(fileSel.value, projSel.value, null);
+        } else {
+            openBackupPreview(null, projSel.value, uploadToken.value, uploadName.value);
         }
     });
 
     document.getElementById('projectForm').addEventListener('submit', function(e) {
-        if (confirmCb.checked && (!fileSel.value || !projSel.value)) {
+        const wantsImport = hasBackupSelected() && projSel.value;
+        if (confirmCb.checked && !wantsImport) {
             e.preventDefault();
-            alert('请先选择备份文件和源项目');
+            alert('请先选择或上传备份文件，并选择源项目');
             return false;
         }
-        if (fileSel.value && projSel.value && !confirmCb.checked) {
+        if (confirmCb.checked && isServerMode() && !fileSel.value) {
+            e.preventDefault();
+            alert('请选择服务器备份文件');
+            return false;
+        }
+        if (confirmCb.checked && !isServerMode() && !uploadToken.value) {
+            e.preventDefault();
+            alert('请等待本机备份文件上传完成');
+            return false;
+        }
+        if (wantsImport && !confirmCb.checked) {
             if (!confirm('未勾选「确认引入」，将只创建空项目而不复制备份数据。是否继续？')) {
                 e.preventDefault();
             }

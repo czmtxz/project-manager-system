@@ -16,6 +16,7 @@ import threading
 import schedule
 import time
 import re
+import secrets
 import uuid
 from datetime import datetime, timedelta
 from functools import wraps
@@ -137,13 +138,18 @@ def resolve_app_path(relative):
 app.config['DATABASE'] = resolve_app_path('project_manager.db')
 app.config['BACKUP_DIR'] = resolve_app_path('backups')
 app.config['UPLOAD_FOLDER'] = resolve_app_path('uploads')
-app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024  # 8MB
+# 本地上传 .db 备份需较大体积；可通过环境变量 MAX_BACKUP_UPLOAD_MB 调整（默认 200）
+_backup_upload_mb = int(os.environ.get('MAX_BACKUP_UPLOAD_MB', '200'))
+app.config['MAX_BACKUP_UPLOAD_BYTES'] = _backup_upload_mb * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = max(8 * 1024 * 1024, app.config['MAX_BACKUP_UPLOAD_BYTES'])
+app.config['BACKUP_UPLOAD_DIR'] = os.path.join(app.config['UPLOAD_FOLDER'], 'backup_import')
 app.config['PUBLIC_BASE_URL'] = os.environ.get('PUBLIC_BASE_URL', '').strip()
 
 # 确保目录存在
 os.makedirs(app.config['BACKUP_DIR'], exist_ok=True)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'ocr'), exist_ok=True)
+os.makedirs(app.config['BACKUP_UPLOAD_DIR'], exist_ok=True)
 
 
 # ==================== 数据库工具 ====================
@@ -1767,33 +1773,51 @@ def project_add():
             set_project_categories(db, project_id, category_ids)
 
         import_file = (request.form.get('import_backup_file') or '').strip()
+        import_token = (request.form.get('import_upload_token') or '').strip()
         import_src = request.form.get('import_source_project_id', type=int)
         confirm_import = request.form.get('confirm_import') == '1'
         flash_kind, flash_msg = 'success', '项目创建成功'
-        if confirm_import and import_file and import_src:
-            fpath = _resolve_backup_filepath(import_file)
-            if not fpath:
-                flash_kind, flash_msg = 'warning', '项目已创建，但备份文件无效，未引入数据'
-            else:
-                from backup_data_utils import import_project_data_from_backup
-                ok, msg, stats = import_project_data_from_backup(
-                    db, fpath, import_src, project_id,
-                )
-                if ok:
-                    detail = '；'.join(f'{k}:{v}' for k, v in stats.items() if not k.startswith('_'))
-                    add_log(
-                        session['user_id'], session.get('username', ''),
-                        '从备份引入项目数据', f'{name} <- {import_file} ({detail[:200]})',
-                        request.remote_addr,
-                    )
-                    flash_kind, flash_msg = 'success', f'项目创建成功，{msg}'
+        if confirm_import and import_src:
+            fpath = None
+            source_label = ''
+            if import_token:
+                fpath = _resolve_upload_backup_token(import_token)
+                source_label = (request.form.get('import_upload_name') or '').strip() or import_token
+            elif import_file:
+                fpath = _resolve_backup_filepath(import_file)
+                source_label = import_file
+            elif 'import_backup_upload' in request.files:
+                up = request.files['import_backup_upload']
+                if up and up.filename:
+                    token, up_name, up_err = _save_uploaded_backup_db(up)
+                    if up_err:
+                        flash_kind, flash_msg = 'warning', f'项目已创建，但备份上传失败：{up_err}'
+                    elif token:
+                        fpath = _resolve_upload_backup_token(token)
+                        source_label = up_name
+            if confirm_import and import_src and flash_kind == 'success':
+                if not fpath:
+                    flash_kind, flash_msg = 'warning', '项目已创建，但备份文件无效，未引入数据'
                 else:
-                    flash_kind, flash_msg = 'warning', f'项目已创建，但引入失败：{msg}'
+                    from backup_data_utils import import_project_data_from_backup
+                    ok, msg, stats = import_project_data_from_backup(
+                        db, fpath, import_src, project_id,
+                    )
+                    if ok:
+                        detail = '；'.join(f'{k}:{v}' for k, v in stats.items() if not k.startswith('_'))
+                        add_log(
+                            session['user_id'], session.get('username', ''),
+                            '从备份引入项目数据', f'{name} <- {source_label} ({detail[:200]})',
+                            request.remote_addr,
+                        )
+                        flash_kind, flash_msg = 'success', f'项目创建成功，{msg}'
+                    else:
+                        flash_kind, flash_msg = 'warning', f'项目已创建，但引入失败：{msg}'
 
         add_log(session['user_id'], session['username'], '新增项目', f'新增项目: {name}', request.remote_addr)
         db.commit()
         flash(flash_msg, flash_kind)
-        return redirect(url_for('project_detail', id=project_id))
+        return redirect(url_for('project_detail', pid=project_id))
 
     return render_template('project_form.html', **ctx)
 
@@ -3694,6 +3718,100 @@ def _resolve_backup_filepath(filename):
     return fpath
 
 
+def _resolve_upload_backup_token(token):
+    """根据上传令牌返回临时备份 .db 路径。"""
+    if not token or not re.match(r'^[A-Za-z0-9_-]{16,64}$', token):
+        return None
+    upload_dir = os.path.realpath(app.config['BACKUP_UPLOAD_DIR'])
+    fpath = os.path.realpath(os.path.join(upload_dir, f'{token}.db'))
+    if not fpath.startswith(upload_dir + os.sep):
+        return None
+    if not os.path.isfile(fpath):
+        return None
+    return fpath
+
+
+def _resolve_backup_for_api(filename=None, upload_token=None):
+    """解析服务器备份名或本地上传令牌，返回 .db 绝对路径。"""
+    if upload_token:
+        return _resolve_upload_backup_token(upload_token)
+    if filename:
+        return _resolve_backup_filepath(filename)
+    return None
+
+
+def _validate_sqlite_backup_file(fpath):
+    """确认文件为可读的 SQLite 数据库。"""
+    try:
+        conn = sqlite3.connect(f'file:{fpath}?mode=ro', uri=True)
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1"
+            ).fetchone()
+            return row is not None
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
+
+
+def _cleanup_old_uploaded_backups(max_age_hours=24):
+    """清理过期的本地上传备份临时文件。"""
+    upload_dir = app.config['BACKUP_UPLOAD_DIR']
+    if not os.path.isdir(upload_dir):
+        return
+    cutoff = time.time() - max_age_hours * 3600
+    for name in os.listdir(upload_dir):
+        if not name.endswith('.db'):
+            continue
+        fpath = os.path.join(upload_dir, name)
+        try:
+            if os.path.isfile(fpath) and os.path.getmtime(fpath) < cutoff:
+                os.remove(fpath)
+        except OSError:
+            pass
+
+
+def _save_uploaded_backup_db(file_storage):
+    """
+    保存用户上传的 .db 备份到临时目录。
+    返回 (token, display_name, None) 或 (None, None, error_message)。
+    """
+    if not file_storage or not getattr(file_storage, 'filename', None):
+        return None, None, '请选择备份文件'
+    raw_name = file_storage.filename.strip()
+    if not raw_name.lower().endswith('.db'):
+        return None, None, '仅支持 .db 格式的 SQLite 备份文件'
+    display_name = secure_filename(os.path.basename(raw_name)) or 'upload.db'
+    if not display_name.endswith('.db'):
+        display_name += '.db'
+
+    _cleanup_old_uploaded_backups()
+    token = secrets.token_urlsafe(24)
+    dest = os.path.join(app.config['BACKUP_UPLOAD_DIR'], f'{token}.db')
+    try:
+        file_storage.save(dest)
+    except OSError as e:
+        return None, None, f'保存上传文件失败：{e}'
+
+    if os.path.getsize(dest) > app.config['MAX_BACKUP_UPLOAD_BYTES']:
+        try:
+            os.remove(dest)
+        except OSError:
+            pass
+        limit_mb = app.config['MAX_BACKUP_UPLOAD_BYTES'] // (1024 * 1024)
+        return None, None, f'备份文件过大，请上传小于 {limit_mb} MB 的文件'
+
+    if not _validate_sqlite_backup_file(dest):
+        try:
+            os.remove(dest)
+        except OSError:
+            pass
+        return None, None, '不是有效的 SQLite 数据库备份'
+
+    return token, display_name, None
+
+
 def _list_backup_records():
     """扫描备份目录，返回按时间倒序的备份记录列表。"""
     records = []
@@ -3840,14 +3958,31 @@ def backup_batch_delete():
     return redirect(url_for('backup_manage'))
 
 
+@app.route('/api/backup/upload', methods=['POST'])
+@login_required
+@permission_required('backup.manage')
+def api_backup_upload():
+    """上传本机 .db 备份到服务器临时目录，供预览与新建项目引入。"""
+    f = request.files.get('file')
+    token, display_name, err = _save_uploaded_backup_db(f)
+    if err:
+        return jsonify({'success': False, 'message': err})
+    return jsonify({
+        'success': True,
+        'upload_token': token,
+        'display_name': display_name,
+    })
+
+
 @app.route('/api/backup/projects')
 @login_required
 @permission_required('backup.manage')
 def api_backup_projects():
     """列出备份库中的项目（供新建项目引入）。"""
     filename = (request.args.get('filename') or '').strip()
-    fpath = _resolve_backup_filepath(filename)
-    if not fpath or not filename.endswith('.db'):
+    upload_token = (request.args.get('upload_token') or '').strip()
+    fpath = _resolve_backup_for_api(filename=filename or None, upload_token=upload_token or None)
+    if not fpath or not fpath.endswith('.db'):
         return jsonify({'success': False, 'message': '无效的备份文件'})
     try:
         from backup_data_utils import list_projects_in_backup
@@ -3863,9 +3998,10 @@ def api_backup_projects():
 def api_backup_preview():
     """预览备份文件或其中某一项目的数据量。"""
     filename = (request.args.get('filename') or '').strip()
+    upload_token = (request.args.get('upload_token') or '').strip()
     project_id = request.args.get('project_id', type=int)
-    fpath = _resolve_backup_filepath(filename)
-    if not fpath or not filename.endswith('.db'):
+    fpath = _resolve_backup_for_api(filename=filename or None, upload_token=upload_token or None)
+    if not fpath or not fpath.endswith('.db'):
         return jsonify({'success': False, 'message': '无效的备份文件'})
     try:
         from backup_data_utils import preview_backup_file
