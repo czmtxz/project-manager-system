@@ -244,7 +244,12 @@
 .tree-container .form-check-label { cursor: pointer; }
 .tree-container .form-check-input:checked + label { color: #0d6efd; font-weight: 500; }
 </style>
+{% if can_import_backup and backup_files %}
+{% include 'partials/backup_preview_modal.html' %}
+{% endif %}
+{% endblock %}
 
+{% block extra_js %}
 <script>
 function toggleChildren(checkbox, parentId) {
     const childrenContainer = document.getElementById('children_' + parentId);
@@ -297,7 +302,7 @@ function collapseAll() {
 }
 </script>
 {% if can_import_backup and backup_files %}
-{% include 'partials/backup_preview_modal.html' %}
+{% include 'partials/backup_preview_js.html' %}
 <script>
 (function() {
     const fileSel = document.getElementById('importBackupFile');
@@ -321,7 +326,7 @@ function collapseAll() {
         confirmCb.checked = false;
         confirmCb.disabled = true;
         if (this.value) {
-            loadBackupProjects(projSel, this.value, projSel);
+            loadBackupProjects(projSel, this.value);
         } else {
             projSel.innerHTML = '<option value="">请先选择备份文件</option>';
             projSel.disabled = true;

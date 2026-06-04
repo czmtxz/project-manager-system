@@ -147,6 +147,10 @@
     </div>
 </div>
 {% include 'partials/backup_preview_modal.html' %}
+{% endblock %}
+
+{% block extra_js %}
+{% include 'partials/backup_preview_js.html' %}
 <script>
 function confirmBatchDeleteBackup() {
     const from = document.getElementById('date_from').value;
