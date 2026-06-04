@@ -8,8 +8,10 @@
         <div>
             <a href="{{ url_for('purchase_list') }}" class="text-muted me-2"><i class="bi bi-arrow-left"></i></a>
             <h4 class="d-inline">{{ purchase.purchase_no }}</h4>
-            {% if purchase.status == 'draft' %}
+            {% if purchase_is_draft(purchase.status) %}
             <span class="badge bg-secondary ms-2">草稿</span>
+            {% elif purchase_is_submitted(purchase.status) %}
+            <span class="badge bg-info text-dark ms-2">已提交</span>
             {% elif purchase.status == 'partial' %}
             <span class="badge bg-primary ms-2">运输中</span>
             {% elif purchase.status == 'delivered' %}
@@ -19,7 +21,7 @@
             {% endif %}
         </div>
         <div class="d-flex gap-2">
-            {% if purchase.status == 'draft' %}
+            {% if purchase_is_draft(purchase.status) %}
             <a href="{{ url_for('purchase_edit', id=purchase.id) }}" class="btn btn-outline-primary btn-sm">
                 <i class="bi bi-pencil"></i> 编辑
             </a>
@@ -31,6 +33,16 @@
                       onsubmit="return confirm('确定删除此采购单?')">
                 <button type="submit" class="btn btn-outline-danger btn-sm">
                     <i class="bi bi-trash"></i> 删除
+                </button>
+            </form>
+            {% elif purchase_is_submitted(purchase.status) %}
+            <button type="button" class="btn btn-outline-success btn-sm" onclick="showTransportModal()">
+                <i class="bi bi-truck"></i> 添加运输记录
+            </button>
+            <form method="POST" action="{{ url_for('purchase_unsubmit', id=purchase.id) }}" style="display:inline"
+                  onsubmit="return confirm('确定反提交？反提交后单据变为草稿，可重新编辑。')">
+                <button type="submit" class="btn btn-outline-warning btn-sm">
+                    <i class="bi bi-arrow-counterclockwise"></i> 反提交
                 </button>
             </form>
             {% else %}

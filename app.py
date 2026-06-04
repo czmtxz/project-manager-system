@@ -5319,6 +5319,34 @@ def _fetch_purchase_transports(db, purchase_id):
     ).fetchall()
 
 
+def _purchase_is_draft(status):
+    return (status or '').strip() in ('draft', '草稿')
+
+
+def _purchase_is_submitted(status):
+    return (status or '').strip() == '已提交'
+
+
+def _sales_is_draft(status):
+    return (status or '').strip() in ('待审核', 'pending', '待处理', 'draft', '草稿')
+
+
+def _sales_is_submitted(status):
+    return (status or '').strip() == '已提交'
+
+
+def _purchase_summary_rows(purchases, include_draft):
+    if include_draft:
+        return list(purchases)
+    return [p for p in purchases if not _purchase_is_draft(p['status'])]
+
+
+def _sales_summary_rows(orders, include_draft):
+    if include_draft:
+        return list(orders)
+    return [o for o in orders if not _sales_is_draft(o['status'])]
+
+
 def _transport_item_names_map(db, transports, tr_cols):
     names = {}
     for t in transports:
@@ -5353,6 +5381,7 @@ def purchase_list():
     purchase_type = request.args.get('type', '').strip()
     supplier = request.args.get('supplier', '').strip()
     keyword = request.args.get('keyword', '')
+    include_draft = request.args.get('include_draft', '1') == '1'
 
     sql = f"""SELECT po.*, p.name as project_name, c.contract_name,
                     (SELECT COUNT(DISTINCT tpi.transport_id)
@@ -5399,12 +5428,14 @@ def purchase_list():
             return float(calc or 0)
         return float(row['total_amount'] or 0)
 
+    summary_rows = _purchase_summary_rows(purchases, include_draft)
     summary = {
-        'count': len(purchases),
-        'total_amount': sum(_purchase_list_amount(p) for p in purchases),
-        'total_qty': sum(float(p['total_qty'] or 0) for p in purchases),
-        'total_freight': sum(float(p['total_freight'] or 0) for p in purchases),
-        'transport_count': sum(int(p['transport_count'] or 0) for p in purchases),
+        'count': len(summary_rows),
+        'total_amount': sum(_purchase_list_amount(p) for p in summary_rows),
+        'total_qty': sum(float(p['total_qty'] or 0) for p in summary_rows),
+        'total_freight': sum(float(p['total_freight'] or 0) for p in summary_rows),
+        'transport_count': sum(int(p['transport_count'] or 0) for p in summary_rows),
+        'include_draft': include_draft,
     }
 
     projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
@@ -5414,6 +5445,7 @@ def purchase_list():
         'type': purchase_type,
         'supplier': supplier,
         'keyword': keyword,
+        'include_draft': include_draft,
     }
     return render_template('purchase_list.html', purchases=purchases, projects=projects,
                            filters=filters, summary=summary)
@@ -5522,6 +5554,41 @@ def purchase_detail(id):
         total_freight=total_freight,
         reconciliation=reconciliation,
     )
+
+
+@app.route('/purchase/<int:id>/unsubmit', methods=['POST'])
+@login_required
+def purchase_unsubmit(id):
+    """已提交采购单反提交为草稿"""
+    db = get_db()
+    purchase = db.execute('SELECT id, purchase_no, status FROM purchase_orders WHERE id=?', (id,)).fetchone()
+    if not purchase:
+        flash('采购单不存在', 'danger')
+        return redirect(url_for('purchase_list'))
+    if not _purchase_is_submitted(purchase['status']):
+        flash('仅「已提交」状态的采购单可反提交', 'warning')
+        return redirect(url_for('purchase_detail', id=id))
+
+    recon_cols = {r[1] for r in db.execute('PRAGMA table_info(reconciliations)').fetchall()}
+    if 'purchase_id' in recon_cols:
+        recon = db.execute(
+            'SELECT status FROM reconciliations WHERE purchase_id=? ORDER BY id DESC LIMIT 1',
+            (id,),
+        ).fetchone()
+        if recon and (recon['status'] or '').strip() in ('matched', 'confirmed', '已确认', '对账一致'):
+            flash('该采购单对账已确认，无法反提交', 'warning')
+            return redirect(url_for('purchase_detail', id=id))
+
+    transports = _fetch_purchase_transports(db, id)
+    if transports:
+        flash('该采购单已有运输记录，请先删除运输记录后再反提交', 'warning')
+        return redirect(url_for('purchase_detail', id=id))
+
+    db.execute("UPDATE purchase_orders SET status='draft' WHERE id=?", (id,))
+    db.commit()
+    add_log(session.get('user_id'), session.get('username', ''), '反提交采购单', f'采购单号: {purchase["purchase_no"]}')
+    flash('采购单已反提交，可继续编辑', 'success')
+    return redirect(url_for('purchase_detail', id=id))
 
 
 @app.route('/purchase/<int:id>/edit', methods=['GET', 'POST'])
@@ -5842,6 +5909,7 @@ def sales_order_list():
     keyword = request.args.get('keyword', '')
 
     customer = request.args.get('customer', '')
+    include_draft = request.args.get('include_draft', '1') == '1'
 
     sql = """SELECT so.*, p.name as project_name, c.contract_name,
              so.total_quantity as total_qty,
@@ -5867,14 +5935,22 @@ def sales_order_list():
 
     sql += " ORDER BY so.created_at DESC"
     orders = db.execute(sql, params).fetchall()
+    summary_rows = _sales_summary_rows(orders, include_draft)
     summary = {
-        'count': len(orders),
-        'total_amount': sum(float(o['total_amount'] or 0) for o in orders),
-        'total_qty': sum(float(o['total_qty'] or 0) for o in orders),
-        'transport_count': sum(int(o['transport_count'] or 0) for o in orders),
+        'count': len(summary_rows),
+        'total_amount': sum(float(o['total_amount'] or 0) for o in summary_rows),
+        'total_qty': sum(float(o['total_qty'] or 0) for o in summary_rows),
+        'transport_count': sum(int(o['transport_count'] or 0) for o in summary_rows),
+        'include_draft': include_draft,
     }
     projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
-    filters = {'project_id': project_id, 'status': status, 'keyword': keyword, 'customer': customer}
+    filters = {
+        'project_id': project_id,
+        'status': status,
+        'keyword': keyword,
+        'customer': customer,
+        'include_draft': include_draft,
+    }
     return render_template('sales_order_list.html', orders=orders, projects=projects,
                            filters=filters, summary=summary)
 
@@ -5998,6 +6074,66 @@ def sales_order_detail(id):
                            total_transport_qty=total_transport_qty,
                            total_freight=total_freight,
                            total_linked_qty=total_linked_qty)
+
+
+@app.route('/sales/order/<int:id>/submit')
+@login_required
+def sales_order_submit(id):
+    """销售出库单提交"""
+    db = get_db()
+    order = db.execute('SELECT id, order_no, status FROM sales_orders WHERE id=?', (id,)).fetchone()
+    if not order:
+        flash('出库单不存在', 'danger')
+        return redirect(url_for('sales_order_list'))
+    if not _sales_is_draft(order['status']):
+        flash('该出库单已提交或不可重复提交', 'warning')
+        return redirect(url_for('sales_order_detail', id=id))
+
+    items = db.execute(
+        'SELECT COUNT(*) as cnt FROM sales_order_items WHERE sales_order_id=?', (id,)
+    ).fetchone()
+    if not items or items['cnt'] == 0:
+        flash('请先添加出库明细后再提交', 'warning')
+        return redirect(url_for('sales_order_detail', id=id))
+
+    db.execute("UPDATE sales_orders SET status='已提交' WHERE id=?", (id,))
+    db.commit()
+    add_log(session.get('user_id'), session.get('username', ''), '提交销售出库单', f'出库单号: {order["order_no"]}')
+    flash('销售出库单已提交', 'success')
+    return redirect(url_for('sales_order_detail', id=id))
+
+
+@app.route('/sales/order/<int:id>/unsubmit', methods=['POST'])
+@login_required
+def sales_order_unsubmit(id):
+    """已提交销售出库单反提交"""
+    db = get_db()
+    order = db.execute('SELECT id, order_no, status FROM sales_orders WHERE id=?', (id,)).fetchone()
+    if not order:
+        flash('出库单不存在', 'danger')
+        return redirect(url_for('sales_order_list'))
+    if not _sales_is_submitted(order['status']):
+        flash('仅「已提交」状态的出库单可反提交', 'warning')
+        return redirect(url_for('sales_order_detail', id=id))
+
+    tr_cnt = db.execute(
+        'SELECT COUNT(*) as cnt FROM sales_transport_records WHERE order_id=?', (id,)
+    ).fetchone()['cnt']
+    if not tr_cnt:
+        tr_cols = _table_columns(db, 'transport_records')
+        if 'sales_order_id' in tr_cols:
+            tr_cnt = db.execute(
+                'SELECT COUNT(*) as cnt FROM transport_records WHERE sales_order_id=?', (id,)
+            ).fetchone()['cnt']
+    if tr_cnt:
+        flash('该出库单已有运输记录，请先删除运输记录后再反提交', 'warning')
+        return redirect(url_for('sales_order_detail', id=id))
+
+    db.execute("UPDATE sales_orders SET status='待审核' WHERE id=?", (id,))
+    db.commit()
+    add_log(session.get('user_id'), session.get('username', ''), '反提交销售出库单', f'出库单号: {order["order_no"]}')
+    flash('销售出库单已反提交，可继续编辑', 'success')
+    return redirect(url_for('sales_order_detail', id=id))
 
 
 @app.route('/sales/order/<int:id>/edit', methods=['GET', 'POST'])
@@ -7948,6 +8084,10 @@ def inject_public_urls():
         'public_base_url': base,
         'LOW_BALANCE_THRESHOLD': LOW_BALANCE_THRESHOLD,
         'is_low_balance': is_low_balance,
+        'purchase_is_draft': _purchase_is_draft,
+        'purchase_is_submitted': _purchase_is_submitted,
+        'sales_is_draft': _sales_is_draft,
+        'sales_is_submitted': _sales_is_submitted,
     }
 
 

@@ -435,8 +435,25 @@ def register_missing_routes(app, ctx):
     @login_required
     def purchase_submit(id):
         db = get_db()
+        purchase = db.execute(
+            'SELECT id, purchase_no, status FROM purchase_orders WHERE id=?', (id,)
+        ).fetchone()
+        if not purchase:
+            flash('采购单不存在', 'danger')
+            return redirect(url_for('purchase_list'))
+        status = (purchase['status'] or '').strip()
+        if status not in ('draft', '草稿'):
+            flash('该采购单已提交或不可重复提交', 'warning')
+            return redirect(url_for('purchase_detail', id=id))
+        items = db.execute(
+            'SELECT COUNT(*) as cnt FROM purchase_items WHERE purchase_id=?', (id,)
+        ).fetchone()
+        if not items or items['cnt'] == 0:
+            flash('请先添加采购明细后再提交', 'warning')
+            return redirect(url_for('purchase_detail', id=id))
         db.execute("UPDATE purchase_orders SET status='已提交' WHERE id=?", (id,))
         db.commit()
+        add_log(session.get('user_id'), session.get('username', ''), '提交采购单', f'采购单号: {purchase["purchase_no"]}')
         flash('采购单已提交', 'success')
         return redirect(url_for('purchase_detail', id=id))
 

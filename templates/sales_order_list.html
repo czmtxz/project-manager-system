@@ -30,6 +30,8 @@
                     <select name="status" id="status" class="form-select">
                         <option value="">全部状态</option>
                         <option value="pending" {% if filters.status == 'pending' %}selected{% endif %}>待处理</option>
+                        <option value="待审核" {% if filters.status == '待审核' %}selected{% endif %}>待审核</option>
+                        <option value="已提交" {% if filters.status == '已提交' %}selected{% endif %}>已提交</option>
                         <option value="partial" {% if filters.status == 'partial' %}selected{% endif %}>运输中</option>
                         <option value="delivered" {% if filters.status == 'delivered' %}selected{% endif %}>已送达</option>
                         <option value="completed" {% if filters.status == 'completed' %}selected{% endif %}>已完成</option>
@@ -40,6 +42,11 @@
                     <input type="text" name="customer" id="customer" class="form-control" value="{{ filters.customer }}" placeholder="客户名称">
                 </div>
                 <div class="col-md-2">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="include_draft" value="1" id="include_draft"
+                               {% if filters.include_draft %}checked{% endif %}>
+                        <label class="form-check-label" for="include_draft">汇总含未提交</label>
+                    </div>
                     <button type="submit" class="btn btn-primary w-100">
                         <i class="bi bi-funnel"></i> 筛选
                     </button>
@@ -84,7 +91,11 @@
                                 {% endif %}
                             </td>
                             <td>
-                                {% if o.status == 'pending' %}
+                                {% if sales_is_draft(o.status) %}
+                                <span class="badge bg-secondary">待审核</span>
+                                {% elif sales_is_submitted(o.status) %}
+                                <span class="badge bg-info text-dark">已提交</span>
+                                {% elif o.status == 'pending' %}
                                 <span class="badge bg-secondary">待处理</span>
                                 {% elif o.status == 'partial' %}
                                 <span class="badge bg-primary">运输中</span>
@@ -101,14 +112,16 @@
                                     <a href="{{ url_for('sales_order_detail', id=o.id) }}" class="btn btn-outline-primary" title="查看">
                                         <i class="bi bi-eye"></i>
                                     </a>
-                                    {% if o.status == 'pending' %}
+                                    {% if sales_is_draft(o.status) %}
                                     <a href="{{ url_for('sales_order_edit', id=o.id) }}" class="btn btn-outline-secondary" title="编辑">
                                         <i class="bi bi-pencil"></i>
                                     </a>
-                                    <a href="{{ url_for('sales_order_delete', id=o.id) }}" class="btn btn-outline-danger" title="删除"
-                                       onclick="return confirm('确定要删除此出库单吗？')">
-                                        <i class="bi bi-trash"></i>
-                                    </a>
+                                    <form method="POST" action="{{ url_for('sales_order_delete', id=o.id) }}" style="display:inline"
+                                          onsubmit="return confirm('确定要删除此出库单吗？')">
+                                        <button type="submit" class="btn btn-outline-danger" title="删除">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
                                     {% endif %}
                                 </div>
                             </td>
@@ -117,7 +130,7 @@
                     </tbody>
                     <tfoot class="table-light">
                         <tr class="fw-semibold">
-                            <td colspan="3">合计（{{ summary.count }} 笔）</td>
+                            <td colspan="3">合计（{{ summary.count }} 笔{% if not summary.include_draft %}，不含未提交{% endif %}）</td>
                             <td class="text-end text-primary">¥{{ "%.2f"|format(summary.total_amount) }}</td>
                             <td class="text-end">{{ "%.2f"|format(summary.total_qty) }}</td>
                             <td></td>
