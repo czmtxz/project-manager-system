@@ -1,0 +1,33 @@
+{% extends "nav_base.html" %}
+{% block title %}发票管理 - 项目管理系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <h4 class="mb-4"><i class="bi bi-receipt-cutoff"></i> 发票管理</h4>
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card h-100 border-success border-2">
+                <div class="card-body">
+                    <h5 class="card-title text-success"><i class="bi bi-box-arrow-up"></i> 销售发票管理</h5>
+                    <p class="text-muted small">对照销售出库明细，按品名汇总应开票、已开票、未开票数量与金额。</p>
+                    <a href="{{ url_for('invoice_sales') }}" class="btn btn-success">进入销售发票</a>
+                    <a href="{{ url_for('invoice_sales_add') }}" class="btn btn-outline-success ms-2">新增</a>
+                    <a href="{{ url_for('invoice_sales_ocr_import') }}" class="btn btn-outline-success ms-1 btn-sm">OCR</a>
+                    <a href="{{ url_for('invoice_sales_import') }}" class="btn btn-outline-success ms-1 btn-sm">Excel</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100 border-primary border-2">
+                <div class="card-body">
+                    <h5 class="card-title text-primary"><i class="bi bi-box-arrow-in-down"></i> 采购发票管理</h5>
+                    <p class="text-muted small">对照采购支出明细，按品名汇总应付票、已收票、未收票数量与金额。</p>
+                    <a href="{{ url_for('invoice_purchase') }}" class="btn btn-primary">进入采购发票</a>
+                    <a href="{{ url_for('invoice_purchase_add') }}" class="btn btn-outline-primary ms-2">新增</a>
+                    <a href="{{ url_for('invoice_purchase_ocr_import') }}" class="btn btn-outline-primary ms-1 btn-sm">OCR</a>
+                    <a href="{{ url_for('invoice_purchase_import') }}" class="btn btn-outline-primary ms-1 btn-sm">Excel</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

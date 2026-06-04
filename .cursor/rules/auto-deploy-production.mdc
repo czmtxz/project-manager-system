@@ -1,0 +1,29 @@
+---
+description: 修改业务代码后自动部署到生产服务器
+alwaysApply: true
+---
+
+# 生产自动部署
+
+服务器：`root@36.212.73.151`，目录 `/opt/project_manager/project_manager/`，服务 `project_manager`，访问 http://36.212.73.151:888
+
+## 必须执行
+
+在完成对以下内容的修改后，**在本轮回复结束前**执行部署（不要等用户提醒）：
+
+- 根目录 `*.py` 业务模块（`app.py`、`route_extensions.py`、`user_access.py`、`invoice_mgmt.py`、`report_*.py` 等）
+- `templates/`、`static/`
+- `migrations/`（若本次改动依赖迁移）
+
+```powershell
+Set-Location "项目根目录"
+powershell -ExecutionPolicy Bypass -File .\tools\deploy_to_server.ps1
+```
+
+私钥：项目根目录 `.ssh_deploy_key`，或环境变量 `DEPLOY_SSH_KEY`。
+
+## 说明
+
+- Cursor `stop` 钩子也会在 agent 一轮结束后尝试自动部署（见 `.cursor/hooks.json`）。
+- 部署失败时在回复中说明原因（如 SSH 不通、密钥缺失），并给出 `tools/DEPLOY_SERVER.md` 中的手动步骤。
+- **不要**把 `.ssh_deploy_key` 提交到 Git。

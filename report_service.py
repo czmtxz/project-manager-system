@@ -27,6 +27,13 @@ def payment_customer_column(db):
     return _payment_customer_col_cache[key]
 
 
+def _parse_include_draft_report(request, default=False):
+    vals = request.args.getlist('include_draft')
+    if vals:
+        return str(vals[-1]).lower() in ('1', 'true', 'on', 'yes')
+    return default if not request.args else False
+
+
 def parse_filters(request):
     today = date.today()
     year_start = date(today.year, 1, 1)
@@ -35,12 +42,19 @@ def parse_filters(request):
     project_id = (request.args.get('project_id') or '').strip()
     customer_name = (request.args.get('customer_name') or '').strip()
     supplier = (request.args.get('supplier') or '').strip()
+    item_name = (request.args.get('item_name') or '').strip()
+    specification = (request.args.get('specification') or '').strip()
+    group_by = (request.args.get('group_by') or 'detail').strip() or 'detail'
     return {
         'date_from': date_from,
         'date_to': date_to,
         'project_id': project_id,
         'customer_name': customer_name,
         'supplier': supplier,
+        'item_name': item_name,
+        'specification': specification,
+        'group_by': group_by,
+        'include_draft': _parse_include_draft_report(request, default=True),
     }
 
 
@@ -50,8 +64,39 @@ def _where(parts, params):
     return ' WHERE ' + ' AND '.join(parts), params
 
 
+def _append_project_scope(filters, alias, parts, params):
+    """非管理员/财务：报表仅统计已授权项目。"""
+    scoped = filters.get('_scoped_project_ids')
+    if scoped is None:
+        return
+    if not scoped:
+        parts.append('1=0')
+        return
+    if filters.get('project_id'):
+        try:
+            pid = int(filters['project_id'])
+            if pid not in scoped:
+                parts.append('1=0')
+            return
+        except (TypeError, ValueError):
+            pass
+    ph = ','.join('?' * len(scoped))
+    parts.append(f'{alias}.project_id IN ({ph})')
+    params.extend(scoped)
+
+
+def apply_report_project_scope(db, filters):
+    user_id = filters.get('_scope_user_id')
+    role = filters.get('_scope_role')
+    if user_id is None or role is None:
+        return
+    from user_access import get_assigned_project_ids
+    filters['_scoped_project_ids'] = get_assigned_project_ids(db, user_id, role)
+
+
 def _trans_filters(filters, alias='t'):
     parts, params = [], []
+    _append_project_scope(filters, alias, parts, params)
     if filters.get('project_id'):
         parts.append(f'{alias}.project_id=?')
         params.append(filters['project_id'])
@@ -66,6 +111,7 @@ def _trans_filters(filters, alias='t'):
 
 def _sales_order_filters(filters, alias='so'):
     parts, params = [], []
+    _append_project_scope(filters, alias, parts, params)
     if filters.get('project_id'):
         parts.append(f'{alias}.project_id=?')
         params.append(filters['project_id'])
@@ -81,8 +127,137 @@ def _sales_order_filters(filters, alias='so'):
     return parts, params
 
 
+def _sales_item_order_join(db):
+    cols = {r[1] for r in db.execute('PRAGMA table_info(sales_order_items)').fetchall()}
+    if 'sales_order_id' in cols and 'order_id' in cols:
+        return '(soi.sales_order_id = so.id OR soi.order_id = so.id)'
+    if 'sales_order_id' in cols:
+        return 'soi.sales_order_id = so.id'
+    return 'soi.order_id = so.id'
+
+
+def _sql_sales_transport_ids(so_alias='so', db=None):
+    """销售出库单关联的运输记录 ID（与详情/对账逻辑一致）。"""
+    parts = []
+    if db is not None:
+        tr_cols = {r[1] for r in db.execute('PRAGMA table_info(transport_records)').fetchall()}
+        soi_link = _sales_item_order_join(db).replace('soi.', 'soi2.')
+        if 'sales_order_id' in tr_cols:
+            parts.append(
+                f'SELECT tr0.id FROM transport_records tr0 WHERE tr0.sales_order_id = {so_alias}.id'
+            )
+        parts.append(
+            f"""SELECT sit.transport_id FROM sales_item_transport sit
+                INNER JOIN sales_order_items soi2 ON sit.sales_item_id = soi2.id
+                WHERE {soi_link} AND sit.transport_id IS NOT NULL"""
+        )
+    else:
+        parts.append(
+            f'SELECT tr0.id FROM transport_records tr0 WHERE tr0.sales_order_id = {so_alias}.id'
+        )
+        parts.append(
+            f"""SELECT sit.transport_id FROM sales_item_transport sit
+                INNER JOIN sales_order_items soi ON sit.sales_item_id = soi.id
+                WHERE soi.sales_order_id = {so_alias}.id"""
+        )
+    return ' UNION '.join(parts) if parts else 'SELECT NULL WHERE 0'
+
+
+def _sql_sales_order_freight(so_alias='so', db=None):
+    ids_sql = _sql_sales_transport_ids(so_alias, db)
+    return f"""(SELECT COALESCE(SUM(tr.freight_amount), 0)
+                FROM transport_records tr
+                WHERE tr.id IN ({ids_sql}))"""
+
+
+def _sql_sales_transport_qty(so_alias='so', db=None):
+    ids_sql = _sql_sales_transport_ids(so_alias, db)
+    return f"""(SELECT COALESCE(SUM(tr.quantity), 0)
+                FROM transport_records tr
+                WHERE tr.id IN ({ids_sql}))"""
+
+
+def _fetch_sales_order_transports_report(db, order_id):
+    """获取销售出库单下全部运输记录（直接挂出库单 + 明细关联）。"""
+    tr_cols = {r[1] for r in db.execute('PRAGMA table_info(transport_records)').fetchall()}
+    transports = []
+    seen_ids = set()
+    if 'sales_order_id' in tr_cols:
+        for row in db.execute(
+            """SELECT tr.* FROM transport_records tr
+               WHERE tr.sales_order_id = ?
+               ORDER BY tr.transport_date, tr.id""",
+            (order_id,),
+        ).fetchall():
+            transports.append(dict(row))
+            seen_ids.add(row['id'])
+    item_sql, n = _sales_order_item_filter_sql_report(db, 'soi')
+    item_params = _sales_order_item_filter_params_report(order_id, n)
+    linked_ids = db.execute(
+        f"""SELECT DISTINCT sit.transport_id
+            FROM sales_item_transport sit
+            JOIN sales_order_items soi ON sit.sales_item_id = soi.id
+            WHERE {item_sql} AND sit.transport_id IS NOT NULL""",
+        item_params,
+    ).fetchall()
+    extra_ids = [t['transport_id'] for t in linked_ids if t['transport_id'] not in seen_ids]
+    if extra_ids:
+        tid_str = ','.join(str(i) for i in extra_ids)
+        for row in db.execute(
+            f"""SELECT tr.* FROM transport_records tr
+                WHERE tr.id IN ({tid_str})
+                ORDER BY tr.transport_date, tr.id"""
+        ).fetchall():
+            transports.append(dict(row))
+            seen_ids.add(row['id'])
+    return transports
+
+
+def _sales_order_item_filter_sql_report(db, alias='soi'):
+    cols = {r[1] for r in db.execute('PRAGMA table_info(sales_order_items)').fetchall()}
+    if 'sales_order_id' in cols and 'order_id' in cols:
+        return f'({alias}.sales_order_id = ? OR {alias}.order_id = ?)', 2
+    if 'sales_order_id' in cols:
+        return f'{alias}.sales_order_id = ?', 1
+    return f'{alias}.order_id = ?', 1
+
+
+def _sales_order_item_filter_params_report(order_id, param_count):
+    if param_count == 2:
+        return (order_id, order_id)
+    return (order_id,)
+
+
+def _sales_transport_totals_map(db, order_ids):
+    """出库单 ID -> 整单运费、运输数量合计。"""
+    totals = {int(oid): {'freight': 0.0, 'qty': 0.0} for oid in order_ids if oid is not None}
+    for oid in totals:
+        seen = set()
+        for t in _fetch_sales_order_transports_report(db, oid):
+            tid = t.get('id')
+            if tid is None or tid in seen:
+                continue
+            seen.add(tid)
+            totals[oid]['freight'] += float(t.get('freight_amount') or 0)
+            totals[oid]['qty'] += float(t.get('quantity') or 0)
+    return totals
+
+
+SALES_OUTBOUND_GROUP_LABELS = {
+    'detail': '出库明细（逐行）',
+    'customer': '按客户汇总',
+    'item_name': '按品名汇总',
+    'specification': '按规格型号汇总',
+    'item_spec': '按品名+规格汇总',
+    'date_day': '按出库日期汇总',
+    'date_month': '按月份汇总',
+    'project': '按项目汇总',
+}
+
+
 def _purchase_filters(filters, alias='po', date_col='order_date'):
     parts, params = [], []
+    _append_project_scope(filters, alias, parts, params)
     if filters.get('project_id'):
         parts.append(f'{alias}.project_id=?')
         params.append(filters['project_id'])
@@ -129,12 +304,17 @@ def _transport_filters(filters, alias='tr'):
     return parts, params
 
 
-def load_projects(db):
+def load_projects(db, user_id=None, role=None):
+    if user_id is not None and role is not None:
+        from user_access import list_projects_for_user
+        rows = list_projects_for_user(db, user_id, role, order='ORDER BY name')
+        return [{'id': r['id'], 'name': r['name']} for r in rows]
     return db.execute('SELECT id, name FROM projects ORDER BY name').fetchall()
 
 
 def _contract_filters(filters, alias='c'):
     parts, params = [], []
+    _append_project_scope(filters, alias, parts, params)
     if filters.get('project_id'):
         parts.append(f'{alias}.project_id=?')
         params.append(filters['project_id'])
@@ -149,6 +329,7 @@ def _contract_filters(filters, alias='c'):
 
 def _invoice_filters(filters, alias='i'):
     parts, params = [], []
+    _append_project_scope(filters, alias, parts, params)
     if filters.get('project_id'):
         parts.append(f'{alias}.project_id=?')
         params.append(filters['project_id'])
@@ -170,6 +351,8 @@ def run_report(db, slug, filters):
         'fee-profit': _fee_profit,
         'fee-category': _fee_category,
         'sales-outbound': _sales_outbound,
+        'sales-outbound-detail': _sales_outbound_detail,
+        'pts-summary-detail': _pts_summary_detail,
         'sales-collection': _sales_collection,
         'purchase-spend': _purchase_spend,
         'transport-freight': _transport_freight,
@@ -727,6 +910,639 @@ def _sales_outbound(db, filters):
         'table_rows': table_rows,
         'export_rows': table_rows,
         'footnote': '销售金额取自销售订单 total_amount。',
+    }
+
+
+def _sales_outbound_detail_lines(db, filters):
+    """拉取出库单明细行（含整单运费、运输数量）。"""
+    so_p, so_par = _sales_order_filters(filters, 'so')
+    parts = list(so_p)
+    params = list(so_par)
+    if filters.get('item_name'):
+        parts.append('soi.item_name LIKE ?')
+        params.append(f'%{filters["item_name"]}%')
+    if filters.get('specification'):
+        parts.append('soi.specification LIKE ?')
+        params.append(f'%{filters["specification"]}%')
+    so_w, bind = _where(parts, params)
+    join_on = _sales_item_order_join(db)
+    rows = db.execute(f"""
+        SELECT so.id as order_id, so.order_no, so.order_date, so.customer_name, so.status,
+               p.name as project_name,
+               soi.item_name, soi.specification, soi.unit,
+               COALESCE(soi.quantity, 0) as quantity,
+               COALESCE(soi.unit_price, 0) as unit_price,
+               COALESCE(soi.amount, 0) as amount
+        FROM sales_orders so
+        INNER JOIN sales_order_items soi ON {join_on}
+        LEFT JOIN projects p ON so.project_id = p.id
+        {so_w}
+        ORDER BY so.order_date DESC, so.order_no, COALESCE(soi.sort_order, 0), soi.id
+    """, bind).fetchall()
+    lines = [dict(r) for r in rows]
+    order_ids = list({r['order_id'] for r in lines if r.get('order_id') is not None})
+    transport_totals = _sales_transport_totals_map(db, order_ids)
+    for r in lines:
+        t = transport_totals.get(int(r['order_id']), {'freight': 0.0, 'qty': 0.0})
+        r['order_freight'] = t['freight']
+        r['transport_qty'] = t['qty']
+    return lines
+
+
+def _aggregate_sales_outbound_lines(lines, group_by):
+    if group_by == 'detail' or not lines:
+        return None
+
+    def bucket_key(r):
+        if group_by == 'customer':
+            return r.get('customer_name') or '未知'
+        if group_by == 'item_name':
+            return r.get('item_name') or '未知'
+        if group_by == 'specification':
+            return r.get('specification') or '-'
+        if group_by == 'item_spec':
+            return f"{r.get('item_name') or '未知'} / {r.get('specification') or '-'}"
+        if group_by == 'date_day':
+            d = (r.get('order_date') or '')[:10]
+            return d or '未知'
+        if group_by == 'date_month':
+            d = (r.get('order_date') or '')[:7]
+            return d or '未知'
+        if group_by == 'project':
+            return r.get('project_name') or '未知'
+        return '未知'
+
+    buckets = {}
+    for r in lines:
+        key = bucket_key(r)
+        b = buckets.setdefault(key, {
+            'dim': key,
+            'line_cnt': 0,
+            'order_ids': set(),
+            'qty': 0.0,
+            'amt': 0.0,
+            'freight': 0.0,
+            'transport_qty': 0.0,
+        })
+        b['line_cnt'] += 1
+        b['qty'] += float(r.get('quantity') or 0)
+        b['amt'] += float(r.get('amount') or 0)
+        oid = r.get('order_id')
+        if oid is not None and oid not in b['order_ids']:
+            b['order_ids'].add(oid)
+            b['freight'] += float(r.get('order_freight') or 0)
+            b['transport_qty'] += float(r.get('transport_qty') or 0)
+
+    result = sorted(buckets.values(), key=lambda x: (-x['amt'], x['dim']))
+    for b in result:
+        b['order_cnt'] = len(b['order_ids'])
+        del b['order_ids']
+    return result
+
+
+def _sales_outbound_detail(db, filters):
+    group_by = filters.get('group_by') or 'detail'
+    if group_by not in SALES_OUTBOUND_GROUP_LABELS:
+        group_by = 'detail'
+
+    lines = _sales_outbound_detail_lines(db, filters)
+    order_ids = {r['order_id'] for r in lines if r.get('order_id') is not None}
+    total_freight = 0.0
+    total_transport_qty = 0.0
+    seen_freight_orders = set()
+    for r in lines:
+        oid = r.get('order_id')
+        if oid in seen_freight_orders:
+            continue
+        seen_freight_orders.add(oid)
+        total_freight += float(r.get('order_freight') or 0)
+        total_transport_qty += float(r.get('transport_qty') or 0)
+
+    total_qty = sum(float(r.get('quantity') or 0) for r in lines)
+    total_amt = sum(float(r.get('amount') or 0) for r in lines)
+
+    group_label = SALES_OUTBOUND_GROUP_LABELS.get(group_by, group_by)
+    table_footer = None
+
+    if group_by == 'detail':
+        table_columns = [
+            '出库单号', '出库日期', '客户', '项目', '状态',
+            '品名', '规格型号', '单位', '数量', '单价', '明细金额',
+            '整单运费', '运输数量',
+        ]
+        table_rows = [
+            {
+                '出库单号': r.get('order_no') or '-',
+                '出库日期': (r.get('order_date') or '-')[:10],
+                '客户': r.get('customer_name') or '-',
+                '项目': r.get('project_name') or '-',
+                '状态': r.get('status') or '-',
+                '品名': r.get('item_name') or '-',
+                '规格型号': r.get('specification') or '-',
+                '单位': r.get('unit') or '-',
+                '数量': f'{float(r.get("quantity") or 0):.2f}',
+                '单价': f'{float(r.get("unit_price") or 0):.2f}',
+                '明细金额': f'{float(r.get("amount") or 0):.2f}',
+                '整单运费': f'{float(r.get("order_freight") or 0):.2f}',
+                '运输数量': f'{float(r.get("transport_qty") or 0):.2f}',
+            }
+            for r in lines
+        ]
+        table_footer = {
+            '出库单号': '合计',
+            '出库日期': f'{len(order_ids)} 单 · {len(lines)} 行',
+            '客户': '',
+            '项目': '',
+            '状态': '',
+            '品名': '',
+            '规格型号': '',
+            '单位': '',
+            '数量': f'{total_qty:.2f}',
+            '单价': '',
+            '明细金额': f'{total_amt:.2f}',
+            '整单运费': f'{total_freight:.2f}',
+            '运输数量': f'{total_transport_qty:.2f}',
+        }
+    else:
+        agg = _aggregate_sales_outbound_lines(lines, group_by)
+        dim_title = {
+            'customer': '客户',
+            'item_name': '品名',
+            'specification': '规格型号',
+            'item_spec': '品名/规格',
+            'date_day': '出库日期',
+            'date_month': '月份',
+            'project': '项目',
+        }.get(group_by, '维度')
+        table_columns = [
+            dim_title, '出库单数', '明细行数', '销售数量', '明细金额合计', '运费合计', '运输数量合计',
+        ]
+        table_rows = [
+            {
+                dim_title: b['dim'],
+                '出库单数': str(b['order_cnt']),
+                '明细行数': str(b['line_cnt']),
+                '销售数量': f'{b["qty"]:.2f}',
+                '明细金额合计': f'{b["amt"]:.2f}',
+                '运费合计': f'{b["freight"]:.2f}',
+                '运输数量合计': f'{b["transport_qty"]:.2f}',
+            }
+            for b in (agg or [])
+        ]
+        if agg:
+            table_footer = {
+                dim_title: '合计',
+                '出库单数': str(len(order_ids)),
+                '明细行数': str(len(lines)),
+                '销售数量': f'{total_qty:.2f}',
+                '明细金额合计': f'{total_amt:.2f}',
+                '运费合计': f'{total_freight:.2f}',
+                '运输数量合计': f'{total_transport_qty:.2f}',
+            }
+
+    # 汇总图表：按客户 Top10（明细金额）
+    by_customer = {}
+    for r in lines:
+        name = r.get('customer_name') or '未知'
+        by_customer[name] = by_customer.get(name, 0.0) + float(r.get('amount') or 0)
+    top_customers = sorted(by_customer.items(), key=lambda x: -x[1])[:10]
+
+    return {
+        'kpis': [
+            {'label': '出库单数', 'value': str(len(order_ids)), 'border': 'primary'},
+            {'label': '明细行数', 'value': str(len(lines)), 'border': 'info'},
+            {'label': '销售数量', 'value': f'{total_qty:.2f}', 'border': 'secondary'},
+            {'label': '明细金额', 'value': f'{total_amt:.2f}', 'border': 'success'},
+            {'label': '运费合计', 'value': f'{total_freight:.2f}', 'border': 'warning'},
+            {'label': '运输数量合计', 'value': f'{total_transport_qty:.2f}', 'border': 'info'},
+        ],
+        'chart_data': {
+            'customer_labels': [x[0][:12] for x in top_customers],
+            'customer_amount': [round(x[1], 2) for x in top_customers],
+        },
+        'chart_mode': 'sales_outbound_detail',
+        'table_columns': table_columns,
+        'table_rows': table_rows,
+        'table_footer': table_footer,
+        'export_rows': table_rows + ([table_footer] if table_footer else []),
+        'group_by': group_by,
+        'group_label': group_label,
+        'footnote': (
+            f'当前汇总方式：{group_label}。明细金额来自销售出库明细；运费按出库单关联运输记录汇总，'
+            '汇总模式下运费按出库单去重累计（同一单不重复计运费）。'
+            '表尾合计中整单运费、运输数量为按出库单去重后的合计（与逐行显示可能不同）。',
+        ),
+    }
+
+
+PTS_GROUP_LABELS = {
+    'detail': '明细（项目+品名+规格）',
+    'item_spec': '按品名+规格汇总',
+    'item_name': '按品名汇总',
+    'specification': '按规格型号汇总',
+    'project': '按项目汇总',
+    'supplier': '按供应商汇总',
+    'customer': '按客户汇总',
+    'date_month': '按月份汇总',
+}
+
+
+def _pts_is_purchase_draft(status):
+    return (status or '').strip() in ('draft', '草稿')
+
+
+def _pts_is_sales_draft(status):
+    return (status or '').strip() in ('待审核', 'pending', '待处理', 'draft', '草稿')
+
+
+def _pts_bucket_factory():
+    return {
+        'purchase_qty': 0.0,
+        'purchase_amt': 0.0,
+        'freight_qty': 0.0,
+        'freight_amt': 0.0,
+        'sales_qty': 0.0,
+        'sales_amt': 0.0,
+        'supplier': '',
+        'customer': '',
+    }
+
+
+def _pts_detail_key(row):
+    return (
+        row.get('project_name') or '未知',
+        row.get('item_name') or '未知',
+        row.get('specification') or '-',
+    )
+
+
+def _pts_row_key(row, group_by):
+    if group_by == 'date_month':
+        m = (row.get('biz_month') or '')[:7]
+        return (m or '未知',)
+    return _pts_detail_key(row)
+
+
+def _pts_group_key(row, group_by):
+    if group_by == 'detail' or group_by == 'item_spec':
+        return _pts_detail_key(row)
+    if group_by == 'item_name':
+        return (row.get('item_name') or '未知',)
+    if group_by == 'specification':
+        return (row.get('specification') or '-',)
+    if group_by == 'project':
+        return (row.get('project_name') or '未知',)
+    if group_by == 'supplier':
+        return (row.get('supplier') or '未知',)
+    if group_by == 'customer':
+        return (row.get('customer') or '未知',)
+    if group_by == 'date_month':
+        return (row.get('month') or '未知',)
+    return _pts_detail_key(row)
+
+
+def _pts_load_purchase_buckets(db, filters, buckets, include_draft, group_by):
+    po_date_col = purchase_date_column(db)
+    po_p, po_par = _purchase_filters(filters, 'po', po_date_col)
+    parts = list(po_p)
+    params = list(po_par)
+    if filters.get('item_name'):
+        parts.append('pi.item_name LIKE ?')
+        params.append(f'%{filters["item_name"]}%')
+    if filters.get('specification'):
+        parts.append('pi.specification LIKE ?')
+        params.append(f'%{filters["specification"]}%')
+    po_w, bind = _where(parts, params)
+    rows = db.execute(f"""
+        SELECT p.name as project_name, pi.item_name, pi.specification, po.supplier,
+               COALESCE(pi.quantity, 0) as qty, COALESCE(pi.amount, 0) as amt, po.status,
+               po.{po_date_col} as biz_month
+        FROM purchase_items pi
+        JOIN purchase_orders po ON pi.purchase_id = po.id
+        LEFT JOIN projects p ON po.project_id = p.id
+        {po_w}
+    """, bind).fetchall()
+    for r in rows:
+        if not include_draft and _pts_is_purchase_draft(r['status']):
+            continue
+        row = dict(r)
+        key = _pts_row_key(row, group_by)
+        b = buckets[key]
+        b['purchase_qty'] += float(r['qty'] or 0)
+        b['purchase_amt'] += float(r['amt'] or 0)
+        if r['supplier'] and not b['supplier']:
+            b['supplier'] = r['supplier']
+
+
+def _pts_load_sales_buckets(db, filters, buckets, include_draft, group_by):
+    so_p, so_par = _sales_order_filters(filters, 'so')
+    parts = list(so_p)
+    params = list(so_par)
+    if filters.get('item_name'):
+        parts.append('soi.item_name LIKE ?')
+        params.append(f'%{filters["item_name"]}%')
+    if filters.get('specification'):
+        parts.append('soi.specification LIKE ?')
+        params.append(f'%{filters["specification"]}%')
+    so_w, bind = _where(parts, params)
+    join_on = _sales_item_order_join(db)
+    rows = db.execute(f"""
+        SELECT p.name as project_name, soi.item_name, soi.specification,
+               so.customer_name as customer,
+               COALESCE(soi.quantity, 0) as qty, COALESCE(soi.amount, 0) as amt, so.status,
+               so.order_date as biz_month
+        FROM sales_orders so
+        INNER JOIN sales_order_items soi ON {join_on}
+        LEFT JOIN projects p ON so.project_id = p.id
+        {so_w}
+    """, bind).fetchall()
+    for r in rows:
+        if not include_draft and _pts_is_sales_draft(r['status']):
+            continue
+        row = dict(r)
+        key = _pts_row_key(row, group_by)
+        b = buckets[key]
+        b['sales_qty'] += float(r['qty'] or 0)
+        b['sales_amt'] += float(r['amt'] or 0)
+        if r['customer'] and not b['customer']:
+            b['customer'] = r['customer']
+
+
+def _pts_allocate_transport(db, filters, buckets, include_draft, group_by):
+    """将运输记录数量、运费分摊到品名维度（采购明细关联 / 销售明细关联 / 整单分摊）。"""
+    tr_p, tr_par = _transport_filters(filters, 'tr')
+    tr_w, tr_bind = _where(tr_p, tr_par)
+    transports = db.execute(f"""
+        SELECT tr.id, tr.purchase_id, tr.sales_order_id, tr.quantity, tr.freight_amount,
+               tr.transport_date as biz_month
+        FROM transport_records tr {tr_w}
+    """, tr_bind).fetchall()
+
+    for tr in transports:
+        tid = tr['id']
+        t_qty = float(tr['quantity'] or 0)
+        t_freight = float(tr['freight_amount'] or 0)
+        if t_qty == 0 and t_freight == 0:
+            continue
+
+        links = []
+
+        tpi_rows = db.execute("""
+            SELECT pi.item_name, pi.specification, p.name as project_name, po.supplier, po.status,
+                   COALESCE(NULLIF(tpi.quantity, 0), 0) as link_qty
+            FROM transport_purchase_items tpi
+            JOIN purchase_items pi ON tpi.purchase_item_id = pi.id
+            JOIN purchase_orders po ON pi.purchase_id = po.id
+            LEFT JOIN projects p ON po.project_id = p.id
+            WHERE tpi.transport_id = ?
+        """, (tid,)).fetchall()
+        for row in tpi_rows:
+            if not include_draft and _pts_is_purchase_draft(row['status']):
+                continue
+            links.append({
+                'project_name': row['project_name'],
+                'item_name': row['item_name'],
+                'specification': row['specification'],
+                'biz_month': tr['biz_month'],
+                'weight': float(row['link_qty'] or 0),
+            })
+
+        if not links and tr['purchase_id']:
+            po_row = db.execute(
+                f"""SELECT po.status FROM purchase_orders po WHERE po.id = ?""",
+                (tr['purchase_id'],),
+            ).fetchone()
+            if include_draft or not (po_row and _pts_is_purchase_draft(po_row['status'])):
+                pi_rows = db.execute("""
+                    SELECT pi.item_name, pi.specification, p.name as project_name,
+                           COALESCE(pi.quantity, 0) as link_qty
+                    FROM purchase_items pi
+                    JOIN purchase_orders po ON pi.purchase_id = po.id
+                    LEFT JOIN projects p ON po.project_id = p.id
+                    WHERE po.id = ?
+                """, (tr['purchase_id'],)).fetchall()
+                for row in pi_rows:
+                    links.append({
+                        'project_name': row['project_name'],
+                        'item_name': row['item_name'],
+                        'specification': row['specification'],
+                        'biz_month': tr['biz_month'],
+                        'weight': float(row['link_qty'] or 0),
+                    })
+
+        join_so = _sales_item_order_join(db)
+        sit_rows = db.execute(f"""
+            SELECT soi.item_name, soi.specification, p.name as project_name,
+                   so.customer_name as customer, so.status,
+                   COALESCE(NULLIF(sit.quantity, 0), 0) as link_qty
+            FROM sales_item_transport sit
+            JOIN sales_order_items soi ON sit.sales_item_id = soi.id
+            JOIN sales_orders so ON {join_so}
+            LEFT JOIN projects p ON so.project_id = p.id
+            WHERE sit.transport_id = ?
+        """, (tid,)).fetchall()
+        for row in sit_rows:
+            if not include_draft and _pts_is_sales_draft(row['status']):
+                continue
+            links.append({
+                'project_name': row['project_name'],
+                'item_name': row['item_name'],
+                'specification': row['specification'],
+                'biz_month': tr['biz_month'],
+                'weight': float(row['link_qty'] or 0),
+            })
+
+        if not links and tr['sales_order_id']:
+            tr_cols = {r[1] for r in db.execute('PRAGMA table_info(transport_records)').fetchall()}
+            if 'sales_order_id' in tr_cols:
+                so_row = db.execute(
+                    'SELECT status FROM sales_orders WHERE id = ?', (tr['sales_order_id'],)
+                ).fetchone()
+                if include_draft or not (so_row and _pts_is_sales_draft(so_row['status'])):
+                    soi_rows = db.execute(f"""
+                        SELECT soi.item_name, soi.specification, p.name as project_name,
+                               COALESCE(soi.quantity, 0) as link_qty
+                        FROM sales_order_items soi
+                        JOIN sales_orders so ON {join_so}
+                        LEFT JOIN projects p ON so.project_id = p.id
+                        WHERE so.id = ?
+                    """, (tr['sales_order_id'],)).fetchall()
+                    for row in soi_rows:
+                        links.append({
+                            'project_name': row['project_name'],
+                            'item_name': row['item_name'],
+                            'specification': row['specification'],
+                            'biz_month': tr['biz_month'],
+                            'weight': float(row['link_qty'] or 0),
+                        })
+
+        if not links:
+            continue
+
+        total_w = sum(l['weight'] for l in links) or t_qty or 1.0
+        for link in links:
+            share = (link['weight'] / total_w) if total_w else 0
+            key = _pts_row_key(link, group_by)
+            b = buckets[key]
+            b['freight_qty'] += t_qty * share
+            b['freight_amt'] += t_freight * share
+
+
+def _pts_build_detail_buckets(db, filters, group_by):
+    from collections import defaultdict
+    include_draft = filters.get('include_draft', True)
+    buckets = defaultdict(_pts_bucket_factory)
+    _pts_load_purchase_buckets(db, filters, buckets, include_draft, group_by)
+    _pts_load_sales_buckets(db, filters, buckets, include_draft, group_by)
+    _pts_allocate_transport(db, filters, buckets, include_draft, group_by)
+    return buckets
+
+
+def _pts_aggregate_buckets(buckets, group_by):
+    from collections import defaultdict
+    if group_by == 'detail':
+        return dict(buckets)
+    grouped = defaultdict(_pts_bucket_factory)
+    for key, b in buckets.items():
+        row = {
+            'project_name': key[0] if len(key) > 0 else '未知',
+            'item_name': key[1] if len(key) > 1 else (key[0] if group_by == 'item_name' else '未知'),
+            'specification': key[2] if len(key) > 2 else (key[1] if group_by == 'specification' else '-'),
+            'supplier': b.get('supplier') or '',
+            'customer': b.get('customer') or '',
+            'month': '',
+        }
+        gk = _pts_group_key(row, group_by)
+        g = grouped[gk]
+        for field in ('purchase_qty', 'purchase_amt', 'freight_qty', 'freight_amt', 'sales_qty', 'sales_amt'):
+            g[field] += b[field]
+        if b.get('supplier') and not g['supplier']:
+            g['supplier'] = b['supplier']
+        if b.get('customer') and not g['customer']:
+            g['customer'] = b['customer']
+    return dict(grouped)
+
+
+def _pts_row_to_table(dim_label, dim_value, b, extra=None):
+    row = {
+        dim_label: dim_value,
+        '采购数量': f'{b["purchase_qty"]:.2f}',
+        '采购金额': f'{b["purchase_amt"]:.2f}',
+        '运费数量': f'{b["freight_qty"]:.2f}',
+        '运费金额': f'{b["freight_amt"]:.2f}',
+        '出库数量': f'{b["sales_qty"]:.2f}',
+        '出库金额': f'{b["sales_amt"]:.2f}',
+    }
+    if extra:
+        row.update(extra)
+    return row
+
+
+def _pts_summary_detail(db, filters):
+    group_by = filters.get('group_by') or 'detail'
+    if group_by not in PTS_GROUP_LABELS:
+        group_by = 'detail'
+
+    raw = _pts_build_detail_buckets(db, filters, group_by)
+    agg = _pts_aggregate_buckets(raw, group_by) if group_by != 'date_month' else raw
+    group_label = PTS_GROUP_LABELS[group_by]
+
+    dim_labels = {
+        'detail': '维度',
+        'item_spec': '品名/规格',
+        'item_name': '品名',
+        'specification': '规格型号',
+        'project': '项目',
+        'supplier': '供应商',
+        'customer': '客户',
+        'date_month': '月份',
+    }
+    dim_col = dim_labels.get(group_by, '维度')
+
+    table_columns = [dim_col, '采购数量', '采购金额', '运费数量', '运费金额', '出库数量', '出库金额']
+    if group_by == 'detail':
+        table_columns = [
+            '项目', '品名', '规格型号', '供应商', '客户',
+            '采购数量', '采购金额', '运费数量', '运费金额', '出库数量', '出库金额',
+        ]
+
+    table_rows = []
+    sorted_items = sorted(
+        agg.items(),
+        key=lambda x: (-(x[1]['purchase_amt'] + x[1]['sales_amt']), str(x[0])),
+    )
+
+    for key, b in sorted_items:
+        if group_by == 'detail':
+            table_rows.append({
+                '项目': key[0],
+                '品名': key[1],
+                '规格型号': key[2],
+                '供应商': b.get('supplier') or '-',
+                '客户': b.get('customer') or '-',
+                '采购数量': f'{b["purchase_qty"]:.2f}',
+                '采购金额': f'{b["purchase_amt"]:.2f}',
+                '运费数量': f'{b["freight_qty"]:.2f}',
+                '运费金额': f'{b["freight_amt"]:.2f}',
+                '出库数量': f'{b["sales_qty"]:.2f}',
+                '出库金额': f'{b["sales_amt"]:.2f}',
+            })
+        else:
+            dim_val = key[0] if isinstance(key, tuple) and len(key) == 1 else (
+                ' / '.join(str(k) for k in key) if isinstance(key, tuple) else str(key)
+            )
+            table_rows.append(_pts_row_to_table(dim_col, dim_val, b))
+
+    totals = {
+        'purchase_qty': sum(b['purchase_qty'] for b in agg.values()),
+        'purchase_amt': sum(b['purchase_amt'] for b in agg.values()),
+        'freight_qty': sum(b['freight_qty'] for b in agg.values()),
+        'freight_amt': sum(b['freight_amt'] for b in agg.values()),
+        'sales_qty': sum(b['sales_qty'] for b in agg.values()),
+        'sales_amt': sum(b['sales_amt'] for b in agg.values()),
+    }
+
+    table_footer = None
+    if table_rows:
+        if group_by == 'detail':
+            table_footer = {
+                '项目': '合计',
+                '品名': f'{len(table_rows)} 项',
+                '规格型号': '',
+                '供应商': '',
+                '客户': '',
+                '采购数量': f'{totals["purchase_qty"]:.2f}',
+                '采购金额': f'{totals["purchase_amt"]:.2f}',
+                '运费数量': f'{totals["freight_qty"]:.2f}',
+                '运费金额': f'{totals["freight_amt"]:.2f}',
+                '出库数量': f'{totals["sales_qty"]:.2f}',
+                '出库金额': f'{totals["sales_amt"]:.2f}',
+            }
+        else:
+            table_footer = _pts_row_to_table(dim_col, '合计', totals)
+
+    return {
+        'kpis': [
+            {'label': '采购金额', 'value': f'{totals["purchase_amt"]:.2f}', 'border': 'primary'},
+            {'label': '采购数量', 'value': f'{totals["purchase_qty"]:.2f}', 'border': 'info'},
+            {'label': '运费金额', 'value': f'{totals["freight_amt"]:.2f}', 'border': 'warning'},
+            {'label': '运费数量', 'value': f'{totals["freight_qty"]:.2f}', 'border': 'secondary'},
+            {'label': '出库金额', 'value': f'{totals["sales_amt"]:.2f}', 'border': 'success'},
+            {'label': '出库数量', 'value': f'{totals["sales_qty"]:.2f}', 'border': 'success'},
+        ],
+        'chart_data': {},
+        'chart_mode': 'none',
+        'table_columns': table_columns,
+        'table_rows': table_rows,
+        'table_footer': table_footer,
+        'export_rows': table_rows + ([table_footer] if table_footer else []),
+        'group_by': group_by,
+        'group_label': group_label,
+        'footnote': (
+            f'当前汇总：{group_label}。采购取自采购单明细；运费取自运输记录并按明细关联分摊；'
+            '出库取自销售出库单明细（客户端入库口径）。'
+            '未勾选「含未提交」时排除草稿/待审核单据。'
+        ),
     }
 
 

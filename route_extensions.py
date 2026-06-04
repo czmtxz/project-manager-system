@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """补全模板引用但 app.py 中缺失的路由与工具函数"""
 
+from functools import wraps
+
 
 def get_category_usage_map(db):
     rows = db.execute("""
@@ -122,6 +124,7 @@ def build_category_tree(db, project_id=None, date_from=None, date_to=None):
 def register_missing_routes(app, ctx):
     login_required = ctx['login_required']
     admin_required = ctx['admin_required']
+    permission_required = ctx.get('permission_required')
     get_db = ctx['get_db']
     add_log = ctx['add_log']
     datetime = ctx['datetime']
@@ -210,14 +213,32 @@ def register_missing_routes(app, ctx):
     @login_required
     def category_transactions(category_id):
         db = get_db()
+        from user_access import list_projects_for_user, project_id_scope_clause
         category = db.execute("SELECT * FROM categories WHERE id=?", (category_id,)).fetchone()
         if not category:
             flash('分类不存在', 'danger')
             return redirect(url_for('reports.hub'))
-        project_id = request.args.get('project_id', '')
+        raw_pid = request.args.get('project_id', '')
+        project_id = ''
+        if raw_pid:
+            try:
+                pid = int(raw_pid)
+            except (TypeError, ValueError):
+                pid = None
+            else:
+                from user_access import can_access_project
+                if can_access_project(
+                        db, session.get('user_id'), session.get('role', ''), pid):
+                    project_id = str(pid)
+                else:
+                    flash('无权访问该项目（未授权）', 'danger')
         sql = """SELECT t.*, p.name as project_name FROM transaction_records t
                  LEFT JOIN projects p ON t.project_id = p.id WHERE t.category_id=?"""
-        params = [category_id]
+        scope_sql, scope_params = project_id_scope_clause(
+            db, session.get('user_id'), session.get('role', ''), 't.project_id',
+        )
+        params = [category_id] + list(scope_params)
+        sql += scope_sql
         if project_id:
             sql += " AND t.project_id=?"
             params.append(project_id)
@@ -225,7 +246,9 @@ def register_missing_routes(app, ctx):
         transactions = db.execute(sql, params).fetchall()
         total_income = sum(t['amount'] for t in transactions if t['trans_type'] == 'income')
         total_expense = sum(t['amount'] for t in transactions if t['trans_type'] == 'expense')
-        projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+        projects = list_projects_for_user(
+            db, session.get('user_id'), session.get('role', ''), 'ORDER BY name',
+        )
         return render_template('category_transactions.html', category=category,
                                transactions=transactions, total_income=total_income,
                                total_expense=total_expense, project_id=project_id,
@@ -306,23 +329,277 @@ def register_missing_routes(app, ctx):
         flash('保存成功', 'success')
         return redirect(url_for('contract_list'))
 
-    # ---------- 发票扩展 ----------
-    @app.route('/invoice/import', methods=['GET', 'POST'])
-    @login_required
-    def invoice_import():
-        if request.method == 'POST':
-            flash('发票导入功能开发中，请手动新增', 'info')
-            return redirect(url_for('invoice_list'))
-        return render_template('invoice_import.html')
+    # ---------- 销售/采购发票管理 ----------
+    from invoice_mgmt import (
+        ensure_invoice_schema,
+        parse_hub_filters,
+        build_item_summary,
+        list_invoices_for_direction,
+        save_invoice,
+        update_invoice,
+        load_invoice_for_edit,
+        save_invoice_from_dict,
+        import_invoices_from_excel,
+        direction_label,
+        hub_redirect_endpoint,
+        normalize_direction,
+        ocr_import_endpoint,
+        excel_import_endpoint,
+        save_batch_invoice,
+        resolve_selections_from_summary,
+        batch_issue_endpoint,
+    )
 
-    @app.route('/invoice/ocr-import', methods=['GET', 'POST'])
+    @app.route('/invoice/hub')
     @login_required
-    def invoice_ocr_import():
+    def invoice_hub():
+        return render_template('invoice_hub.html')
+
+    def _invoice_hub_ctx(db, direction):
+        ensure_invoice_schema(db)
+        from invoice_mgmt import _valid_group_by
+        from user_access import list_projects_for_user, can_access_project
+        filters = parse_hub_filters(request)
+        filters['group_by'] = _valid_group_by(direction, filters.get('group_by'))
+        filters['_scope_user_id'] = session.get('user_id')
+        filters['_scope_role'] = session.get('role', '')
+        if filters.get('project_id'):
+            try:
+                pid = int(filters['project_id'])
+            except (TypeError, ValueError):
+                pid = None
+            if pid and not can_access_project(
+                    db, session.get('user_id'), session.get('role', ''), pid):
+                flash('无权访问该项目（未授权）', 'danger')
+                filters['project_id'] = ''
+        summary = build_item_summary(db, direction, filters)
+        invoices = list_invoices_for_direction(db, direction, filters)
+        projects = list_projects_for_user(
+            db, session.get('user_id'), session.get('role', ''), 'ORDER BY name',
+        )
+        return {
+            'direction': direction,
+            'direction_label': direction_label(direction),
+            'filters': filters,
+            'summary': summary,
+            'invoices': invoices,
+            'projects': projects,
+        }
+
+    def _invoice_view_perm(f):
+        from user_access import user_is_admin
+        if permission_required:
+            @wraps(f)
+            def _wrapped(*args, **kwargs):
+                if user_is_admin(session.get('role')):
+                    return f(*args, **kwargs)
+                return permission_required('invoice.view')(f)(*args, **kwargs)
+            return _wrapped
+        return f
+
+    @app.route('/invoice/sales')
+    @login_required
+    @_invoice_view_perm
+    def invoice_sales():
         db = get_db()
-        projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+        ctx = _invoice_hub_ctx(db, 'sales')
+        return render_template('invoice_direction_hub.html', **ctx)
+
+    @app.route('/invoice/purchase')
+    @login_required
+    @_invoice_view_perm
+    def invoice_purchase():
+        db = get_db()
+        ctx = _invoice_hub_ctx(db, 'purchase')
+        return render_template('invoice_direction_hub.html', **ctx)
+
+    def _invoice_prefill_from_args():
+        return {
+            'item_name': request.args.get('item_name', ''),
+            'specification': request.args.get('specification', ''),
+            'customer_name': request.args.get('customer_name', ''),
+            'supplier': request.args.get('supplier', ''),
+            'open_qty': request.args.get('open_qty', ''),
+            'open_amt': request.args.get('open_amt', ''),
+        }
+
+    def _invoice_form_view(db, direction, invoice_id=None):
+        ensure_invoice_schema(db)
+        invoice = None
+        lines = []
+        if invoice_id:
+            invoice, lines = load_invoice_for_edit(db, invoice_id)
+            if not invoice:
+                flash('发票不存在', 'danger')
+                return redirect(url_for(hub_redirect_endpoint(direction)))
+            direction = normalize_direction(
+                invoice['invoice_type'],
+                invoice['biz_direction'] if 'biz_direction' in invoice.keys() else None,
+            )
+            from user_access import can_access_project
+            if not can_access_project(
+                    db, session.get('user_id'), session.get('role', ''),
+                    invoice['project_id']):
+                flash('无权访问该发票所属项目', 'danger')
+                return redirect(url_for(hub_redirect_endpoint(direction)))
+        if request.method == 'POST':
+            from user_access import can_access_project
+            pid = request.form.get('project_id', type=int)
+            if pid and not can_access_project(
+                    db, session.get('user_id'), session.get('role', ''), pid):
+                flash('无权操作该项目（未授权）', 'danger')
+                return redirect(url_for(hub_redirect_endpoint(direction)))
+            if not (request.form.get('invoice_no') or '').strip():
+                flash('请填写发票号码', 'warning')
+            else:
+                if invoice_id:
+                    update_invoice(db, invoice_id, direction, request.form)
+                    add_log(
+                        session.get('user_id'), session.get('username', ''),
+                        f'编辑{direction_label(direction)}',
+                        f'发票号: {request.form.get("invoice_no")}',
+                    )
+                    flash('发票已更新', 'success')
+                else:
+                    save_invoice(db, direction, request.form, session.get('user_id'))
+                    add_log(
+                        session.get('user_id'), session.get('username', ''),
+                        f'新增{direction_label(direction)}',
+                        f'发票号: {request.form.get("invoice_no")}',
+                    )
+                    flash(f'{direction_label(direction)}保存成功', 'success')
+                return redirect(url_for(hub_redirect_endpoint(direction)))
+        from user_access import list_projects_for_user
+        projects = list_projects_for_user(
+            db, session.get('user_id'), session.get('role', ''), 'ORDER BY name',
+        )
+        contracts = db.execute(
+            'SELECT id, contract_no, contract_name, project_id FROM contracts ORDER BY contract_name'
+        ).fetchall()
+        prefill = _invoice_prefill_from_args() if not invoice_id else {}
+        return render_template(
+            'invoice_direction_form.html',
+            direction=direction,
+            direction_label=direction_label(direction),
+            projects=projects,
+            contracts=contracts,
+            prefill=prefill,
+            invoice=invoice,
+            lines=lines,
+            edit_mode=bool(invoice_id),
+            now=datetime.now(),
+        )
+
+    @app.route('/invoice/sales/add', methods=['GET', 'POST'])
+    @login_required
+    def invoice_sales_add():
+        return _invoice_form_view(get_db(), 'sales')
+
+    @app.route('/invoice/purchase/add', methods=['GET', 'POST'])
+    @login_required
+    def invoice_purchase_add():
+        return _invoice_form_view(get_db(), 'purchase')
+
+    def _invoice_batch_view(db, direction):
+        ensure_invoice_schema(db)
+        from invoice_mgmt import _valid_group_by
+        filters = parse_hub_filters(request)
+        filters['_scope_user_id'] = session.get('user_id')
+        filters['_scope_role'] = session.get('role', '')
+        filters['group_by'] = _valid_group_by(direction, filters.get('group_by'))
+        group_by = filters['group_by']
+        row_keys = request.form.getlist('selected_row') or request.args.getlist('sel')
+        if request.method == 'POST' and (request.form.get('invoice_no') or '').strip():
+            row_keys = request.form.getlist('selected_row') or row_keys
+            try:
+                selections, _summary = resolve_selections_from_summary(
+                    db, direction, filters, row_keys,
+                )
+                issue_amount = request.form.get('issue_amount', type=float)
+                save_batch_invoice(
+                    db, direction, group_by, selections, issue_amount,
+                    request.form, session.get('user_id'),
+                )
+                add_log(
+                    session.get('user_id'), session.get('username', ''),
+                    f'汇总{direction_label(direction)}',
+                    f'票号:{request.form.get("invoice_no")} 金额:{issue_amount}',
+                )
+                flash(
+                    f'已登记发票，本次开票 {issue_amount:.2f} 元（所选未开合计已相应扣减）',
+                    'success',
+                )
+                return redirect(url_for(hub_redirect_endpoint(direction)))
+            except ValueError as e:
+                flash(str(e), 'warning')
+        elif request.method == 'POST':
+            row_keys = request.form.getlist('selected_row') or row_keys
+        selections, summary = resolve_selections_from_summary(
+            db, direction, filters, row_keys,
+        )
+        if not selections:
+            flash('请先在汇总表中勾选未开金额大于0的记录', 'warning')
+            return redirect(url_for(hub_redirect_endpoint(direction)))
+        total_open = sum(s['open_amt'] for s in selections)
+        default_issue = request.form.get('issue_amount', type=float) if request.method == 'POST' else total_open
+        if not default_issue:
+            default_issue = total_open
+        from user_access import list_projects_for_user
+        projects = list_projects_for_user(
+            db, session.get('user_id'), session.get('role', ''), 'ORDER BY name',
+        )
+        contracts = db.execute(
+            'SELECT id, contract_no, contract_name, project_id FROM contracts ORDER BY contract_name'
+        ).fetchall()
+        return render_template(
+            'invoice_batch_form.html',
+            direction=direction,
+            direction_label=direction_label(direction),
+            filters=filters,
+            group_by=group_by,
+            selections=selections,
+            summary=summary,
+            total_open=total_open,
+            default_issue=default_issue,
+            projects=projects,
+            contracts=contracts,
+            now=datetime.now(),
+        )
+
+    @app.route('/invoice/sales/batch', methods=['GET', 'POST'])
+    @login_required
+    def invoice_sales_batch():
+        return _invoice_batch_view(get_db(), 'sales')
+
+    @app.route('/invoice/purchase/batch', methods=['GET', 'POST'])
+    @login_required
+    def invoice_purchase_batch():
+        return _invoice_batch_view(get_db(), 'purchase')
+
+    @app.route('/invoice/sales/<int:id>/edit', methods=['GET', 'POST'])
+    @login_required
+    def invoice_sales_edit(id):
+        return _invoice_form_view(get_db(), 'sales', invoice_id=id)
+
+    @app.route('/invoice/purchase/<int:id>/edit', methods=['GET', 'POST'])
+    @login_required
+    def invoice_purchase_edit(id):
+        return _invoice_form_view(get_db(), 'purchase', invoice_id=id)
+
+    def _invoice_ocr_view(db, direction):
+        ensure_invoice_schema(db)
+        from user_access import list_projects_for_user, can_access_project
+        projects = list_projects_for_user(
+            db, session.get('user_id'), session.get('role', ''), 'ORDER BY name',
+        )
         project_id = request.form.get('project_id', type=int) or request.args.get('project_id', type=int)
+        if project_id and not can_access_project(
+                db, session.get('user_id'), session.get('role', ''), project_id):
+            flash('无权操作该项目（未授权）', 'danger')
+            project_id = None
         results = []
         if request.method == 'POST':
+            ok = 0
             files = request.files.getlist('ocr_image')
             upload_dir = os.path.join(app_config['UPLOAD_FOLDER'], 'invoices')
             os.makedirs(upload_dir, exist_ok=True)
@@ -337,98 +614,169 @@ def register_missing_routes(app, ctx):
                     from ocr_utils import recognize_invoice
                     data = recognize_invoice(saved_path)
                     amount = float(data.get('total_amount') or data.get('amount') or 0)
-                    invoice_no = data.get('invoice_no') or ''
-                    result = {
-                        **data,
-                        'filename': f.filename,
-                        'saved': False,
-                        'attachment': filename,
-                    }
+                    invoice_no = (data.get('invoice_no') or '').strip()
+                    result = {**data, 'filename': f.filename, 'saved': False, 'attachment': filename}
                     if invoice_no and amount > 0:
-                        db.execute("""
-                            INSERT INTO invoices (
-                                project_id, invoice_no, invoice_type, amount, tax_rate,
-                                tax_amount, invoice_date, status, attachment, remark,
-                                created_by, created_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'received', ?, ?, ?, ?)
-                        """, (
-                            project_id,
-                            invoice_no,
-                            data.get('invoice_type') or 'cost',
-                            amount,
-                            float(data.get('tax_rate') or 0),
-                            float(data.get('tax_amount') or 0),
-                            data.get('invoice_date') or None,
-                            filename,
-                            'OCR识别导入',
-                            session.get('user_id'),
-                            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        ))
-                        db.commit()
-                        result['saved'] = True
+                        dup = db.execute(
+                            'SELECT id FROM invoices WHERE invoice_no=?', (invoice_no,)
+                        ).fetchone()
+                        if dup:
+                            result['error'] = f'发票号 {invoice_no} 已存在'
+                        else:
+                            payload = {
+                                'project_id': project_id,
+                                'invoice_no': invoice_no,
+                                'amount': amount,
+                                'tax_rate': float(data.get('tax_rate') or 0),
+                                'tax_amount': float(data.get('tax_amount') or 0),
+                                'invoice_date': data.get('invoice_date') or None,
+                                'attachment': filename,
+                                'remark': 'OCR识别导入',
+                                'customer_name': data.get('buyer') if direction == 'sales' else None,
+                                'supplier': data.get('seller') if direction == 'purchase' else None,
+                            }
+                            save_invoice_from_dict(
+                                db, direction, payload, session.get('user_id'),
+                            )
+                            result['saved'] = True
+                            ok += 1
+                    else:
+                        result['error'] = result.get('error') or '未识别到发票号码或金额'
                     results.append(result)
                 except Exception as e:
                     results.append({'filename': f.filename, 'error': str(e), 'saved': False})
             if results:
-                flash(f'已处理 {len(results)} 张发票图片', 'success')
+                ok = sum(1 for r in results if r.get('saved'))
+                flash(f'OCR 处理 {len(results)} 张，成功导入 {ok} 张', 'success' if ok else 'warning')
             else:
                 flash('请先选择发票图片', 'warning')
+            if ok:
+                return redirect(url_for(hub_redirect_endpoint(direction)))
         return render_template(
-            'invoice_ocr_import.html',
+            'invoice_direction_ocr.html',
+            direction=direction,
+            direction_label=direction_label(direction),
             projects=projects,
             project_id=project_id,
             results=results,
         )
 
+    @app.route('/invoice/sales/ocr-import', methods=['GET', 'POST'])
+    @login_required
+    def invoice_sales_ocr_import():
+        return _invoice_ocr_view(get_db(), 'sales')
+
+    @app.route('/invoice/purchase/ocr-import', methods=['GET', 'POST'])
+    @login_required
+    def invoice_purchase_ocr_import():
+        return _invoice_ocr_view(get_db(), 'purchase')
+
+    def _invoice_excel_view(db, direction):
+        ensure_invoice_schema(db)
+        from user_access import list_projects_for_user, can_access_project
+        projects = list_projects_for_user(
+            db, session.get('user_id'), session.get('role', ''), 'ORDER BY name',
+        )
+        errors = []
+        if request.method == 'POST':
+            f = request.files.get('file')
+            if not f or not f.filename:
+                flash('请选择 Excel 文件', 'warning')
+            else:
+                pid = request.form.get('project_id', type=int)
+                if pid and not can_access_project(
+                        db, session.get('user_id'), session.get('role', ''), pid):
+                    flash('无权操作该项目（未授权）', 'danger')
+                    pid = None
+                saved, skipped, errors = import_invoices_from_excel(f, db, direction, pid)
+                flash(f'导入完成：成功 {saved} 条，跳过 {skipped} 条', 'success' if saved else 'warning')
+                if saved:
+                    return redirect(url_for(hub_redirect_endpoint(direction)))
+        return render_template(
+            'invoice_direction_import.html',
+            direction=direction,
+            direction_label=direction_label(direction),
+            projects=projects,
+            errors=errors,
+        )
+
+    @app.route('/invoice/sales/import', methods=['GET', 'POST'])
+    @login_required
+    def invoice_sales_import():
+        return _invoice_excel_view(get_db(), 'sales')
+
+    @app.route('/invoice/purchase/import', methods=['GET', 'POST'])
+    @login_required
+    def invoice_purchase_import():
+        return _invoice_excel_view(get_db(), 'purchase')
+
+    # ---------- 发票扩展（兼容旧链接） ----------
+    @app.route('/invoice/import', methods=['GET', 'POST'])
+    @login_required
+    def invoice_import():
+        direction = request.args.get('direction', 'purchase')
+        if direction not in ('sales', 'purchase'):
+            direction = 'purchase'
+        return redirect(url_for(excel_import_endpoint(direction)))
+
+    @app.route('/invoice/ocr-import', methods=['GET', 'POST'])
+    @login_required
+    def invoice_ocr_import():
+        direction = request.args.get('direction', 'purchase')
+        if direction not in ('sales', 'purchase'):
+            direction = 'purchase'
+        return redirect(url_for(ocr_import_endpoint(direction)))
+
     @app.route('/invoice/<int:id>/edit', methods=['GET', 'POST'])
     @login_required
     def invoice_edit(id):
         db = get_db()
-        invoice = db.execute("SELECT * FROM invoices WHERE id=?", (id,)).fetchone()
+        invoice, _lines = load_invoice_for_edit(db, id)
         if not invoice:
             flash('发票不存在', 'danger')
-            return redirect(url_for('invoice_list'))
-        if request.method == 'POST':
-            db.execute("""UPDATE invoices SET project_id=?, contract_id=?, invoice_no=?,
-                          invoice_type=?, amount=?, tax_rate=?, tax_amount=?, remark=? WHERE id=?""",
-                       (request.form.get('project_id', type=int),
-                        request.form.get('contract_id', type=int) or None,
-                        request.form.get('invoice_no', ''),
-                        request.form.get('invoice_type', ''),
-                        request.form.get('amount', type=float) or 0,
-                        request.form.get('tax_rate', type=float) or 0,
-                        request.form.get('tax_amount', type=float) or 0,
-                        request.form.get('remark', ''), id))
-            db.commit()
-            flash('发票已更新', 'success')
-            return redirect(url_for('invoice_list'))
-        projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
-        contracts = db.execute("SELECT id, contract_name FROM contracts ORDER BY contract_name").fetchall()
-        return render_template('invoice_form.html', invoice=invoice, projects=projects,
-                               contracts=contracts, edit_mode=True)
+            return redirect(url_for('invoice_hub'))
+        direction = normalize_direction(
+            invoice['invoice_type'],
+            invoice['biz_direction'] if 'biz_direction' in invoice.keys() else None,
+        )
+        if direction == 'sales':
+            return redirect(url_for('invoice_sales_edit', id=id))
+        return redirect(url_for('invoice_purchase_edit', id=id))
 
     @app.route('/invoice/<int:id>/approve', methods=['GET', 'POST'])
     @login_required
     def invoice_approve(id):
         db = get_db()
+        inv = db.execute('SELECT invoice_type, biz_direction FROM invoices WHERE id=?', (id,)).fetchone()
+        back = hub_redirect_endpoint(normalize_direction(
+            inv['invoice_type'] if inv else None,
+            inv['biz_direction'] if inv and 'biz_direction' in inv.keys() else None,
+        )) if inv else 'invoice_hub'
         db.execute("UPDATE invoices SET status='verified' WHERE id=?", (id,))
         db.commit()
         flash('发票已审核', 'success')
-        return redirect(url_for('invoice_list'))
+        return redirect(url_for(back))
 
     @app.route('/invoice/<int:id>/delete', methods=['POST'])
     @login_required
     def invoice_delete(id):
         db = get_db()
-        row = db.execute("SELECT invoice_no FROM invoices WHERE id=?", (id,)).fetchone()
+        row = db.execute(
+            'SELECT invoice_no, invoice_type, biz_direction FROM invoices WHERE id=?', (id,)
+        ).fetchone()
         if not row:
             flash('发票不存在', 'danger')
-            return redirect(url_for('invoice_list'))
-        db.execute("DELETE FROM invoices WHERE id=?", (id,))
+            return redirect(url_for('invoice_hub'))
+        back = hub_redirect_endpoint(normalize_direction(
+            row['invoice_type'], row['biz_direction'] if 'biz_direction' in row.keys() else None
+        ))
+        db.execute('DELETE FROM invoice_summary_allocations WHERE invoice_id=?', (id,))
+        db.execute('DELETE FROM invoice_lines WHERE invoice_id=?', (id,))
+        db.execute('DELETE FROM invoices WHERE id=?', (id,))
         db.commit()
         add_log(session.get('user_id'), session.get('username', ''), '删除发票', f'发票号: {row["invoice_no"] or id}')
         flash('发票已删除', 'success')
-        return redirect(url_for('invoice_list'))
+        return redirect(url_for(back))
 
     # ---------- 采购扩展 ----------
     @app.route('/purchase/<int:id>/submit')
@@ -462,7 +810,8 @@ def register_missing_routes(app, ctx):
     @login_required
     def reconciliation_create(purchase_id):
         db = get_db()
-        purchase = db.execute('SELECT * FROM purchase_orders WHERE id=?', (purchase_id,)).fetchone()
+        from project_display import fetch_purchase_by_id
+        purchase = fetch_purchase_by_id(db, purchase_id, with_contract=False)
         if not purchase:
             flash('采购单不存在', 'danger')
             return redirect(url_for('reconciliation_list'))

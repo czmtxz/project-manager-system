@@ -138,9 +138,15 @@
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-check-circle"></i> 保存
                     </button>
+                    {% if order %}
+                    <a href="{{ url_for('sales_order_detail', id=order.id) }}" class="btn btn-secondary">
+                        <i class="bi bi-arrow-left"></i> 返回详情
+                    </a>
+                    {% else %}
                     <a href="{{ url_for('sales_order_list') }}" class="btn btn-secondary">
                         <i class="bi bi-arrow-left"></i> 返回
                     </a>
+                    {% endif %}
                 </div>
             </form>
         </div>

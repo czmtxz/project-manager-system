@@ -34,11 +34,38 @@
                 <input type="text" name="supplier" class="form-control form-control-sm" value="{{ filters.supplier }}" placeholder="供应商">
             </div>
             {% endif %}
+            {% if 'item_name' in filter_fields %}
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">品名</label>
+                <input type="text" name="item_name" class="form-control form-control-sm" value="{{ filters.item_name|default('', true) }}" placeholder="品名">
+            </div>
+            {% endif %}
+            {% if 'specification' in filter_fields %}
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">规格型号</label>
+                <input type="text" name="specification" class="form-control form-control-sm" value="{{ filters.specification|default('', true) }}" placeholder="规格型号">
+            </div>
+            {% endif %}
+            {% if 'group_by' in filter_fields %}
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-0">汇总方式</label>
+                <select name="group_by" class="form-select form-select-sm">
+                    <option value="detail" {% if filters.group_by|default('detail') == 'detail' %}selected{% endif %}>出库明细（逐行）</option>
+                    <option value="customer" {% if filters.group_by == 'customer' %}selected{% endif %}>按客户汇总</option>
+                    <option value="item_name" {% if filters.group_by == 'item_name' %}selected{% endif %}>按品名汇总</option>
+                    <option value="specification" {% if filters.group_by == 'specification' %}selected{% endif %}>按规格型号汇总</option>
+                    <option value="item_spec" {% if filters.group_by == 'item_spec' %}selected{% endif %}>按品名+规格汇总</option>
+                    <option value="date_day" {% if filters.group_by == 'date_day' %}selected{% endif %}>按出库日期汇总</option>
+                    <option value="date_month" {% if filters.group_by == 'date_month' %}selected{% endif %}>按月份汇总</option>
+                    <option value="project" {% if filters.group_by == 'project' %}selected{% endif %}>按项目汇总</option>
+                </select>
+            </div>
+            {% endif %}
             <div class="col-md-auto">
                 <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> 查询</button>
                 <a href="{{ url_for('reports.view', slug=slug) }}" class="btn btn-outline-secondary btn-sm">重置</a>
                 {% if session.role in ['admin', 'finance'] %}
-                <a href="{{ url_for('reports.export', slug=slug, date_from=filters.date_from, date_to=filters.date_to, project_id=filters.project_id, customer_name=filters.customer_name, supplier=filters.supplier) }}" class="btn btn-success btn-sm">
+                <a href="{{ url_for('reports.export', slug=slug, date_from=filters.date_from, date_to=filters.date_to, project_id=filters.project_id, customer_name=filters.customer_name, supplier=filters.supplier, item_name=filters.item_name|default('', true), specification=filters.specification|default('', true), group_by=filters.group_by|default('detail', true)) }}" class="btn btn-success btn-sm">
                     <i class="bi bi-file-earmark-excel"></i> 导出 Excel
                 </a>
                 {% endif %}

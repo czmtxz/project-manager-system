@@ -462,30 +462,46 @@ function loadInvoices() {
 }
 
 function editTransport(id) {
-    // 加载运输记录数据并显示弹窗
-    fetch(`/api/transport/${id}`)
-        .then(res => res.json())
-        .then(data => {
+    fetch(`/api/transport/${id}`, { credentials: 'same-origin' })
+        .then(async (res) => {
+            let resp = {};
+            try {
+                resp = await res.json();
+            } catch (_) {
+                throw new Error('服务器返回异常，请重新登录后重试');
+            }
+            if (!res.ok || !resp.success) {
+                throw new Error(resp.message || `加载失败 (HTTP ${res.status})`);
+            }
+            const data = resp.data;
+            if (!data || !data.id) {
+                throw new Error('运输记录数据无效');
+            }
             document.getElementById('transport_id').value = data.id;
-            document.getElementById('batch_no').value = data.batch_no;
+            document.getElementById('batch_no').value = data.batch_no || '';
             document.getElementById('vehicle_no').value = data.vehicle_no || '';
             document.getElementById('driver_name').value = data.driver_name || '';
             document.getElementById('driver_phone').value = data.driver_phone || '';
             document.getElementById('transport_date').value = data.transport_date || '';
-            document.getElementById('quantity').value = data.quantity;
-            document.getElementById('unit_price').value = data.unit_price;
-            document.getElementById('freight_amount').value = data.freight_amount;
+            document.getElementById('quantity').value = data.quantity ?? '';
+            document.getElementById('unit_price').value = data.unit_price ?? '';
+            document.getElementById('freight_amount').value = data.freight_amount ?? '';
             document.getElementById('remark').value = data.remark || '';
-            
-            // 回显多选的采购品名
+
+            const itemIds = (data.linked_purchase_items || []).map(it => it.purchase_item_id);
             document.querySelectorAll('.transport-item-check').forEach(cb => {
-                cb.checked = data.purchase_item_ids && data.purchase_item_ids.includes(parseInt(cb.value));
+                cb.checked = itemIds.includes(parseInt(cb.value, 10));
             });
-            
+
             document.getElementById('transportModalTitle').textContent = '编辑运输记录';
             loadInvoices();
-            transportModal.show();
-        });
+            if (typeof bootstrap !== 'undefined') {
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('transportModal')).show();
+            } else if (transportModal) {
+                transportModal.show();
+            }
+        })
+        .catch(err => alert(err.message || '加载运输记录失败'));
 }
 
 function saveTransport(e) {

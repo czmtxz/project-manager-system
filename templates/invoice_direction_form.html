@@ -1,0 +1,215 @@
+{% extends "nav_base.html" %}
+{% block title %}{% if edit_mode %}编辑{% else %}新增{% endif %}{{ direction_label }}{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{{ url_for('invoice_hub') }}">发票管理</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('invoice_sales' if direction == 'sales' else 'invoice_purchase') }}">{{ direction_label }}</a></li>
+            <li class="breadcrumb-item active">{% if edit_mode %}编辑{% else %}新增{% endif %}</li>
+        </ol>
+    </nav>
+    <div class="row">
+        <div class="col-lg-10">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">{% if edit_mode %}编辑{% else %}新增{% endif %}{{ direction_label }}</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" id="invoiceForm" enctype="multipart/form-data"
+                          action="{% if edit_mode %}{{ url_for('invoice_sales_edit' if direction == 'sales' else 'invoice_purchase_edit', id=invoice.id) }}{% else %}{{ url_for('invoice_sales_add' if direction == 'sales' else 'invoice_purchase_add') }}{% endif %}">
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-4">
+                                <label class="form-label">项目</label>
+                                <select name="project_id" class="form-select" id="projectId">
+                                    <option value="">-- 可选 --</option>
+                                    {% for p in projects %}
+                                    <option value="{{ p.id }}" {% if invoice and invoice.project_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">关联合同</label>
+                                <select name="contract_id" class="form-select" id="contractId">
+                                    <option value="">-- 可选 --</option>
+                                    {% if invoice and invoice.contract_id %}
+                                    {% for c in contracts %}
+                                    {% if c.id == invoice.contract_id %}
+                                    <option value="{{ c.id }}" selected>{{ c.contract_no }} {{ c.contract_name }}</option>
+                                    {% endif %}
+                                    {% endfor %}
+                                    {% endif %}
+                                </select>
+                            </div>
+                            {% if direction == 'sales' %}
+                            <div class="col-md-4">
+                                <label class="form-label">客户名称</label>
+                                <input type="text" name="customer_name" class="form-control"
+                                       value="{% if invoice %}{{ invoice.customer_name or '' }}{% else %}{{ prefill.customer_name }}{% endif %}">
+                            </div>
+                            {% else %}
+                            <div class="col-md-4">
+                                <label class="form-label">供应商</label>
+                                <input type="text" name="supplier" class="form-control"
+                                       value="{% if invoice %}{{ invoice.supplier or '' }}{% else %}{{ prefill.supplier }}{% endif %}">
+                            </div>
+                            {% endif %}
+                            <div class="col-md-4">
+                                <label class="form-label">发票号码 <span class="text-danger">*</span></label>
+                                <input type="text" name="invoice_no" class="form-control" required
+                                       value="{% if invoice %}{{ invoice.invoice_no }}{% endif %}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">开票日期</label>
+                                <input type="date" name="invoice_date" class="form-control"
+                                       value="{% if invoice and invoice.invoice_date %}{{ invoice.invoice_date }}{% else %}{{ now.strftime('%Y-%m-%d') }}{% endif %}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">发票金额</label>
+                                <input type="number" name="amount" class="form-control" step="0.01" id="invoiceAmount"
+                                       value="{% if invoice and invoice.amount %}{{ invoice.amount }}{% endif %}">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">税率(%)</label>
+                                <input type="number" name="tax_rate" class="form-control" step="0.1" id="invoiceTaxRate"
+                                       value="{% if invoice and invoice.tax_rate %}{{ invoice.tax_rate }}{% endif %}">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">税额</label>
+                                <input type="number" name="tax_amount" class="form-control" step="0.01" id="taxAmount"
+                                       value="{% if invoice and invoice.tax_amount %}{{ invoice.tax_amount }}{% endif %}">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">状态</label>
+                                <select name="status" class="form-select">
+                                    {% if direction == 'sales' %}
+                                    <option value="issued" {% if invoice and invoice.status == 'issued' %}selected{% endif %}>已开具</option>
+                                    <option value="pending" {% if invoice and invoice.status == 'pending' %}selected{% endif %}>待开</option>
+                                    <option value="verified" {% if invoice and invoice.status == 'verified' %}selected{% endif %}>已认证</option>
+                                    {% else %}
+                                    <option value="received" {% if invoice and invoice.status in ['received', '已收'] %}selected{% endif %}>已收到</option>
+                                    <option value="pending" {% if invoice and invoice.status == 'pending' %}selected{% endif %}>待收</option>
+                                    <option value="verified" {% if invoice and invoice.status == 'verified' %}selected{% endif %}>已认证</option>
+                                    {% endif %}
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">备注</label>
+                                <textarea name="remark" class="form-control" rows="2">{% if invoice %}{{ invoice.remark or '' }}{% endif %}</textarea>
+                            </div>
+                        </div>
+
+                        <p class="small text-muted">开票以<strong>发票金额</strong>为准，明细行可选填（汇总页「汇总开票」可不填明细）。</p>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="mb-0">发票明细（可选）</h6>
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="addLineBtn">
+                                <i class="bi bi-plus"></i> 增加明细行
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm" id="linesTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>品名</th>
+                                        <th>规格型号</th>
+                                        <th class="text-end" style="width:120px">数量</th>
+                                        <th class="text-end" style="width:140px">金额</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="linesBody"></tbody>
+                            </table>
+                        </div>
+
+                        <div class="d-flex gap-2 mt-3">
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-check"></i> 保存</button>
+                            <a href="{{ url_for('invoice_sales' if direction == 'sales' else 'invoice_purchase') }}" class="btn btn-secondary">返回</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function() {
+    var contractData = [
+        {% for c in contracts %}
+        {id: {{ c.id }}, project_id: {{ c.project_id or 'null' }}, label: {{ ((c.contract_no or '') ~ ' ' ~ (c.contract_name or ''))|trim|tojson }}},
+        {% endfor %}
+    ];
+    var existingLines = [
+        {% for ln in lines %}
+        {item_name: {{ ln.item_name|tojson }}, specification: {{ ln.specification|tojson }},
+         quantity: {{ ln.quantity or 0 }}, amount: {{ ln.amount or 0 }}},
+        {% endfor %}
+    ];
+    var prefill = {
+        item_name: {{ prefill.item_name|tojson }},
+        specification: {{ prefill.specification|tojson }},
+        quantity: {{ prefill.open_qty|tojson }},
+        amount: {{ prefill.open_amt|tojson }}
+    };
+
+    function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+    function addLine(data) {
+        data = data || {};
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+            '<td><input type="text" name="line_item_name[]" class="form-control form-control-sm" value="' + esc(data.item_name) + '"></td>' +
+            '<td><input type="text" name="line_specification[]" class="form-control form-control-sm" value="' + esc(data.specification) + '"></td>' +
+            '<td><input type="number" name="line_quantity[]" class="form-control form-control-sm text-end line-qty" step="0.01" value="' + (data.quantity !== undefined && data.quantity !== '' ? data.quantity : '') + '"></td>' +
+            '<td><input type="number" name="line_amount[]" class="form-control form-control-sm text-end line-amt" step="0.01" value="' + (data.amount !== undefined && data.amount !== '' ? data.amount : '') + '"></td>' +
+            '<td><button type="button" class="btn btn-sm btn-outline-danger del-line">&times;</button></td>';
+        document.getElementById('linesBody').appendChild(tr);
+        tr.querySelector('.del-line').addEventListener('click', function() { tr.remove(); syncAmount(); });
+        tr.querySelectorAll('.line-amt').forEach(function(el) { el.addEventListener('input', syncAmount); });
+    }
+
+    function syncAmount() {
+        var sum = 0;
+        document.querySelectorAll('.line-amt').forEach(function(el) { sum += parseFloat(el.value) || 0; });
+        if (sum > 0) document.getElementById('invoiceAmount').value = sum.toFixed(2);
+        calcTax();
+    }
+
+    function calcTax() {
+        var amount = parseFloat(document.getElementById('invoiceAmount').value) || 0;
+        var rate = parseFloat(document.getElementById('invoiceTaxRate').value) || 0;
+        document.getElementById('taxAmount').value = (amount * rate / 100).toFixed(2);
+    }
+
+    document.getElementById('addLineBtn').addEventListener('click', function() { addLine({}); });
+    document.getElementById('invoiceAmount').addEventListener('input', calcTax);
+    document.getElementById('invoiceTaxRate').addEventListener('input', calcTax);
+
+    document.getElementById('projectId').addEventListener('change', function() {
+        var pid = this.value;
+        var sel = document.getElementById('contractId');
+        var cur = sel.value;
+        sel.innerHTML = '<option value="">-- 可选 --</option>';
+        contractData.forEach(function(c) {
+            if (!pid || String(c.project_id) === String(pid)) {
+                var o = document.createElement('option');
+                o.value = c.id;
+                o.textContent = c.label;
+                if (String(c.id) === String(cur)) o.selected = true;
+                sel.appendChild(o);
+            }
+        });
+    });
+
+    if (existingLines.length) {
+        existingLines.forEach(function(l) { addLine(l); });
+    } else if (prefill.item_name) {
+        addLine(prefill);
+    } else {
+        addLine({});
+    }
+    calcTax();
+})();
+</script>
+{% endblock %}

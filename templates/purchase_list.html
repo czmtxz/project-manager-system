@@ -52,6 +52,7 @@
                 </div>
                 <div class="col-md-2">
                     <div class="form-check mb-2">
+                        <input type="hidden" name="include_draft" value="0">
                         <input class="form-check-input" type="checkbox" name="include_draft" value="1" id="include_draft"
                                {% if filters.include_draft %}checked{% endif %}>
                         <label class="form-check-label" for="include_draft">汇总含未提交</label>
@@ -181,6 +182,13 @@
                                               onsubmit="return confirm('确定删除此采购单?')">
                                         <button type="submit" class="btn btn-outline-danger" title="删除">
                                             <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                    {% elif purchase_is_submitted(p.status) %}
+                                    <form method="POST" action="{{ url_for('purchase_unsubmit', id=p.id) }}" style="display:inline"
+                                          onsubmit="return confirm('确定反提交此采购单？')">
+                                        <button type="submit" class="btn btn-outline-warning" title="反提交">
+                                            <i class="bi bi-arrow-counterclockwise"></i>
                                         </button>
                                     </form>
                                     {% endif %}

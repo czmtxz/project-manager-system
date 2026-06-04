@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      {
+        "command": "powershell -ExecutionPolicy Bypass -NoProfile -File .cursor/hooks/auto-deploy.ps1",
+        "timeout": 300
+      }
+    ]
+  }
+}

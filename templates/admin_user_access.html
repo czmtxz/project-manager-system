@@ -1,0 +1,121 @@
+{% extends "nav_base.html" %}
+{% block title %}用户权限 - {{ user.username }}{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('account_manage') }}">账号管理</a></li>
+            <li class="breadcrumb-item active">{{ user.username }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-1"><i class="bi bi-shield-lock"></i> 权限管理：{{ user.username }}</h4>
+    <p class="text-muted small mb-4">
+        角色：<strong>{{ role_label }}</strong>；
+        功能权限控制菜单与操作；数据权限按<strong>授权项目</strong>过滤项目列表、项目详情及报表中的项目范围。
+    </p>
+
+    <form method="POST">
+        <div class="row g-4">
+            <div class="col-lg-6">
+                <div class="card h-100">
+                    <div class="card-header"><h6 class="mb-0">功能权限</h6></div>
+                    <div class="card-body">
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" name="use_role_default" value="1" id="useRoleDefault"
+                                   {% if use_role_default %}checked{% endif %}>
+                            <label class="form-check-label" for="useRoleDefault">
+                                沿用角色默认权限（不单独配置时按「{{ role_label }}」）
+                            </label>
+                        </div>
+                        <div id="permPanel" class="{% if use_role_default %}opacity-50{% endif %}">
+                            {% for grp, items in perm_groups.items() %}
+                            <h6 class="text-muted small mt-2 mb-1">{{ grp }}</h6>
+                            <div class="row">
+                                {% for p in items %}
+                                <div class="col-md-6 mb-1">
+                                    <div class="form-check">
+                                        <input class="form-check-input perm-cb" type="checkbox" name="permissions"
+                                               value="{{ p.code }}" id="perm_{{ p.code }}"
+                                               {% if use_role_default %}
+                                               {% if p.code in effective_permissions %}checked{% endif %} disabled
+                                               {% elif p.code in stored_permissions %}checked
+                                               {% endif %}>
+                                        <label class="form-check-label small" for="perm_{{ p.code }}">{{ p.name }}</label>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <p class="small text-muted mt-2 mb-0">取消「沿用角色默认」并勾选后，将保存为该用户的独立权限配置。</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card h-100">
+                    <div class="card-header"><h6 class="mb-0">数据权限（按项目授权）</h6></div>
+                    <div class="card-body">
+                        {% if sees_all_projects %}
+                        <div class="alert alert-info small mb-0">
+                            「{{ role_label }}」默认可查看<strong>全部项目</strong>，无需单独授权。
+                        </div>
+                        {% else %}
+                        <p class="small text-muted">仅勾选的项目会在项目列表、项目详情、报表筛选项中对该用户可见。</p>
+                        <div class="mb-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAllProj">全选</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNoneProj">清空</button>
+                        </div>
+                        <div class="row" style="max-height: 420px; overflow-y: auto;">
+                            {% for p in projects %}
+                            <div class="col-md-6 mb-1">
+                                <div class="form-check">
+                                    <input class="form-check-input proj-cb" type="checkbox" name="project_ids"
+                                           value="{{ p.id }}" id="proj{{ p.id }}"
+                                           {% if p.id in assigned_projects %}checked{% endif %}>
+                                    <label class="form-check-label small" for="proj{{ p.id }}">
+                                        {{ p.name }}
+                                        <span class="text-muted">({{ p.status or '-' }})</span>
+                                    </label>
+                                </div>
+                            </div>
+                            {% else %}
+                            <p class="text-muted">暂无项目，请先创建项目。</p>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="mt-3 d-flex gap-2">
+            <button type="submit" name="action" value="save_all" class="btn btn-primary">保存全部</button>
+            <a href="{{ url_for('account_manage') }}" class="btn btn-secondary">返回账号管理</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function() {
+    var useDef = document.getElementById('useRoleDefault');
+    var panel = document.getElementById('permPanel');
+    if (useDef) {
+        useDef.addEventListener('change', function() {
+            var dis = useDef.checked;
+            panel.classList.toggle('opacity-50', dis);
+            document.querySelectorAll('.perm-cb').forEach(function(c) {
+                c.disabled = dis;
+            });
+        });
+    }
+    var btnAll = document.getElementById('btnAllProj');
+    var btnNone = document.getElementById('btnNoneProj');
+    if (btnAll) btnAll.addEventListener('click', function() {
+        document.querySelectorAll('.proj-cb').forEach(function(c) { c.checked = true; });
+    });
+    if (btnNone) btnNone.addEventListener('click', function() {
+        document.querySelectorAll('.proj-cb').forEach(function(c) { c.checked = false; });
+    });
+})();
+</script>
+{% endblock %}

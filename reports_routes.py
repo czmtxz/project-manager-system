@@ -207,7 +207,7 @@ def view(slug):
         flash('报表数据加载失败', 'danger')
         return redirect(url_for('reports.hub'))
 
-    projects = load_projects(db)
+    projects = load_projects(db, session.get('user_id'), role)
     template = meta.get('template') or 'view.html'
     chart_json = chart_data_json(data.get('chart_data') or {})
 

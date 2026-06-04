@@ -9,10 +9,13 @@
                     <h5 class="mb-0"><i class="bi bi-{% if project %}pencil{% else %}plus-circle{% endif %}"></i> {% if project %}编辑项目{% else %}新增项目{% endif %}</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST" id="projectForm">
+                    <form method="POST" id="projectForm" action="{% if project %}{{ url_for('project_edit', pid=project.id) }}{% else %}{{ url_for('project_add') }}{% endif %}">
                         <div class="mb-3">
                             <label class="form-label">项目名称 <span class="text-danger">*</span></label>
                             <input type="text" name="name" class="form-control" placeholder="请输入项目名称" required value="{{ project.name if project else '' }}">
+                            {% if project %}
+                            <div class="form-text">采购、销售、合同、费用、发票等仅保存项目编号；改名后各单据中的项目名称会自动更新为当前名称。</div>
+                            {% endif %}
                         </div>
                         <div class="mb-3">
                             <label class="form-label">项目描述</label>

@@ -1,0 +1,52 @@
+{% extends "nav_base.html" %}
+{% block title %}{{ direction_label }} Excel导入{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{{ url_for('invoice_hub') }}">发票管理</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('invoice_sales' if direction == 'sales' else 'invoice_purchase') }}">{{ direction_label }}</a></li>
+            <li class="breadcrumb-item active">Excel导入</li>
+        </ol>
+    </nav>
+    <div class="row justify-content-center">
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-header"><h5 class="mb-0"><i class="bi bi-file-earmark-excel"></i> {{ direction_label }} Excel导入</h5></div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">默认项目（行内无项目时使用）</label>
+                            <select name="project_id" class="form-select">
+                                <option value="">不指定</option>
+                                {% for p in projects %}
+                                <option value="{{ p.id }}">{{ p.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Excel 文件</label>
+                            <input type="file" name="file" class="form-control" accept=".xlsx,.xls" required>
+                        </div>
+                        <div class="alert alert-info small">
+                            <strong>表头列名（支持中文）：</strong>发票号码*、开票日期、金额、税率、税额、
+                            {% if direction == 'sales' %}客户{% else %}供应商{% endif %}、品名、规格型号、数量、明细金额、项目名称、备注。<br>
+                            同一发票号多行将合并为一张发票的多条明细。
+                        </div>
+                        {% if errors %}
+                        <div class="alert alert-warning small">
+                            {% for e in errors[:20] %}<div>{{ e }}</div>{% endfor %}
+                            {% if errors|length > 20 %}<div>…共 {{ errors|length }} 条提示</div>{% endif %}
+                        </div>
+                        {% endif %}
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-upload"></i> 导入</button>
+                            <a href="{{ url_for('invoice_sales' if direction == 'sales' else 'invoice_purchase') }}" class="btn btn-secondary">返回</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

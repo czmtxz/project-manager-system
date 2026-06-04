@@ -200,12 +200,17 @@
                                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#pwdUserModal{{ user.id }}">重置密码</button>
                                     {% if user.role == 'client_collab' %}
                                     <a href="{{ url_for('admin_user_collab_scope', uid=user.id) }}" class="btn btn-sm btn-outline-primary">负责客户</a>
+                                    {% elif user.role not in ['client_collab_admin'] %}
+                                    <a href="{{ url_for('admin_user_access', uid=user.id) }}" class="btn btn-sm btn-outline-info" title="功能权限与项目数据授权">权限</a>
                                     {% endif %}
                                     {% if user.id != session.user_id %}
                                     <form method="POST" action="{{ url_for('account_toggle', uid=user.id) }}" class="d-inline">
                                         <button type="submit" class="btn btn-sm btn-outline-warning">{% if user.status == 'disabled' %}启用{% else %}禁用{% endif %}</button>
                                     </form>
-                                    <a href="{{ url_for('account_delete', uid=user.id) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('确认删除账号 {{ user.username }}？')">删除</a>
+                                    <form method="POST" action="{{ url_for('account_delete', uid=user.id) }}" class="d-inline"
+                                          onsubmit="return confirm('确认删除账号 {{ user.username }}？删除后不可恢复。');">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                                    </form>
                                     {% endif %}
                                 </td>
                             </tr>

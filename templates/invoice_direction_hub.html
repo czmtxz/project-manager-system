@@ -1,0 +1,311 @@
+{% extends "nav_base.html" %}
+{% block title %}{{ direction_label }} - 发票管理{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{{ url_for('invoice_hub') }}">发票管理</a></li>
+            <li class="breadcrumb-item active">{{ direction_label }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h4 class="mb-0">
+            <i class="bi bi-{% if direction == 'sales' %}box-arrow-up text-success{% else %}box-arrow-in-down text-primary{% endif %}"></i>
+            {{ direction_label }}
+        </h4>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('invoice_sales_add' if direction == 'sales' else 'invoice_purchase_add') }}" class="btn btn-success btn-sm">
+                <i class="bi bi-plus-lg"></i> 新增
+            </a>
+            <a href="{{ url_for('invoice_sales_ocr_import' if direction == 'sales' else 'invoice_purchase_ocr_import') }}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-camera"></i> OCR导入
+            </a>
+            <a href="{{ url_for('invoice_sales_import' if direction == 'sales' else 'invoice_purchase_import') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-file-earmark-excel"></i> Excel导入
+            </a>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="GET" class="row g-2 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">开始日期</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">结束日期</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">项目</label>
+                    <select name="project_id" class="form-select form-select-sm">
+                        <option value="">全部</option>
+                        {% for p in projects %}
+                        <option value="{{ p.id }}" {% if filters.project_id == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% if direction == 'sales' %}
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">客户</label>
+                    <input type="text" name="customer_name" class="form-control form-control-sm" value="{{ filters.customer_name }}">
+                </div>
+                {% else %}
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">供应商</label>
+                    <input type="text" name="supplier" class="form-control form-control-sm" value="{{ filters.supplier }}">
+                </div>
+                {% endif %}
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">品名</label>
+                    <input type="text" name="item_name" class="form-control form-control-sm" value="{{ filters.item_name }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">汇总维度</label>
+                    <select name="group_by" class="form-select form-select-sm">
+                        <option value="item_spec" {% if filters.group_by == 'item_spec' %}selected{% endif %}>品名+规格</option>
+                        <option value="item_name" {% if filters.group_by == 'item_name' %}selected{% endif %}>仅品名</option>
+                        {% if direction == 'sales' %}
+                        <option value="customer" {% if filters.group_by == 'customer' %}selected{% endif %}>按客户</option>
+                        {% else %}
+                        <option value="supplier" {% if filters.group_by == 'supplier' %}selected{% endif %}>按供应商</option>
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="col-md-auto">
+                    <input type="hidden" name="include_draft" value="0">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="include_draft" value="1" id="incDraft"
+                               {% if filters.include_draft %}checked{% endif %}>
+                        <label class="form-check-label small" for="incDraft">含未提交单据</label>
+                    </div>
+                </div>
+                <div class="col-md-auto">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> 查询</button>
+                    <a href="{{ url_for('invoice_sales' if direction == 'sales' else 'invoice_purchase') }}" class="btn btn-outline-secondary btn-sm">重置</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% set t = summary.totals %}
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card p-3 border-start border-4 border-secondary">
+                <small class="text-muted">{% if direction == 'sales' %}应开（{{ summary.source_label }}）{% else %}应付（采购）{% endif %}金额</small>
+                <h5 class="mb-0">{{ "%.2f"|format(t.source_amt) }}</h5>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3 border-start border-4 border-success">
+                <small class="text-muted">{% if direction == 'sales' %}已开票{% else %}已收票{% endif %}金额</small>
+                <h5 class="mb-0 text-success">{{ "%.2f"|format(t.invoiced_amt) }}</h5>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3 border-start border-4 border-warning">
+                <small class="text-muted">{% if direction == 'sales' %}未开票{% else %}未收票{% endif %}金额</small>
+                <h5 class="mb-0 text-warning">{{ "%.2f"|format(t.open_amt) }}</h5>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h6 class="mb-0">{{ summary.group_by_label }} 分类汇总</h6>
+                <small class="text-muted">按金额看已开/未开，可勾选多项汇总开票或部分金额开票</small>
+            </div>
+            <span class="badge bg-secondary">{{ summary.rows|length }} 项</span>
+        </div>
+        <div class="card-body p-0">
+            <div id="batchBar" class="px-3 py-2 bg-light border-bottom d-none align-items-center flex-wrap gap-2">
+                <span>已选 <strong id="selCount">0</strong> 项，未开合计 <strong class="text-warning" id="selOpenAmt">0.00</strong> 元</span>
+                <form method="POST" action="{{ url_for('invoice_sales_batch' if direction == 'sales' else 'invoice_purchase_batch') }}" id="batchGoForm" class="d-inline">
+                    <input type="hidden" name="group_by" value="{{ filters.group_by }}">
+                    <input type="hidden" name="date_from" value="{{ filters.date_from }}">
+                    <input type="hidden" name="date_to" value="{{ filters.date_to }}">
+                    <input type="hidden" name="project_id" value="{{ filters.project_id }}">
+                    {% if direction == 'sales' %}
+                    <input type="hidden" name="customer_name" value="{{ filters.customer_name }}">
+                    {% else %}
+                    <input type="hidden" name="supplier" value="{{ filters.supplier }}">
+                    {% endif %}
+                    <input type="hidden" name="item_name" value="{{ filters.item_name }}">
+                    <input type="hidden" name="include_draft" value="{{ '1' if filters.include_draft else '0' }}">
+                    <span id="batchHiddenKeys"></span>
+                    <button type="submit" class="btn btn-success btn-sm" id="btnBatchIssue" disabled>
+                        <i class="bi bi-receipt-cutoff"></i> 汇总开票
+                    </button>
+                </form>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0" id="summaryTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:36px">
+                                <input type="checkbox" class="form-check-input" id="chkAll" title="全选可开票项">
+                            </th>
+                            <th>{{ summary.dim_primary_label }}</th>
+                            {% if summary.show_secondary %}<th>规格型号</th>{% endif %}
+                            <th class="text-end">{{ summary.source_label }}金额</th>
+                            <th class="text-end">{% if direction == 'sales' %}已开金额{% else %}已收金额{% endif %}</th>
+                            <th class="text-end">{% if direction == 'sales' %}未开金额{% else %}未收金额{% endif %}</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in summary.rows %}
+                        <tr data-open-amt="{{ r.open_amt }}" class="{% if r.open_amt <= 0.01 %}text-muted{% endif %}">
+                            <td>
+                                {% if r.open_amt > 0.01 %}
+                                <input type="checkbox" class="form-check-input row-chk"
+                                       value="{{ r.row_key }}" data-open="{{ r.open_amt }}">
+                                {% endif %}
+                            </td>
+                            <td>{{ r.dim_primary }}</td>
+                            {% if summary.show_secondary %}<td>{{ r.dim_secondary }}</td>{% endif %}
+                            <td class="text-end">{{ "%.2f"|format(r.source_amt) }}</td>
+                            <td class="text-end">{{ "%.2f"|format(r.invoiced_amt) }}</td>
+                            <td class="text-end {% if r.open_amt_negative %}text-danger{% else %}text-warning fw-semibold{% endif %}">{{ "%.2f"|format(r.open_amt) }}</td>
+                            <td>
+                                {% if r.open_amt > 0.01 %}
+                                <form method="POST" action="{{ url_for('invoice_sales_batch' if direction == 'sales' else 'invoice_purchase_batch') }}" class="d-inline">
+                                    <input type="hidden" name="selected_row" value="{{ r.row_key }}">
+                                    <input type="hidden" name="group_by" value="{{ filters.group_by }}">
+                                    <input type="hidden" name="date_from" value="{{ filters.date_from }}">
+                                    <input type="hidden" name="date_to" value="{{ filters.date_to }}">
+                                    <input type="hidden" name="project_id" value="{{ filters.project_id }}">
+                                    {% if direction == 'sales' %}
+                                    <input type="hidden" name="customer_name" value="{{ filters.customer_name }}">
+                                    {% else %}
+                                    <input type="hidden" name="supplier" value="{{ filters.supplier }}">
+                                    {% endif %}
+                                    <input type="hidden" name="item_name" value="{{ filters.item_name }}">
+                                    <input type="hidden" name="include_draft" value="{{ '1' if filters.include_draft else '0' }}">
+                                    <button type="submit" class="btn btn-outline-success btn-sm">开票</button>
+                                </form>
+                                {% else %}
+                                <span class="text-muted small">-</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="8" class="text-center text-muted py-4">暂无汇总数据</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if summary.rows %}
+                    <tfoot class="table-light fw-semibold">
+                        <tr>
+                            <td></td>
+                            <td colspan="{% if summary.show_secondary %}2{% else %}1{% endif %}">合计</td>
+                            <td class="text-end">{{ "%.2f"|format(t.source_amt) }}</td>
+                            <td class="text-end">{{ "%.2f"|format(t.invoiced_amt) }}</td>
+                            <td class="text-end">{{ "%.2f"|format(t.open_amt) }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h6 class="mb-0">发票登记记录</h6></div>
+        <div class="card-body p-0">
+            {% if invoices %}
+            <div class="table-responsive">
+                <table class="table table-hover table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>发票号</th>
+                            <th>项目</th>
+                            {% if direction == 'sales' %}<th>客户</th>{% else %}<th>供应商</th>{% endif %}
+                            <th class="text-end">金额</th>
+                            <th>开票日期</th>
+                            <th>状态</th>
+                            <th>明细</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for inv in invoices %}
+                        <tr>
+                            <td><code>{{ inv.invoice_number or '-' }}</code></td>
+                            <td>{{ inv.project_name or '-' }}</td>
+                            <td>{{ inv.customer_name if direction == 'sales' else inv.supplier or '-' }}</td>
+                            <td class="text-end">{{ "%.2f"|format(inv.amount or 0) }}</td>
+                            <td>{{ inv.invoice_date or '-' }}</td>
+                            <td>{{ inv.status or '-' }}</td>
+                            <td>{{ inv.line_count or 0 }} 行</td>
+                            <td>
+                                <a href="{{ url_for('invoice_sales_edit' if direction == 'sales' else 'invoice_purchase_edit', id=inv.id) }}"
+                                   class="btn btn-outline-primary btn-sm" title="编辑"><i class="bi bi-pencil"></i></a>
+                                <form method="POST" action="{{ url_for('invoice_delete', id=inv.id) }}" class="d-inline"
+                                      onsubmit="return confirm('确定删除该发票？');">
+                                    <button type="submit" class="btn btn-outline-danger btn-sm" title="删除"><i class="bi bi-trash"></i></button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted text-center py-4 mb-0">暂无发票登记</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function() {
+    var bar = document.getElementById('batchBar');
+    var chkAll = document.getElementById('chkAll');
+    var rowChks = document.querySelectorAll('.row-chk');
+    var selCount = document.getElementById('selCount');
+    var selOpenAmt = document.getElementById('selOpenAmt');
+    var batchHidden = document.getElementById('batchHiddenKeys');
+    var btnBatch = document.getElementById('btnBatchIssue');
+
+    function refresh() {
+        var n = 0, sum = 0;
+        batchHidden.innerHTML = '';
+        rowChks.forEach(function(c) {
+            if (c.checked) {
+                n++;
+                sum += parseFloat(c.dataset.open) || 0;
+                var inp = document.createElement('input');
+                inp.type = 'hidden';
+                inp.name = 'selected_row';
+                inp.value = c.value;
+                batchHidden.appendChild(inp);
+            }
+        });
+        selCount.textContent = n;
+        selOpenAmt.textContent = sum.toFixed(2);
+        if (n > 0) {
+            bar.classList.remove('d-none');
+            bar.classList.add('d-flex');
+            btnBatch.disabled = false;
+        } else {
+            bar.classList.add('d-none');
+            bar.classList.remove('d-flex');
+            btnBatch.disabled = true;
+        }
+    }
+
+    if (chkAll) {
+        chkAll.addEventListener('change', function() {
+            rowChks.forEach(function(c) { c.checked = chkAll.checked; });
+            refresh();
+        });
+    }
+    rowChks.forEach(function(c) { c.addEventListener('change', refresh); });
+    refresh();
+})();
+</script>
+{% endblock %}

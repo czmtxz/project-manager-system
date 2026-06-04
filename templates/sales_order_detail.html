@@ -36,12 +36,27 @@
                 </button>
             </form>
             {% elif sales_is_submitted(order.status) %}
+            <a href="{{ url_for('sales_order_edit', id=order.id) }}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-pencil"></i> 编辑
+            </a>
             <form method="POST" action="{{ url_for('sales_order_unsubmit', id=order.id) }}" style="display:inline"
                   onsubmit="return confirm('确定反提交？反提交后单据变为待审核，可重新编辑。')">
                 <button type="submit" class="btn btn-outline-warning btn-sm">
                     <i class="bi bi-arrow-counterclockwise"></i> 反提交
                 </button>
             </form>
+            {% elif sales_is_editable(order.status) %}
+            <a href="{{ url_for('sales_order_edit', id=order.id) }}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-pencil"></i> 编辑
+            </a>
+            {% if sales_can_unsubmit(order.status) %}
+            <form method="POST" action="{{ url_for('sales_order_unsubmit', id=order.id) }}" style="display:inline"
+                  onsubmit="return confirm('确定反提交？反提交后变为待审核。')">
+                <button type="submit" class="btn btn-outline-warning btn-sm">
+                    <i class="bi bi-arrow-counterclockwise"></i> 反提交
+                </button>
+            </form>
+            {% endif %}
             {% endif %}
         </div>
     </div>
@@ -214,7 +229,7 @@
                                     <td class="text-end">{{ "%.2f"|format(t.freight_amount) }}</td>
                                     <td>
                                         <div class="btn-group btn-group-sm">
-                                            <button type="button" class="btn btn-outline-secondary" onclick="editTransport({{ t.id }})" title="编辑">
+                                            <button type="button" class="btn btn-outline-secondary" onclick="editTransport({{ t.id }})" title="修改">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
                                             <button type="button" class="btn btn-outline-danger" onclick="deleteTransport({{ t.id }})" title="删除">
@@ -358,18 +373,27 @@
 </div>
 
 <script>
-let transportModal;
 const ORDER_ID = {{ order.id }};
 
+function getTransportModal() {
+    const el = document.getElementById('transportModal');
+    if (!el) return null;
+    if (typeof bootstrap === 'undefined') {
+        alert('页面脚本未加载完成，请刷新页面后重试');
+        return null;
+    }
+    return bootstrap.Modal.getOrCreateInstance(el);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
-    transportModal = new bootstrap.Modal(document.getElementById('transportModal'));
-
-    // 自动计算运费
-    document.getElementById('quantity').addEventListener('input', calcFreight);
-    document.getElementById('unit_price').addEventListener('input', calcFreight);
-
-    // 表单提交
-    document.getElementById('transportForm').addEventListener('submit', saveTransport);
+    const qtyEl = document.getElementById('quantity');
+    const priceEl = document.getElementById('unit_price');
+    if (qtyEl) qtyEl.addEventListener('input', calcFreight);
+    if (priceEl) priceEl.addEventListener('input', calcFreight);
+    const transportForm = document.getElementById('transportForm');
+    if (transportForm) transportForm.addEventListener('submit', saveTransport);
+    const ocrForm = document.getElementById('ocrImportForm');
+    if (ocrForm) ocrForm.addEventListener('submit', submitOcrImport);
 });
 
 function calcFreight() {
@@ -390,7 +414,8 @@ function showTransportModal() {
     // 设置默认日期
     document.getElementById('transport_date').value = new Date().toISOString().split('T')[0];
 
-    transportModal.show();
+    const modal = getTransportModal();
+    if (modal) modal.show();
 }
 
 function showOcrImportModal() {
@@ -398,7 +423,7 @@ function showOcrImportModal() {
     new bootstrap.Modal(document.getElementById('ocrImportModal')).show();
 }
 
-document.getElementById('ocrImportForm').addEventListener('submit', function(e) {
+function submitOcrImport(e) {
     e.preventDefault();
     const fileInput = document.getElementById('ocrImportFile');
     if (!fileInput.files.length) {
@@ -431,46 +456,62 @@ document.getElementById('ocrImportForm').addEventListener('submit', function(e) 
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-eye"></i> 上传并识别';
     });
-});
+}
 
 function editTransport(id) {
-    fetch(`/api/transport/${id}`)
-        .then(res => res.json())
-        .then(resp => {
-            const data = resp.data || resp;
-            document.getElementById('transport_id').value = data.id;
-            document.getElementById('batch_no').value = data.batch_no || '';
-            document.getElementById('vehicle_no').value = data.vehicle_no || '';
-            document.getElementById('driver_name').value = data.driver_name || '';
-            document.getElementById('driver_phone').value = data.driver_phone || '';
-            document.getElementById('transport_date').value = data.transport_date || '';
-            document.getElementById('quantity').value = data.quantity;
-            document.getElementById('unit_price').value = data.unit_price;
-            document.getElementById('freight_amount').value = data.freight_amount;
-            document.getElementById('remark').value = data.remark || '';
+    fetch(`/api/transport/${id}`, { credentials: 'same-origin' })
+    .then(async (res) => {
+        let resp = {};
+        try {
+            resp = await res.json();
+        } catch (_) {
+            throw new Error('服务器返回异常，请重新登录后重试');
+        }
+        if (!res.ok || !resp.success) {
+            throw new Error(resp.message || `加载失败 (HTTP ${res.status})`);
+        }
+        const data = resp.data;
+        if (!data || !data.id) {
+            throw new Error('运输记录数据无效');
+        }
+        document.getElementById('transport_id').value = data.id;
+        document.getElementById('batch_no').value = data.batch_no || '';
+        document.getElementById('vehicle_no').value = data.vehicle_no || '';
+        document.getElementById('driver_name').value = data.driver_name || '';
+        document.getElementById('driver_phone').value = data.driver_phone || '';
+        document.getElementById('transport_date').value = data.transport_date || '';
+        document.getElementById('quantity').value = data.quantity ?? '';
+        document.getElementById('unit_price').value = data.unit_price ?? '';
+        document.getElementById('freight_amount').value = data.freight_amount ?? '';
+        document.getElementById('remark').value = data.remark || '';
 
-            document.getElementById('transportModalTitle').textContent = '编辑运输记录';
-            transportModal.show();
-        });
+        document.getElementById('transportModalTitle').textContent = '编辑运输记录';
+        const modal = getTransportModal();
+        if (modal) modal.show();
+    })
+    .catch(err => alert(err.message || '加载运输记录失败'));
 }
 
 function saveTransport(e) {
     e.preventDefault();
     const formData = new FormData(document.getElementById('transportForm'));
-    formData.append('sales_order_id', ORDER_ID);
+    formData.append('sales_order_id', String(ORDER_ID));
     const transportId = document.getElementById('transport_id').value;
-    if (transportId) formData.append('id', transportId);
+    if (transportId) {
+        formData.set('id', transportId);
+    }
     fetch('/api/transport/save', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(Object.fromEntries(formData))
+        credentials: 'same-origin',
+        body: formData,
     })
-    .then(resp => resp.json())
-    .then(data => {
-        if (data.success) {
+    .then(async (res) => {
+        let data = {};
+        try { data = await res.json(); } catch (_) {}
+        if (res.ok && data.success) {
             location.reload();
         } else {
-            alert('保存失败: ' + (data.message || '未知错误'));
+            alert('保存失败: ' + (data.message || `HTTP ${res.status}`));
         }
     })
     .catch(err => alert('保存失败: ' + err.message));

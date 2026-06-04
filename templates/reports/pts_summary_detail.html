@@ -1,0 +1,144 @@
+{% extends staff_layout|default('nav_base.html') %}
+{% block title %}{{ meta.title }} - 报表中心{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{{ url_for('reports.hub') }}">报表中心</a></li>
+            <li class="breadcrumb-item active">{{ meta.title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-2"><i class="bi bi-layers"></i> {{ meta.title }}</h4>
+    <p class="text-muted small mb-3">{{ meta.description }}</p>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="GET" class="row g-2 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">开始日期</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">结束日期</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">项目</label>
+                    <select name="project_id" class="form-select form-select-sm">
+                        <option value="">全部项目</option>
+                        {% for p in projects %}
+                        <option value="{{ p.id }}" {% if filters.project_id == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">供应商</label>
+                    <input type="text" name="supplier" class="form-control form-control-sm" value="{{ filters.supplier }}" placeholder="供应商">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">客户</label>
+                    <input type="text" name="customer_name" class="form-control form-control-sm" value="{{ filters.customer_name }}" placeholder="客户名称">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">品名</label>
+                    <input type="text" name="item_name" class="form-control form-control-sm" value="{{ filters.item_name }}" placeholder="品名">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">规格型号</label>
+                    <input type="text" name="specification" class="form-control form-control-sm" value="{{ filters.specification }}" placeholder="规格型号">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small text-muted mb-0">汇总方式</label>
+                    <select name="group_by" class="form-select form-select-sm">
+                        <option value="detail" {% if filters.group_by == 'detail' %}selected{% endif %}>明细（项目+品名+规格）</option>
+                        <option value="item_spec" {% if filters.group_by == 'item_spec' %}selected{% endif %}>按品名+规格汇总</option>
+                        <option value="item_name" {% if filters.group_by == 'item_name' %}selected{% endif %}>按品名汇总</option>
+                        <option value="specification" {% if filters.group_by == 'specification' %}selected{% endif %}>按规格型号汇总</option>
+                        <option value="project" {% if filters.group_by == 'project' %}selected{% endif %}>按项目汇总</option>
+                        <option value="supplier" {% if filters.group_by == 'supplier' %}selected{% endif %}>按供应商汇总</option>
+                        <option value="customer" {% if filters.group_by == 'customer' %}selected{% endif %}>按客户汇总</option>
+                        <option value="date_month" {% if filters.group_by == 'date_month' %}selected{% endif %}>按月份汇总</option>
+                    </select>
+                </div>
+                <div class="col-md-auto d-flex align-items-center gap-2 pb-1">
+                    <input type="hidden" name="include_draft" value="0">
+                    <div class="form-check form-check-sm mb-0">
+                        <input class="form-check-input" type="checkbox" name="include_draft" value="1" id="includeDraftPts"
+                               {% if filters.include_draft %}checked{% endif %}>
+                        <label class="form-check-label small" for="includeDraftPts">含未提交/草稿</label>
+                    </div>
+                </div>
+                <div class="col-md-auto">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> 查询</button>
+                    <a href="{{ url_for('reports.view', slug=slug) }}" class="btn btn-outline-secondary btn-sm">重置</a>
+                    {% if session.role in ['admin', 'finance'] %}
+                    <a href="{{ url_for('reports.export', slug=slug, date_from=filters.date_from, date_to=filters.date_to, project_id=filters.project_id, supplier=filters.supplier, customer_name=filters.customer_name, item_name=filters.item_name, specification=filters.specification, group_by=filters.group_by, include_draft=('1' if filters.include_draft else '0')) }}" class="btn btn-success btn-sm">
+                        <i class="bi bi-file-earmark-excel"></i> 导出 Excel
+                    </a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        {% for k in data.kpis %}
+        <div class="col-xl col-md-4 col-6">
+            <div class="card text-center p-3 border-start border-4 border-{{ k.border }}">
+                <small class="text-muted">{{ k.label }}</small>
+                <h5 class="mb-0">{{ k.value }}</h5>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">{{ data.group_label or '数据表' }}</h6>
+            <span class="badge bg-secondary">{{ data.table_rows|length }} 行</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                {% set num_cols = ['采购数量','采购金额','运费数量','运费金额','出库数量','出库金额'] %}
+                <table class="table table-sm table-hover table-striped mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            {% for col in data.table_columns %}
+                            <th class="{% if col in num_cols %}text-end{% endif %}">{{ col }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if data.table_rows %}
+                        {% for row in data.table_rows %}
+                        <tr>
+                            {% for col in data.table_columns %}
+                            <td class="{% if col in num_cols %}text-end{% endif %}">{{ row[col] }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                        {% else %}
+                        <tr><td colspan="{{ data.table_columns|length }}" class="text-center text-muted py-4">暂无数据，请调整筛选条件</td></tr>
+                        {% endif %}
+                    </tbody>
+                    {% if data.table_footer and data.table_rows %}
+                    <tfoot class="table-light">
+                        <tr class="fw-semibold">
+                            {% for col in data.table_columns %}
+                            <td class="{% if col in num_cols %}text-end{% endif %}{% if col == '采购金额' %} text-primary{% elif col == '运费金额' %} text-warning{% elif col == '出库金额' %} text-success{% endif %}">
+                                {{ data.table_footer[col] }}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if data.footnote %}
+    <p class="small text-muted">{{ data.footnote }}</p>
+    {% endif %}
+</div>
+{% endblock %}

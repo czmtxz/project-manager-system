@@ -84,15 +84,21 @@
                     <!-- 分红管理（开发中） -->
                     <!-- 合同发票 -->
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['contract_list', 'invoice_list'] %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.endpoint and (request.endpoint.startswith('invoice_') or request.endpoint == 'invoice_list') %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                             <i class="bi bi-file-earmark"></i> 合同发票
                         </a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="{{ url_for('contract_list') }}">
                                 <i class="bi bi-file-earmark-text"></i> 合同列表
                             </a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('invoice_list') }}">
-                                <i class="bi bi-receipt"></i> 发票列表
+                            <li><a class="dropdown-item" href="{{ url_for('invoice_hub') }}">
+                                <i class="bi bi-receipt-cutoff"></i> 发票管理
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('invoice_sales') }}">
+                                <i class="bi bi-box-arrow-up"></i> 销售发票管理
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('invoice_purchase') }}">
+                                <i class="bi bi-box-arrow-in-down"></i> 采购发票管理
                             </a></li>
                         </ul>
                     </li>

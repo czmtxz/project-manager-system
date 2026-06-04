@@ -1,0 +1,160 @@
+{% extends staff_layout|default('nav_base.html') %}
+{% block title %}{{ meta.title }} - 报表中心{% endblock %}
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>.chart-container { height: 300px; }</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{{ url_for('reports.hub') }}">报表中心</a></li>
+            <li class="breadcrumb-item active">{{ meta.title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-2"><i class="bi bi-table"></i> {{ meta.title }}</h4>
+    <p class="text-muted small mb-3">{{ meta.description }}</p>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="GET" class="row g-2 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">开始日期</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">结束日期</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">项目</label>
+                    <select name="project_id" class="form-select form-select-sm">
+                        <option value="">全部项目</option>
+                        {% for p in projects %}
+                        <option value="{{ p.id }}" {% if filters.project_id == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">客户</label>
+                    <input type="text" name="customer_name" class="form-control form-control-sm" value="{{ filters.customer_name }}" placeholder="客户名称">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">品名</label>
+                    <input type="text" name="item_name" class="form-control form-control-sm" value="{{ filters.item_name }}" placeholder="品名">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-0">规格型号</label>
+                    <input type="text" name="specification" class="form-control form-control-sm" value="{{ filters.specification }}" placeholder="规格型号">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small text-muted mb-0">汇总方式</label>
+                    <select name="group_by" class="form-select form-select-sm">
+                        <option value="detail" {% if filters.group_by == 'detail' %}selected{% endif %}>出库明细（逐行）</option>
+                        <option value="customer" {% if filters.group_by == 'customer' %}selected{% endif %}>按客户汇总</option>
+                        <option value="item_name" {% if filters.group_by == 'item_name' %}selected{% endif %}>按品名汇总</option>
+                        <option value="specification" {% if filters.group_by == 'specification' %}selected{% endif %}>按规格型号汇总</option>
+                        <option value="item_spec" {% if filters.group_by == 'item_spec' %}selected{% endif %}>按品名+规格汇总</option>
+                        <option value="date_day" {% if filters.group_by == 'date_day' %}selected{% endif %}>按出库日期汇总</option>
+                        <option value="date_month" {% if filters.group_by == 'date_month' %}selected{% endif %}>按月份汇总</option>
+                        <option value="project" {% if filters.group_by == 'project' %}selected{% endif %}>按项目汇总</option>
+                    </select>
+                </div>
+                <div class="col-md-auto">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> 查询</button>
+                    <a href="{{ url_for('reports.view', slug=slug) }}" class="btn btn-outline-secondary btn-sm">重置</a>
+                    {% if session.role in ['admin', 'finance'] %}
+                    <a href="{{ url_for('reports.export', slug=slug, date_from=filters.date_from, date_to=filters.date_to, project_id=filters.project_id, customer_name=filters.customer_name, item_name=filters.item_name, specification=filters.specification, group_by=filters.group_by) }}" class="btn btn-success btn-sm">
+                        <i class="bi bi-file-earmark-excel"></i> 导出 Excel
+                    </a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        {% for k in data.kpis %}
+        <div class="col-xl col-md-4 col-6">
+            <div class="card text-center p-3 border-start border-4 border-{{ k.border }}">
+                <small class="text-muted">{{ k.label }}</small>
+                <h5 class="mb-0">{{ k.value }}</h5>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if data.chart_data.customer_labels and data.chart_data.customer_labels|length > 0 %}
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0">客户明细金额 Top10</h6></div>
+        <div class="card-body"><div id="customerAmtChart" class="chart-container"></div></div>
+    </div>
+    {% endif %}
+
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">{{ data.group_label or '数据表' }}</h6>
+            <span class="badge bg-secondary">{{ data.table_rows|length }} 行</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover table-striped mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            {% for col in data.table_columns %}
+                            <th class="{% if col in ['数量','单价','明细金额','整单运费','运输数量','销售数量','明细金额合计','运费合计','运输数量合计'] %}text-end{% endif %}">{{ col }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if data.table_rows %}
+                        {% for row in data.table_rows %}
+                        <tr>
+                            {% for col in data.table_columns %}
+                            <td class="{% if col in ['数量','单价','明细金额','整单运费','运输数量','销售数量','明细金额合计','运费合计','运输数量合计'] %}text-end{% endif %}">{{ row[col] }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                        {% else %}
+                        <tr><td colspan="{{ data.table_columns|length }}" class="text-center text-muted py-4">暂无数据，请调整筛选条件</td></tr>
+                        {% endif %}
+                    </tbody>
+                    {% if data.table_footer and data.table_rows %}
+                    <tfoot class="table-light">
+                        <tr class="fw-semibold">
+                            {% for col in data.table_columns %}
+                            <td class="{% if col in ['数量','单价','明细金额','整单运费','运输数量','销售数量','明细金额合计','运费合计','运输数量合计'] %}text-end{% endif %}{% if col == '明细金额' or col == '明细金额合计' %} text-primary{% elif col == '整单运费' or col == '运费合计' %} text-warning{% endif %}">
+                                {{ data.table_footer[col] }}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if data.footnote %}
+    <p class="small text-muted">{{ data.footnote }}</p>
+    {% endif %}
+    <p class="small text-muted">
+        <a href="{{ url_for('reports.view', slug='sales-outbound', date_from=filters.date_from, date_to=filters.date_to, project_id=filters.project_id, customer_name=filters.customer_name) }}">查看销售出库分析（图表）</a>
+    </p>
+</div>
+<script>
+var chartData = {{ chart_data|safe }};
+document.addEventListener('DOMContentLoaded', function() {
+    var el = document.getElementById('customerAmtChart');
+    if (!el || !chartData.customer_labels || !chartData.customer_labels.length) return;
+    var chart = echarts.init(el);
+    chart.setOption({
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: chartData.customer_labels, axisLabel: { rotate: 30 } },
+        yAxis: { type: 'value', name: '金额' },
+        series: [{ type: 'bar', data: chartData.customer_amount, itemStyle: { color: '#f59e0b' } }]
+    });
+    window.addEventListener('resize', function() { chart.resize(); });
+});
+</script>
+{% endblock %}

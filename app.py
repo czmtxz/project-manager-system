@@ -20,6 +20,7 @@ from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, jsonify, send_file, send_from_directory, flash, g)
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 from project_category_utils import (
     ensure_project_categories_table,
     fetch_leaf_categories,
@@ -118,9 +119,22 @@ STAFF_ROLES = [
 
 app = Flask(__name__)
 app.secret_key = 'project_manager_secret_key_2024'
-app.config['DATABASE'] = 'project_manager.db'
-app.config['BACKUP_DIR'] = 'backups'
-app.config['UPLOAD_FOLDER'] = 'uploads'
+
+APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+
+def resolve_app_path(relative):
+    """将相对路径解析为应用根目录下的绝对路径。"""
+    if not relative:
+        return APP_ROOT
+    if os.path.isabs(relative):
+        return relative
+    return os.path.join(APP_ROOT, relative)
+
+
+app.config['DATABASE'] = resolve_app_path('project_manager.db')
+app.config['BACKUP_DIR'] = resolve_app_path('backups')
+app.config['UPLOAD_FOLDER'] = resolve_app_path('uploads')
 app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024  # 8MB
 app.config['PUBLIC_BASE_URL'] = os.environ.get('PUBLIC_BASE_URL', '').strip()
 
@@ -142,7 +156,11 @@ def get_db():
             ensure_schema_extensions(g.db)
             ensure_collab_scope_schema(g.db)
             from report_hub_prefs import ensure_report_hub_prefs_schema
+            from user_access import ensure_user_access_schema
+            from project_display import ensure_project_display_schema
             ensure_report_hub_prefs_schema(g.db)
+            ensure_user_access_schema(g.db)
+            ensure_project_display_schema(g.db)
             app.config['_schema_extended'] = True
     return g.db
 
@@ -267,6 +285,20 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (project_id) REFERENCES projects(id),
             FOREIGN KEY (contract_id) REFERENCES contracts(id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS invoice_lines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_id INTEGER NOT NULL,
+            item_name TEXT,
+            specification TEXT,
+            quantity REAL DEFAULT 0,
+            amount REAL DEFAULT 0,
+            unit_price REAL DEFAULT 0,
+            remark TEXT,
+            FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
         )
     ''')
 
@@ -846,11 +878,96 @@ def admin_required(f):
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
             return redirect(url_for('login'))
-        if session.get('role') != 'admin':
+        from user_access import user_is_admin
+        if not user_is_admin(session.get('role')):
             flash('权限不足，仅管理员可操作', 'danger')
             if session.get('role') == ROLE_CLIENT_COLLAB:
                 return redirect(url_for('admin_client_dashboard'))
             return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def permission_required(permission_code):
+    """功能权限：无权限时跳转首页并提示。超级管理员始终放行。"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                return redirect(url_for('login'))
+            from user_access import has_permission, user_is_admin
+            if user_is_admin(session.get('role')):
+                return f(*args, **kwargs)
+            if not has_permission(
+                    get_db(), session['user_id'], session.get('role', ''), permission_code):
+                flash('权限不足', 'danger')
+                if session.get('role') == ROLE_CLIENT_COLLAB:
+                    return redirect(url_for('admin_client_dashboard'))
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+
+def _project_scope_sql(column_expr, db=None):
+    from user_access import project_id_scope_clause
+    db = db or get_db()
+    return project_id_scope_clause(
+        db, session.get('user_id'), session.get('role', ''), column_expr)
+
+
+def _projects_dropdown(db=None):
+    from user_access import list_projects_for_user
+    db = db or get_db()
+    return list_projects_for_user(
+        db, session.get('user_id'), session.get('role', ''), 'ORDER BY name')
+
+
+def _guard_project_access(db, project_id, redirect_endpoint='project_list'):
+    from user_access import assert_project_access
+    return assert_project_access(
+        db, session.get('user_id'), session.get('role', ''), project_id,
+        redirect_endpoint=redirect_endpoint,
+    )
+
+
+def _allowed_project_id(project_id):
+    """筛选参数中的项目 ID：无权限时返回 None 并提示。"""
+    if project_id in (None, ''):
+        return None
+    try:
+        pid = int(project_id)
+    except (TypeError, ValueError):
+        return None
+    from user_access import can_access_project
+    if can_access_project(get_db(), session.get('user_id'), session.get('role', ''), pid):
+        return pid
+    flash('无权访问该项目（未授权）', 'danger')
+    return None
+
+
+def _require_post_project_access(project_id):
+    if not project_id:
+        return True
+    from user_access import can_access_project
+    if can_access_project(
+            get_db(), session.get('user_id'), session.get('role', ''), int(project_id)):
+        return True
+    flash('无权操作该项目（未授权）', 'danger')
+    return False
+
+
+def project_access_required(f):
+    """子路由 /project/<pid>/... 统一校验项目数据权限。"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        pid = kwargs.get('pid')
+        if pid is None and args:
+            pid = args[0]
+        if pid is not None:
+            denied = _guard_project_access(get_db(), pid)
+            if denied:
+                return denied
         return f(*args, **kwargs)
     return decorated_function
 
@@ -1424,9 +1541,11 @@ def login():
             if status in ('pending', 'disabled'):
                 flash('账号未启用或待审批，请联系管理员', 'danger')
                 return render_login()
+            from user_access import normalize_staff_role
             session['user_id'] = user['id']
             session['username'] = user['username']
-            session['role'] = user['role']
+            norm_role = normalize_staff_role(user['role'])
+            session['role'] = norm_role or user['role']
             try:
                 db.execute(
                     "UPDATE users SET last_login=? WHERE id=?",
@@ -1462,27 +1581,8 @@ def dashboard():
     user_id = session['user_id']
     role = session['role']
 
-    # 根据角色筛选项目
-    if role in ('admin', 'finance'):
-        projects = db.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
-    else:
-        # 查找用户关联的参与人ID
-        participant = db.execute("SELECT id FROM participants WHERE user_id=?", (user_id,)).fetchone()
-        participant_id = participant['id'] if participant else None
-        
-        if participant_id:
-            # 可以看到：自己创建的 或 自己参与的（有投资记录）
-            projects = db.execute("""
-                SELECT DISTINCT p.* FROM projects p
-                LEFT JOIN investments i ON i.project_id = p.id AND i.participant_id = ?
-                WHERE p.user_id = ? OR i.id IS NOT NULL
-                ORDER BY p.created_at DESC
-            """, (participant_id, user_id)).fetchall()
-        else:
-            projects = db.execute(
-                "SELECT * FROM projects WHERE user_id=? ORDER BY created_at DESC",
-                (user_id,)
-            ).fetchall()
+    from user_access import list_projects_for_user
+    projects = list_projects_for_user(db, user_id, role)
 
     project_ids = [p['id'] for p in projects]
 
@@ -1543,23 +1643,8 @@ def project_list():
     user_id = session['user_id']
     role = session['role']
 
-    if role in ('admin', 'finance'):
-        projects = db.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
-    else:
-        participant = db.execute("SELECT id FROM participants WHERE user_id=?", (user_id,)).fetchone()
-        participant_id = participant['id'] if participant else None
-        if participant_id:
-            projects = db.execute("""
-                SELECT DISTINCT p.* FROM projects p
-                LEFT JOIN investments i ON i.project_id = p.id AND i.participant_id = ?
-                WHERE p.user_id = ? OR i.id IS NOT NULL
-                ORDER BY p.created_at DESC
-            """, (participant_id, user_id)).fetchall()
-        else:
-            projects = db.execute(
-                "SELECT * FROM projects WHERE user_id=? ORDER BY created_at DESC",
-                (user_id,)
-            ).fetchall()
+    from user_access import list_projects_for_user
+    projects = list_projects_for_user(db, user_id, role)
 
     # 为每个项目计算收支
     project_data = []
@@ -1677,12 +1762,86 @@ def project_add():
     return render_template('project_form.html', **ctx)
 
 
+@app.route('/project/<int:pid>/edit', methods=['GET', 'POST'])
+@login_required
+def project_edit(pid):
+    """管理员修改项目基本信息与费用分类。"""
+    db = get_db()
+    from user_access import user_is_admin
+    if not user_is_admin(session.get('role')):
+        flash('仅管理员可修改项目信息', 'danger')
+        return redirect(url_for('project_list'))
+
+    project = db.execute('SELECT * FROM projects WHERE id=?', (pid,)).fetchone()
+    if not project:
+        flash('项目不存在', 'danger')
+        return redirect(url_for('project_list'))
+
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        description = request.form.get('description', '').strip()
+        status = request.form.get('status', '进行中')
+        budget = float(request.form.get('budget', 0) or 0)
+        start_date = request.form.get('start_date', '') or None
+        end_date = request.form.get('end_date', '') or None
+        controller_id = request.form.get('controller_id', type=int)
+        total_quantity = float(request.form.get('total_quantity', 0) or 0)
+        loss_rate = float(request.form.get('loss_rate', 0) or 0)
+        freight_link_enabled = 1 if request.form.get('freight_link_enabled') else 0
+        category_ids = request.form.getlist('categories')
+
+        if not name:
+            flash('项目名称不能为空', 'warning')
+            ctx = _project_form_context(db, project)
+            return render_template('project_form.html', **ctx)
+
+        proj_cols = _table_columns(db, 'projects')
+        fields = {
+            'name': name,
+            'description': description,
+            'status': status,
+            'budget': budget,
+            'start_date': start_date,
+            'end_date': end_date,
+        }
+        optional = {
+            'controller_id': controller_id,
+            'total_quantity': total_quantity,
+            'loss_rate': loss_rate,
+            'freight_link_enabled': freight_link_enabled,
+        }
+        for k, v in optional.items():
+            if k in proj_cols:
+                fields[k] = v
+        fields = {k: v for k, v in fields.items() if k in proj_cols}
+        set_clause = ', '.join(f'{k}=?' for k in fields)
+        db.execute(
+            f'UPDATE projects SET {set_clause} WHERE id=?',
+            list(fields.values()) + [pid],
+        )
+        set_project_categories(db, pid, category_ids)
+        db.commit()
+        add_log(
+            session['user_id'], session['username'], '编辑项目',
+            f'修改项目: {name}', request.remote_addr,
+        )
+        flash(
+            '项目信息已更新。各采购/销售/合同/费用/发票等单据仅保存项目编号，'
+            '列表与详情中的项目名称将自动显示为新名称。',
+            'success',
+        )
+        return redirect(url_for('project_list'))
+
+    ctx = _project_form_context(db, project)
+    return render_template('project_form.html', **ctx)
+
+
 @app.route('/project/delete/<int:pid>')
 @login_required
 def project_delete(pid):
     db = get_db()
-    role = session['role']
-    if role != 'admin':
+    from user_access import user_is_admin
+    if not user_is_admin(session.get('role')):
         flash('仅管理员可删除项目', 'danger')
         return redirect(url_for('project_list'))
 
@@ -1729,6 +1888,7 @@ def recalc_investment_ratios(db, pid):
 
 @app.route('/project/<int:pid>')
 @login_required
+@project_access_required
 def project_detail(pid):
     db = get_db()
     project = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
@@ -1860,6 +2020,7 @@ def project_detail(pid):
 
 @app.route('/project/<int:pid>/categories', methods=['POST'])
 @login_required
+@project_access_required
 def project_categories_save(pid):
     db = get_db()
     project = db.execute("SELECT id FROM projects WHERE id=?", (pid,)).fetchone()
@@ -1921,6 +2082,7 @@ def participant_add():
 
 @app.route('/project/<int:pid>/participant/add', methods=['POST'])
 @login_required
+@project_access_required
 def project_participant_add(pid):
     participant_id = request.form.get('participant_id')
     project_role = request.form.get('project_role', 'member')
@@ -1948,6 +2110,7 @@ def project_participant_add(pid):
 
 @app.route('/project/<int:pid>/investment/add', methods=['POST'])
 @login_required
+@project_access_required
 def investment_add(pid):
     participant_id = request.form.get('participant_id')
     invest_date = request.form.get('invest_date')
@@ -1971,6 +2134,7 @@ def investment_add(pid):
 
 @app.route('/project/<int:pid>/investment/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@project_access_required
 def investment_edit(pid, id):
     """编辑投资记录"""
     db = get_db()
@@ -2021,6 +2185,7 @@ def investment_edit(pid, id):
 
 @app.route('/project/<int:pid>/investment/<int:id>/delete', methods=['POST'])
 @login_required
+@project_access_required
 def investment_delete(pid, id):
     """删除投资记录"""
     db = get_db()
@@ -2043,6 +2208,7 @@ def investment_delete(pid, id):
 
 @app.route('/project/<int:pid>/dividend/add', methods=['POST'])
 @login_required
+@project_access_required
 def dividend_add(pid):
     participant_id = request.form.get('participant_id')
     dividend_date = request.form.get('dividend_date')
@@ -2068,17 +2234,19 @@ def dividend_add(pid):
 
 @app.route('/transactions')
 @login_required
+@permission_required('transaction.view')
 def transaction_records():
     db = get_db()
 
     # 筛选条件
-    project_id = request.args.get('project_id', '')
+    project_id = _allowed_project_id(request.args.get('project_id', ''))
     trans_type = request.args.get('type', '')
 
-    where_sql = "WHERE 1=1"
-    params = []
+    scope_sql, scope_params = _project_scope_sql('t.project_id', db)
+    where_sql = "WHERE 1=1" + scope_sql
+    params = list(scope_params)
 
-    if project_id:
+    if project_id is not None:
         where_sql += " AND t.project_id=?"
         params.append(project_id)
     if trans_type:
@@ -2096,7 +2264,7 @@ def transaction_records():
     """
 
     transactions = db.execute(query, params).fetchall()
-    projects = db.execute("SELECT * FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     ensure_project_categories_table(db)
     cat_filter_sql, cat_filter_params = "", []
     if project_id:
@@ -2134,9 +2302,10 @@ def transaction_records():
 
 @app.route('/transaction/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('transaction.create')
 def transaction_add():
     db = get_db()
-    projects = db.execute("SELECT * FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     participants = db.execute("SELECT * FROM participants ORDER BY name").fetchall()
     categories = db.execute("SELECT * FROM categories ORDER BY type, name").fetchall()
 
@@ -2150,6 +2319,9 @@ def transaction_add():
         description = request.form.get('description', '')
         merchant = request.form.get('merchant', '')
         payment_method = request.form.get('payment_method', '')
+
+        if not _require_post_project_access(project_id):
+            return redirect(url_for('transaction_add'))
 
         ensure_project_categories_table(db)
         if project_id and category_id and not validate_project_category(
@@ -2182,6 +2354,7 @@ def transaction_add():
 
 @app.route('/project/<int:pid>/payment/add', methods=['GET', 'POST'])
 @login_required
+@project_access_required
 def payment_add(pid):
     db = get_db()
     contracts = db.execute(
@@ -2233,6 +2406,7 @@ def payment_add(pid):
 
 @app.route('/project/<int:pid>/payment/list')
 @login_required
+@project_access_required
 def payment_list(pid):
     """付款记录列表"""
     db = get_db()
@@ -2257,6 +2431,7 @@ def payment_list(pid):
 
 @app.route('/project/<int:pid>/payment/add_new', methods=['GET', 'POST'])
 @login_required
+@project_access_required
 def payment_add_new(pid):
     db = get_db()
     project = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
@@ -2304,6 +2479,7 @@ def payment_add_new(pid):
 
 @app.route('/project/<int:pid>/payment/<int:id>/edit_record', methods=['GET', 'POST'])
 @login_required
+@project_access_required
 def payment_edit_record(pid, id):
     db = get_db()
     project = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
@@ -2351,6 +2527,7 @@ def payment_edit_record(pid, id):
 
 @app.route('/project/<int:pid>/payment/<int:id>/delete_record', methods=['POST'])
 @login_required
+@project_access_required
 def payment_delete_record(pid, id):
     db = get_db()
     payment = db.execute("SELECT * FROM payments WHERE id=? AND project_id=?", (id, pid)).fetchone()
@@ -2395,6 +2572,7 @@ def ocr_recognize_payment():
 
 @app.route('/project/<int:pid>/payment/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@project_access_required
 def payment_edit(pid, id):
     """编辑付款记录"""
     db = get_db()
@@ -2451,6 +2629,7 @@ def payment_edit(pid, id):
 
 @app.route('/project/<int:pid>/payment/<int:id>/delete', methods=['POST'])
 @login_required
+@project_access_required
 def payment_delete(pid, id):
     """删除付款记录"""
     db = get_db()
@@ -2501,6 +2680,7 @@ def ocr_recognize():
 
 @app.route('/project/<int:pid>/fund/add', methods=['GET', 'POST'])
 @login_required
+@project_access_required
 def fund_transaction_add(pid):
     db = get_db()
     participants = db.execute("""
@@ -2607,7 +2787,7 @@ def ocr_review(draft_id):
         return redirect(url_for('ocr_upload'))
 
     draft_data = json.loads(draft['draft_data'])
-    projects = db.execute("SELECT * FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     participants = db.execute("SELECT * FROM participants ORDER BY name").fetchall()
     categories = db.execute("SELECT * FROM categories ORDER BY type, name").fetchall()
 
@@ -3301,7 +3481,7 @@ def account_reset_password(uid):
     return redirect(url_for('account_manage'))
 
 
-@app.route('/account/delete/<int:uid>')
+@app.route('/account/delete/<int:uid>', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def account_delete(uid):
@@ -3311,18 +3491,94 @@ def account_delete(uid):
 
     db = get_db()
     user = db.execute("SELECT username, role FROM users WHERE id=?", (uid,)).fetchone()
-    if user and user['role'] == 'admin':
+    if not user:
+        flash('账号不存在', 'danger')
+        return redirect(url_for('account_manage'))
+    if user['role'] == 'admin':
         admin_count = db.execute(
             "SELECT COUNT(*) FROM users WHERE role='admin' AND COALESCE(status, 'active')='active'"
         ).fetchone()[0]
         if admin_count <= 1:
             flash('至少保留一个可用管理员账号', 'danger')
             return redirect(url_for('account_manage'))
-    db.execute("DELETE FROM users WHERE id=?", (uid,))
-    db.commit()
-    add_log(session['user_id'], session['username'], '删除账号', f'删除用户ID: {uid}', request.remote_addr)
-    flash('账号已删除', 'success')
+    try:
+        from user_access import delete_user_safely
+        delete_user_safely(db, uid)
+        db.commit()
+        add_log(
+            session['user_id'], session['username'], '删除账号',
+            f'删除用户: {user["username"]}', request.remote_addr,
+        )
+        flash('账号已删除', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'删除失败：{e}', 'danger')
     return redirect(url_for('account_manage'))
+
+
+@app.route('/admin/users/<int:uid>/access', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def admin_user_access(uid):
+    """管理员：配置用户功能权限与项目数据权限。"""
+    from user_access import (
+        permission_groups,
+        get_stored_user_permissions,
+        get_role_permissions,
+        get_effective_permissions,
+        set_user_permissions,
+        set_user_project_assignments,
+        get_assigned_project_ids,
+        user_sees_all_projects,
+    )
+    db = get_db()
+    user = db.execute(
+        "SELECT id, username, real_name, role, COALESCE(status, 'active') as status FROM users WHERE id=?",
+        (uid,),
+    ).fetchone()
+    if not user:
+        flash('用户不存在', 'danger')
+        return redirect(url_for('account_manage'))
+    if user['role'] in (ROLE_CLIENT_COLLAB, ROLE_CLIENT_COLLAB_ADMIN):
+        flash('客户协同类账号请在「负责客户」中配置数据范围', 'warning')
+        return redirect(url_for('account_manage'))
+
+    if request.method == 'POST':
+        action = request.form.get('action', 'save_all')
+        if action in ('save_all', 'save_permissions'):
+            codes = request.form.getlist('permissions')
+            if request.form.get('use_role_default') == '1':
+                set_user_permissions(db, uid, [])
+            else:
+                set_user_permissions(db, uid, codes)
+        if action in ('save_all', 'save_projects') and not user_sees_all_projects(user['role']):
+            pids = request.form.getlist('project_ids')
+            set_user_project_assignments(db, uid, pids, session.get('user_id'))
+        db.commit()
+        add_log(
+            session['user_id'], session['username'], '配置用户权限',
+            f'用户 {user["username"]}', request.remote_addr,
+        )
+        flash('权限与项目授权已保存', 'success')
+        return redirect(url_for('account_manage'))
+
+    projects = db.execute('SELECT id, name, status FROM projects ORDER BY name').fetchall()
+    assigned = set(get_assigned_project_ids(db, uid, user['role']) or [])
+    stored_perms = get_stored_user_permissions(db, uid)
+    effective = get_effective_permissions(db, uid, user['role'])
+    return render_template(
+        'admin_user_access.html',
+        user=user,
+        perm_groups=permission_groups(),
+        stored_permissions=set(stored_perms),
+        effective_permissions=effective,
+        role_defaults=get_role_permissions(db, user['role']),
+        use_role_default=not stored_perms,
+        projects=projects,
+        assigned_projects=assigned,
+        sees_all_projects=user_sees_all_projects(user['role']),
+        role_label=dict((r['code'], r['name']) for r in STAFF_ROLES).get(user['role'], user['role']),
+    )
 
 
 # ==================== 路由：数据导入/导出 ====================
@@ -5275,6 +5531,61 @@ def _sql_purchase_total_freight(po_alias='po'):
                 ))"""
 
 
+def _sql_sales_transport_ids(so_alias='so', db=None):
+    """销售出库单关联的运输记录 ID 集合（直接挂出库单 + 明细关联）。"""
+    parts = []
+    if db is not None:
+        tr_cols = {r[1] for r in db.execute('PRAGMA table_info(transport_records)').fetchall()}
+        soi_link = _sales_item_order_join(db).replace('soi.', 'soi2.')
+        if 'sales_order_id' in tr_cols:
+            parts.append(
+                f'SELECT tr0.id FROM transport_records tr0 WHERE tr0.sales_order_id = {so_alias}.id'
+            )
+        parts.append(
+            f"""SELECT sit.transport_id FROM sales_item_transport sit
+                INNER JOIN sales_order_items soi2 ON sit.sales_item_id = soi2.id
+                WHERE {soi_link} AND sit.transport_id IS NOT NULL"""
+        )
+    else:
+        parts.append(
+            f'SELECT tr0.id FROM transport_records tr0 WHERE tr0.sales_order_id = {so_alias}.id'
+        )
+        parts.append(
+            f"""SELECT sit.transport_id FROM sales_item_transport sit
+                INNER JOIN sales_order_items soi ON sit.sales_item_id = soi.id
+                WHERE soi.sales_order_id = {so_alias}.id"""
+        )
+    return ' UNION '.join(parts) if parts else 'SELECT NULL WHERE 0'
+
+
+def _sales_item_order_join(db):
+    cols = {r[1] for r in db.execute('PRAGMA table_info(sales_order_items)').fetchall()}
+    if 'sales_order_id' in cols and 'order_id' in cols:
+        return '(soi.sales_order_id = so.id OR soi.order_id = so.id)'
+    if 'sales_order_id' in cols:
+        return 'soi.sales_order_id = so.id'
+    return 'soi.order_id = so.id'
+
+
+def _sql_sales_total_freight(so_alias='so', db=None):
+    ids_sql = _sql_sales_transport_ids(so_alias, db)
+    return f"""(SELECT COALESCE(SUM(tr.freight_amount), 0)
+                FROM transport_records tr
+                WHERE tr.id IN ({ids_sql}))"""
+
+
+def _sql_sales_transport_qty(so_alias='so', db=None):
+    ids_sql = _sql_sales_transport_ids(so_alias, db)
+    return f"""(SELECT COALESCE(SUM(tr.quantity), 0)
+                FROM transport_records tr
+                WHERE tr.id IN ({ids_sql}))"""
+
+
+def _sql_sales_transport_count(so_alias='so', db=None):
+    ids_sql = _sql_sales_transport_ids(so_alias, db)
+    return f"""(SELECT COUNT(*) FROM ({ids_sql}))"""
+
+
 def _fetch_purchase_transports(db, purchase_id):
     """获取采购单下全部运输记录（含明细关联）。"""
     tr_cols = {r[1] for r in db.execute('PRAGMA table_info(transport_records)').fetchall()}
@@ -5319,6 +5630,69 @@ def _fetch_purchase_transports(db, purchase_id):
     ).fetchall()
 
 
+def _sales_order_item_filter_sql(db, alias='soi'):
+    """销售明细与出库单关联条件（兼容 order_id / sales_order_id）。"""
+    cols = {r[1] for r in db.execute('PRAGMA table_info(sales_order_items)').fetchall()}
+    if 'sales_order_id' in cols and 'order_id' in cols:
+        return f'({alias}.sales_order_id = ? OR {alias}.order_id = ?)', 2
+    if 'sales_order_id' in cols:
+        return f'{alias}.sales_order_id = ?', 1
+    return f'{alias}.order_id = ?', 1
+
+
+def _sales_order_item_filter_params(order_id, param_count):
+    if param_count == 2:
+        return (order_id, order_id)
+    return (order_id,)
+
+
+def _fetch_sales_order_transports(db, order_id):
+    """获取销售出库单下全部运输记录（直接挂出库单 + 明细关联）。"""
+    tr_cols = _table_columns(db, 'transport_records')
+    transports = []
+    seen_ids = set()
+    if 'sales_order_id' in tr_cols:
+        for row in db.execute(
+            """SELECT tr.* FROM transport_records tr
+               WHERE tr.sales_order_id = ?
+               ORDER BY tr.transport_date, tr.id""",
+            (order_id,),
+        ).fetchall():
+            transports.append(row)
+            seen_ids.add(row['id'])
+    item_sql, n = _sales_order_item_filter_sql(db, 'soi')
+    item_params = _sales_order_item_filter_params(order_id, n)
+    linked_ids = db.execute(
+        f"""SELECT DISTINCT sit.transport_id
+            FROM sales_item_transport sit
+            JOIN sales_order_items soi ON sit.sales_item_id = soi.id
+            WHERE {item_sql} AND sit.transport_id IS NOT NULL""",
+        item_params,
+    ).fetchall()
+    extra_ids = [t['transport_id'] for t in linked_ids if t['transport_id'] not in seen_ids]
+    if extra_ids:
+        tid_str = ','.join(str(i) for i in extra_ids)
+        transports.extend(
+            db.execute(
+                f"""SELECT tr.* FROM transport_records tr
+                    WHERE tr.id IN ({tid_str})
+                    ORDER BY tr.transport_date, tr.id"""
+            ).fetchall()
+        )
+    return transports
+
+
+def _sales_item_linked_transport_qty_sql():
+    """明细行已关联运输数量：优先关联表数量，否则取运输记录数量。"""
+    return """(SELECT COALESCE(SUM(
+            CASE WHEN COALESCE(sit.quantity, 0) > 0 THEN sit.quantity
+                 ELSE COALESCE(tr.quantity, 0) END
+        ), 0)
+        FROM sales_item_transport sit
+        JOIN transport_records tr ON tr.id = sit.transport_id
+        WHERE sit.sales_item_id = soi.id)"""
+
+
 def _purchase_is_draft(status):
     return (status or '').strip() in ('draft', '草稿')
 
@@ -5335,6 +5709,42 @@ def _sales_is_submitted(status):
     return (status or '').strip() == '已提交'
 
 
+def _sales_is_editable(status):
+    """是否允许编辑出库单头信息（与采购单一致：已完成除外均可改）。"""
+    s = (status or '').strip()
+    if s in ('completed', '已完成', 'cancelled', '已取消'):
+        return False
+    return True
+
+
+def _sales_can_unsubmit(status):
+    """反提交为待审核（已完成不可）。"""
+    s = (status or '').strip()
+    if s in ('completed', '已完成'):
+        return False
+    if _sales_is_draft(s):
+        return False
+    return True
+
+
+def _sales_unsubmit_one(db, order_id):
+    """单笔反提交。返回 (成功与否, 提示信息, 单号)。"""
+    order = db.execute(
+        'SELECT id, order_no, status, project_id FROM sales_orders WHERE id=?',
+        (order_id,),
+    ).fetchone()
+    if not order:
+        return False, '出库单不存在', None
+    from user_access import can_access_project
+    if not can_access_project(
+            db, session.get('user_id'), session.get('role', ''), order['project_id']):
+        return False, f'单号 {order["order_no"]} 无权操作', order['order_no']
+    if not _sales_can_unsubmit(order['status']):
+        return False, f'单号 {order["order_no"]} 状态不可反提交', order['order_no']
+    db.execute("UPDATE sales_orders SET status='待审核' WHERE id=?", (order_id,))
+    return True, order['order_no'], order['order_no']
+
+
 def _purchase_summary_rows(purchases, include_draft):
     if include_draft:
         return list(purchases)
@@ -5345,6 +5755,14 @@ def _sales_summary_rows(orders, include_draft):
     if include_draft:
         return list(orders)
     return [o for o in orders if not _sales_is_draft(o['status'])]
+
+
+def _parse_include_draft(request, default=True):
+    """解析「汇总含未提交」：HTML 未勾选时不传参，不能默认当作勾选。"""
+    vals = request.args.getlist('include_draft')
+    if vals:
+        return str(vals[-1]).lower() in ('1', 'true', 'on', 'yes')
+    return default if not request.args else False
 
 
 def _transport_item_names_map(db, transports, tr_cols):
@@ -5371,17 +5789,18 @@ def _transport_item_names_map(db, transports, tr_cols):
 
 @app.route('/purchase/list')
 @login_required
+@permission_required('purchase.view')
 def purchase_list():
     """采购单列表"""
     db = get_db()
     _sync_purchase_qty_from_items(db)
     db.commit()
-    project_id = request.args.get('project_id', type=int)
+    project_id = _allowed_project_id(request.args.get('project_id'))
     status = request.args.get('status', '')
     purchase_type = request.args.get('type', '').strip()
     supplier = request.args.get('supplier', '').strip()
     keyword = request.args.get('keyword', '')
-    include_draft = request.args.get('include_draft', '1') == '1'
+    include_draft = _parse_include_draft(request)
 
     sql = f"""SELECT po.*, p.name as project_name, c.contract_name,
                     (SELECT COUNT(DISTINCT tpi.transport_id)
@@ -5401,9 +5820,11 @@ def purchase_list():
              LEFT JOIN projects p ON po.project_id = p.id
              LEFT JOIN contracts c ON po.contract_id = c.id
              WHERE 1=1"""
-    params = []
+    scope_sql, scope_params = _project_scope_sql('po.project_id', db)
+    sql += scope_sql
+    params = list(scope_params)
 
-    if project_id:
+    if project_id is not None:
         sql += " AND po.project_id = ?"
         params.append(project_id)
     if status:
@@ -5438,7 +5859,7 @@ def purchase_list():
         'include_draft': include_draft,
     }
 
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     filters = {
         'project_id': project_id,
         'status': status,
@@ -5453,11 +5874,14 @@ def purchase_list():
 
 @app.route('/purchase/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('purchase.edit')
 def purchase_add():
     """新增采购单"""
     db = get_db()
     if request.method == 'POST':
         payload = _purchase_form_payload(db)
+        if not _require_post_project_access(payload.get('project_id')):
+            return redirect(url_for('purchase_add'))
         original_purchase_no = payload.get('purchase_no')
         if _purchase_no_exists(db, original_purchase_no):
             payload['purchase_no'] = _next_purchase_no(db)
@@ -5487,7 +5911,7 @@ def purchase_add():
         flash('采购单创建成功', 'success')
         return redirect(url_for('purchase_detail', id=purchase_id))
 
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     contracts = db.execute("SELECT id, contract_name, contract_type FROM contracts ORDER BY contract_name").fetchall()
     suppliers = db.execute("SELECT id, name FROM suppliers WHERE is_active=1 ORDER BY name").fetchall()
     next_purchase_no = _next_purchase_no(db)
@@ -5497,17 +5921,19 @@ def purchase_add():
 
 @app.route('/purchase/<int:id>')
 @login_required
+@permission_required('purchase.view')
 def purchase_detail(id):
     """采购单详情"""
     db = get_db()
-    purchase = db.execute("""SELECT po.*, p.name as project_name, c.contract_name
-                             FROM purchase_orders po
-                             LEFT JOIN projects p ON po.project_id = p.id
-                             LEFT JOIN contracts c ON po.contract_id = c.id
-                             WHERE po.id = ?""", (id,)).fetchone()
+    from project_display import fetch_purchase_by_id
+    purchase = fetch_purchase_by_id(db, id)
     if not purchase:
         flash('采购单不存在', 'danger')
         return redirect(url_for('purchase_list'))
+
+    denied = _guard_project_access(db, purchase['project_id'], 'purchase_list')
+    if denied:
+        return denied
 
     purchase = dict(purchase)
     if not purchase.get('purchase_date') and purchase.get('order_date'):
@@ -5579,11 +6005,6 @@ def purchase_unsubmit(id):
             flash('该采购单对账已确认，无法反提交', 'warning')
             return redirect(url_for('purchase_detail', id=id))
 
-    transports = _fetch_purchase_transports(db, id)
-    if transports:
-        flash('该采购单已有运输记录，请先删除运输记录后再反提交', 'warning')
-        return redirect(url_for('purchase_detail', id=id))
-
     db.execute("UPDATE purchase_orders SET status='draft' WHERE id=?", (id,))
     db.commit()
     add_log(session.get('user_id'), session.get('username', ''), '反提交采购单', f'采购单号: {purchase["purchase_no"]}')
@@ -5593,6 +6014,7 @@ def purchase_unsubmit(id):
 
 @app.route('/purchase/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('purchase.edit')
 def purchase_edit(id):
     """编辑采购单"""
     db = get_db()
@@ -5601,8 +6023,14 @@ def purchase_edit(id):
         flash('采购单不存在', 'danger')
         return redirect(url_for('purchase_list'))
 
+    denied = _guard_project_access(db, purchase['project_id'], 'purchase_list')
+    if denied:
+        return denied
+
     if request.method == 'POST':
         payload = _purchase_form_payload(db, purchase)
+        if not _require_post_project_access(payload.get('project_id')):
+            return redirect(url_for('purchase_edit', id=id))
         if _purchase_no_exists(db, payload.get('purchase_no'), exclude_id=id):
             flash(f'采购单号 {payload.get("purchase_no")} 已存在，请换一个单号', 'danger')
             return redirect(url_for('purchase_edit', id=id))
@@ -5623,7 +6051,7 @@ def purchase_edit(id):
         flash('采购单更新成功', 'success')
         return redirect(url_for('purchase_detail', id=id))
 
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     contracts = db.execute("SELECT id, contract_name, contract_type FROM contracts ORDER BY contract_name").fetchall()
     suppliers = db.execute("SELECT id, name FROM suppliers WHERE is_active=1 ORDER BY name").fetchall()
     items = db.execute(
@@ -5636,6 +6064,7 @@ def purchase_edit(id):
 
 @app.route('/purchase/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('purchase.edit')
 def purchase_delete(id):
     """删除采购单"""
     db = get_db()
@@ -5643,6 +6072,10 @@ def purchase_delete(id):
     if not purchase:
         flash('采购单不存在', 'danger')
         return redirect(url_for('purchase_list'))
+
+    denied = _guard_project_access(db, purchase['project_id'], 'purchase_list')
+    if denied:
+        return denied
 
     # 删除关联数据
     db.execute("DELETE FROM transport_purchase_items WHERE purchase_item_id IN (SELECT id FROM purchase_items WHERE purchase_id=?)", (id,))
@@ -5861,7 +6294,7 @@ def sales_payment_list():
     sql += " ORDER BY sp.created_at DESC"
 
     payments = db.execute(sql, params).fetchall()
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     filters = {'project_id': project_id, 'customer': customer}
     return render_template('sales_payment_list.html', payments=payments, projects=projects,
                            filters=filters)
@@ -5892,7 +6325,7 @@ def sales_payment_add():
         flash('销售回款添加成功', 'success')
         return redirect(url_for('sales_payment_list'))
 
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     contracts = db.execute("SELECT id, contract_name FROM contracts WHERE contract_type IN ('销售合同', '收入合同') ORDER BY contract_name").fetchall()
     customers = db.execute("SELECT id, name FROM customers WHERE is_active=1 ORDER BY name").fetchall()
     return render_template('sales_payment_form.html', projects=projects, contracts=contracts,
@@ -5901,26 +6334,31 @@ def sales_payment_add():
 
 @app.route('/sales/order/list')
 @login_required
+@permission_required('sales.view')
 def sales_order_list():
     """销售出库单列表"""
     db = get_db()
-    project_id = request.args.get('project_id', type=int)
+    project_id = _allowed_project_id(request.args.get('project_id'))
     status = request.args.get('status', '')
     keyword = request.args.get('keyword', '')
 
     customer = request.args.get('customer', '')
-    include_draft = request.args.get('include_draft', '1') == '1'
+    include_draft = _parse_include_draft(request)
 
-    sql = """SELECT so.*, p.name as project_name, c.contract_name,
+    sql = f"""SELECT so.*, p.name as project_name, c.contract_name,
              so.total_quantity as total_qty,
-             (SELECT COUNT(*) FROM sales_transport_records str WHERE str.order_id = so.id) as transport_count
+             {_sql_sales_transport_count('so', db)} as transport_count,
+             {_sql_sales_transport_qty('so', db)} as transport_qty,
+             {_sql_sales_total_freight('so', db)} as total_freight
              FROM sales_orders so
              LEFT JOIN projects p ON so.project_id = p.id
              LEFT JOIN contracts c ON so.contract_id = c.id
              WHERE 1=1"""
-    params = []
+    scope_sql, scope_params = _project_scope_sql('so.project_id', db)
+    sql += scope_sql
+    params = list(scope_params)
 
-    if project_id:
+    if project_id is not None:
         sql += " AND so.project_id = ?"
         params.append(project_id)
     if status:
@@ -5941,9 +6379,11 @@ def sales_order_list():
         'total_amount': sum(float(o['total_amount'] or 0) for o in summary_rows),
         'total_qty': sum(float(o['total_qty'] or 0) for o in summary_rows),
         'transport_count': sum(int(o['transport_count'] or 0) for o in summary_rows),
+        'transport_qty': sum(float(o['transport_qty'] or 0) for o in summary_rows),
+        'total_freight': sum(float(o['total_freight'] or 0) for o in summary_rows),
         'include_draft': include_draft,
     }
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     filters = {
         'project_id': project_id,
         'status': status,
@@ -5957,11 +6397,14 @@ def sales_order_list():
 
 @app.route('/sales/order/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('sales.edit')
 def sales_order_add():
     """新增销售出库单"""
     db = get_db()
     if request.method == 'POST':
         project_id = request.form.get('project_id', type=int)
+        if not _require_post_project_access(project_id):
+            return redirect(url_for('sales_order_add'))
         contract_id = request.form.get('contract_id', type=int) or None
         customer_name = request.form.get('customer_name', '')
         order_date = request.form.get('order_date', '')
@@ -6001,7 +6444,7 @@ def sales_order_add():
         flash('销售出库单创建成功', 'success')
         return redirect(url_for('sales_order_list'))
 
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     contracts = db.execute("SELECT id, contract_name FROM contracts WHERE contract_type IN ('销售合同', '收入合同') ORDER BY contract_name").fetchall()
     customers = db.execute("SELECT id, name FROM customers WHERE is_active=1 ORDER BY name").fetchall()
     return render_template('sales_order_form.html', projects=projects, contracts=contracts,
@@ -6010,17 +6453,19 @@ def sales_order_add():
 
 @app.route('/sales/order/<int:id>')
 @login_required
+@permission_required('sales.view')
 def sales_order_detail(id):
     """销售出库单详情"""
     db = get_db()
-    order = db.execute("""SELECT so.*, p.name as project_name, c.contract_name
-                          FROM sales_orders so
-                          LEFT JOIN projects p ON so.project_id = p.id
-                          LEFT JOIN contracts c ON so.contract_id = c.id
-                          WHERE so.id = ?""", (id,)).fetchone()
+    from project_display import fetch_sales_order_by_id
+    order = fetch_sales_order_by_id(db, id)
     if not order:
         flash('出库单不存在', 'danger')
         return redirect(url_for('sales_order_list'))
+
+    denied = _guard_project_access(db, order['project_id'], 'sales_order_list')
+    if denied:
+        return denied
 
     items = db.execute("""SELECT soi.*,
                                  (SELECT COALESCE(SUM(sit.quantity), 0) FROM sales_item_transport sit WHERE sit.sales_item_id = soi.id) as linked_quantity
@@ -6105,39 +6550,73 @@ def sales_order_submit(id):
 
 @app.route('/sales/order/<int:id>/unsubmit', methods=['POST'])
 @login_required
+@permission_required('sales.edit')
 def sales_order_unsubmit(id):
-    """已提交销售出库单反提交"""
+    """销售出库单反提交为待审核"""
     db = get_db()
-    order = db.execute('SELECT id, order_no, status FROM sales_orders WHERE id=?', (id,)).fetchone()
-    if not order:
-        flash('出库单不存在', 'danger')
+    ok, msg, order_no = _sales_unsubmit_one(db, id)
+    if not ok:
+        flash(msg, 'warning' if order_no else 'danger')
+        if order_no:
+            return redirect(url_for('sales_order_detail', id=id))
         return redirect(url_for('sales_order_list'))
-    if not _sales_is_submitted(order['status']):
-        flash('仅「已提交」状态的出库单可反提交', 'warning')
-        return redirect(url_for('sales_order_detail', id=id))
-
-    tr_cnt = db.execute(
-        'SELECT COUNT(*) as cnt FROM sales_transport_records WHERE order_id=?', (id,)
-    ).fetchone()['cnt']
-    if not tr_cnt:
-        tr_cols = _table_columns(db, 'transport_records')
-        if 'sales_order_id' in tr_cols:
-            tr_cnt = db.execute(
-                'SELECT COUNT(*) as cnt FROM transport_records WHERE sales_order_id=?', (id,)
-            ).fetchone()['cnt']
-    if tr_cnt:
-        flash('该出库单已有运输记录，请先删除运输记录后再反提交', 'warning')
-        return redirect(url_for('sales_order_detail', id=id))
-
-    db.execute("UPDATE sales_orders SET status='待审核' WHERE id=?", (id,))
     db.commit()
-    add_log(session.get('user_id'), session.get('username', ''), '反提交销售出库单', f'出库单号: {order["order_no"]}')
+    add_log(session.get('user_id'), session.get('username', ''), '反提交销售出库单', f'出库单号: {order_no}')
     flash('销售出库单已反提交，可继续编辑', 'success')
     return redirect(url_for('sales_order_detail', id=id))
 
 
+@app.route('/sales/order/batch/unsubmit', methods=['POST'])
+@login_required
+@permission_required('sales.edit')
+def sales_order_batch_unsubmit():
+    """批量反提交销售出库单"""
+    db = get_db()
+    raw_ids = request.form.getlist('order_ids')
+    if not raw_ids:
+        flash('请先勾选需要反提交的出库单', 'warning')
+        return redirect(url_for('sales_order_list'))
+
+    ok_count = 0
+    skipped = []
+    done_nos = []
+    for raw in raw_ids:
+        try:
+            oid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        success, msg, order_no = _sales_unsubmit_one(db, oid)
+        if success:
+            ok_count += 1
+            if order_no:
+                done_nos.append(order_no)
+        else:
+            skipped.append(msg)
+
+    if ok_count:
+        db.commit()
+        add_log(
+            session.get('user_id'), session.get('username', ''),
+            '批量反提交销售出库单',
+            f'成功 {ok_count} 笔: {", ".join(done_nos[:20])}'
+            + ('…' if len(done_nos) > 20 else ''),
+        )
+    else:
+        db.rollback()
+
+    if ok_count and not skipped:
+        flash(f'已成功反提交 {ok_count} 笔出库单', 'success')
+    elif ok_count:
+        flash(f'成功反提交 {ok_count} 笔；跳过 {len(skipped)} 笔：{"；".join(skipped[:5])}', 'warning')
+    else:
+        flash(f'未能反提交：{"；".join(skipped[:5])}', 'danger')
+
+    return redirect(request.referrer or url_for('sales_order_list'))
+
+
 @app.route('/sales/order/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('sales.edit')
 def sales_order_edit(id):
     """编辑销售出库单"""
     db = get_db()
@@ -6146,13 +6625,23 @@ def sales_order_edit(id):
         flash('出库单不存在', 'danger')
         return redirect(url_for('sales_order_list'))
 
+    denied = _guard_project_access(db, order['project_id'], 'sales_order_list')
+    if denied:
+        return denied
+
+    if not _sales_is_editable(order['status']):
+        flash('已完成或已取消的出库单不可修改', 'warning')
+        return redirect(url_for('sales_order_detail', id=id))
+
     if request.method == 'POST':
         project_id = request.form.get('project_id', type=int)
+        if not _require_post_project_access(project_id):
+            return redirect(url_for('sales_order_edit', id=id))
         contract_id = request.form.get('contract_id', type=int) or None
         customer_name = request.form.get('customer_name', '')
         order_date = request.form.get('order_date', '')
         delivery_date = request.form.get('delivery_date', '') or None
-        status = request.form.get('status', '待审核')
+        status = order['status']
         remark = request.form.get('remark', '')
 
         attachment = order['attachment']
@@ -6174,7 +6663,7 @@ def sales_order_edit(id):
         flash('出库单更新成功', 'success')
         return redirect(url_for('sales_order_detail', id=id))
 
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     contracts = db.execute("SELECT id, contract_name FROM contracts WHERE contract_type IN ('销售合同', '收入合同') ORDER BY contract_name").fetchall()
     customers = db.execute("SELECT id, name FROM customers WHERE is_active=1 ORDER BY name").fetchall()
     return render_template('sales_order_form.html', order=order, projects=projects, edit_mode=True,
@@ -6183,6 +6672,7 @@ def sales_order_edit(id):
 
 @app.route('/sales/order/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('sales.edit')
 def sales_order_delete(id):
     """删除销售出库单"""
     db = get_db()
@@ -6190,6 +6680,10 @@ def sales_order_delete(id):
     if not order:
         flash('出库单不存在', 'danger')
         return redirect(url_for('sales_order_list'))
+
+    denied = _guard_project_access(db, order['project_id'], 'sales_order_list')
+    if denied:
+        return denied
 
     db.execute("DELETE FROM sales_item_transport WHERE sales_item_id IN (SELECT id FROM sales_order_items WHERE sales_order_id=?)", (id,))
     db.execute("DELETE FROM sales_order_items WHERE sales_order_id = ?", (id,))
@@ -6413,6 +6907,8 @@ def sales_order_item_import(order_id):
 @login_required
 def sales_order_reconciliation(order_id):
     """对账差异分析：销售明细 vs 关联运输数量"""
+    from types import SimpleNamespace
+
     db = get_db()
     order = db.execute(
         """SELECT so.*, p.name as project_name
@@ -6425,18 +6921,31 @@ def sales_order_reconciliation(order_id):
         flash('出库单不存在', 'danger')
         return redirect(url_for('sales_order_list'))
 
+    item_sql, n = _sales_order_item_filter_sql(db, 'soi')
+    item_params = _sales_order_item_filter_params(order_id, n)
+    qty_sub = _sales_item_linked_transport_qty_sql()
     items = db.execute(
-        """SELECT soi.*,
-                  COALESCE(sit_total.linked_qty, 0) as linked_qty
+        f"""SELECT soi.*, {qty_sub} as linked_qty
            FROM sales_order_items soi
-           LEFT JOIN (
-               SELECT sales_item_id, SUM(quantity) as linked_qty
-               FROM sales_item_transport GROUP BY sales_item_id
-           ) sit_total ON soi.id = sit_total.sales_item_id
-           WHERE soi.sales_order_id = ?
+           WHERE {item_sql}
            ORDER BY soi.sort_order, soi.id""",
-        (order_id,),
+        item_params,
     ).fetchall()
+
+    linked_transport_ids = {
+        r['transport_id']
+        for r in db.execute(
+            f"""SELECT sit.transport_id
+                FROM sales_item_transport sit
+                JOIN sales_order_items soi ON sit.sales_item_id = soi.id
+                WHERE {item_sql} AND sit.transport_id IS NOT NULL""",
+            item_params,
+        ).fetchall()
+        if r['transport_id'] is not None
+    }
+
+    all_transports = _fetch_sales_order_transports(db, order_id)
+    unlinked_transports = [t for t in all_transports if t['id'] not in linked_transport_ids]
 
     reconciliation_data = []
     total_sale_qty = 0.0
@@ -6447,7 +6956,9 @@ def sales_order_reconciliation(order_id):
         transport_qty = float(item['linked_qty'] or 0)
         diff = round(sale_qty - transport_qty, 2)
         linked_transports = db.execute(
-            """SELECT tr.id, tr.batch_no, tr.transport_date, sit.quantity
+            """SELECT tr.id, tr.batch_no, tr.transport_date,
+                      CASE WHEN COALESCE(sit.quantity, 0) > 0 THEN sit.quantity
+                           ELSE COALESCE(tr.quantity, 0) END as quantity
                FROM sales_item_transport sit
                JOIN transport_records tr ON tr.id = sit.transport_id
                WHERE sit.sales_item_id = ?
@@ -6460,9 +6971,31 @@ def sales_order_reconciliation(order_id):
             'transport_qty': transport_qty,
             'diff': diff,
             'linked_transports': linked_transports,
+            'is_unlinked': False,
         })
         total_sale_qty += sale_qty
         total_transport_qty += transport_qty
+
+    unlinked_qty = sum(float(t['quantity'] or 0) for t in unlinked_transports)
+    if unlinked_qty > 0 or unlinked_transports:
+        unlinked_rows = [
+            {
+                'id': t['id'],
+                'batch_no': t['batch_no'],
+                'transport_date': t['transport_date'],
+                'quantity': float(t['quantity'] or 0),
+            }
+            for t in unlinked_transports
+        ]
+        reconciliation_data.append({
+            'item': SimpleNamespace(item_name='（整单运输·未关联明细）', specification='-'),
+            'sale_qty': 0.0,
+            'transport_qty': unlinked_qty,
+            'diff': round(-unlinked_qty, 2),
+            'linked_transports': unlinked_rows,
+            'is_unlinked': True,
+        })
+        total_transport_qty += unlinked_qty
 
     total_diff = round(total_sale_qty - total_transport_qty, 2)
 
@@ -6473,6 +7006,7 @@ def sales_order_reconciliation(order_id):
         total_sale_qty=total_sale_qty,
         total_transport_qty=total_transport_qty,
         total_diff=total_diff,
+        unlinked_transport_count=len(unlinked_transports),
     )
 
 
@@ -7088,23 +7622,26 @@ def api_transport_save():
 
 @app.route('/contract/list')
 @login_required
+@permission_required('contract.view')
 def contract_list():
     """合同列表"""
     db = get_db()
     contract_type = request.args.get('contract_type', '')
-    project_id = request.args.get('project_id', type=int)
+    project_id = _allowed_project_id(request.args.get('project_id'))
     keyword = request.args.get('keyword', '')
 
     sql = """SELECT c.*, p.name as project_name
              FROM contracts c
              LEFT JOIN projects p ON c.project_id = p.id
              WHERE 1=1"""
-    params = []
+    scope_sql, scope_params = _project_scope_sql('c.project_id', db)
+    sql += scope_sql
+    params = list(scope_params)
 
     if contract_type:
         sql += " AND c.contract_type = ?"
         params.append(contract_type)
-    if project_id:
+    if project_id is not None:
         sql += " AND c.project_id = ?"
         params.append(project_id)
     if keyword:
@@ -7114,18 +7651,21 @@ def contract_list():
     sql += " ORDER BY c.created_at DESC"
     contracts = db.execute(sql, params).fetchall()
 
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     return render_template('contract_list.html', contracts=contracts, projects=projects,
                            contract_type=contract_type, project_id=project_id, keyword=keyword)
 
 
 @app.route('/contract/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('contract.view')
 def contract_add():
     """新增合同"""
     db = get_db()
     if request.method == 'POST':
         project_id = request.form.get('project_id', type=int)
+        if not _require_post_project_access(project_id):
+            return redirect(url_for('contract_add'))
         contract_no = request.form.get('contract_no', '')
         contract_name = request.form.get('contract_name', '')
         contract_type = request.form.get('contract_type', '')
@@ -7159,12 +7699,13 @@ def contract_add():
         flash('合同创建成功', 'success')
         return redirect(url_for('contract_list'))
 
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     return render_template('contract_form.html', projects=projects, now=datetime.now())
 
 
 @app.route('/contract/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('contract.view')
 def contract_edit(id):
     """编辑合同"""
     db = get_db()
@@ -7173,8 +7714,14 @@ def contract_edit(id):
         flash('合同不存在', 'danger')
         return redirect(url_for('contract_list'))
 
+    denied = _guard_project_access(db, contract['project_id'], 'contract_list')
+    if denied:
+        return denied
+
     if request.method == 'POST':
         project_id = request.form.get('project_id', type=int)
+        if not _require_post_project_access(project_id):
+            return redirect(url_for('contract_edit', id=id))
         contract_no = request.form.get('contract_no', '')
         contract_name = request.form.get('contract_name', '')
         contract_type = request.form.get('contract_type', '')
@@ -7207,12 +7754,13 @@ def contract_edit(id):
         flash('合同更新成功', 'success')
         return redirect(url_for('contract_list'))
 
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     return render_template('contract_form.html', contract=contract, projects=projects, edit_mode=True)
 
 
 @app.route('/contract/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('contract.view')
 def contract_delete(id):
     """删除合同"""
     db = get_db()
@@ -7220,6 +7768,10 @@ def contract_delete(id):
     if not contract:
         flash('合同不存在', 'danger')
         return redirect(url_for('contract_list'))
+
+    denied = _guard_project_access(db, contract['project_id'], 'contract_list')
+    if denied:
+        return denied
 
     db.execute("DELETE FROM contracts WHERE id = ?", (id,))
     db.commit()
@@ -7303,7 +7855,7 @@ def reconciliation_list():
     sql, params = _reconciliation_list_sql(db, project_id, status_filter)
     reconciliations = db.execute(sql, params).fetchall()
     pending_purchases = _pending_purchases_for_recon(db, project_id)
-    projects = db.execute('SELECT id, name FROM projects ORDER BY name').fetchall()
+    projects = _projects_dropdown(db)
     filters = {'project_id': project_id, 'status': status_filter}
     return render_template(
         'reconciliation_list.html',
@@ -7380,35 +7932,8 @@ def reconciliation_detail(id):
 @app.route('/invoice/list')
 @login_required
 def invoice_list():
-    """发票列表"""
-    db = get_db()
-    project_id = request.args.get('project_id', type=int)
-    invoice_type = request.args.get('invoice_type', '')
-    status = request.args.get('status', '')
-
-    sql = """SELECT i.*, i.invoice_no as invoice_number,
-                    p.name as project_name, c.contract_name
-             FROM invoices i
-             LEFT JOIN projects p ON i.project_id = p.id
-             LEFT JOIN contracts c ON i.contract_id = c.id
-             WHERE 1=1"""
-    params = []
-
-    if project_id:
-        sql += " AND i.project_id = ?"
-        params.append(project_id)
-    if invoice_type:
-        sql += " AND i.invoice_type = ?"
-        params.append(invoice_type)
-    if status:
-        sql += " AND i.status = ?"
-        params.append(status)
-
-    sql += " ORDER BY i.created_at DESC"
-    invoices = db.execute(sql, params).fetchall()
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
-    return render_template('invoice_list.html', invoices=invoices, projects=projects,
-                           project_id=project_id, invoice_type=invoice_type, status=status)
+    """发票管理入口（销售/采购分栏）"""
+    return redirect(url_for('invoice_hub'))
 
 
 @app.route('/invoice/add', methods=['GET', 'POST'])
@@ -7433,9 +7958,9 @@ def invoice_add():
         db.commit()
         add_log(session.get('user_id'), session.get('username', ''), '新增发票', f'发票号: {invoice_no}')
         flash('发票添加成功', 'success')
-        return redirect(url_for('invoice_list'))
+        return redirect(url_for('invoice_hub'))
 
-    projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+    projects = _projects_dropdown(db)
     contracts = db.execute("SELECT id, contract_name FROM contracts ORDER BY contract_name").fetchall()
     return render_template('invoice_form.html', projects=projects, contracts=contracts, now=datetime.now())
 
@@ -8088,6 +8613,8 @@ def inject_public_urls():
         'purchase_is_submitted': _purchase_is_submitted,
         'sales_is_draft': _sales_is_draft,
         'sales_is_submitted': _sales_is_submitted,
+        'sales_is_editable': _sales_is_editable,
+        'sales_can_unsubmit': _sales_can_unsubmit,
     }
 
 
@@ -8213,6 +8740,7 @@ from route_extensions import register_missing_routes
 register_missing_routes(app, {
     'login_required': login_required,
     'admin_required': admin_required,
+    'permission_required': permission_required,
     'get_db': get_db,
     'add_log': add_log,
     'datetime': datetime,

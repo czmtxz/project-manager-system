@@ -43,6 +43,7 @@
                 </div>
                 <div class="col-md-2">
                     <div class="form-check mb-2">
+                        <input type="hidden" name="include_draft" value="0">
                         <input class="form-check-input" type="checkbox" name="include_draft" value="1" id="include_draft"
                                {% if filters.include_draft %}checked{% endif %}>
                         <label class="form-check-label" for="include_draft">汇总含未提交</label>
@@ -57,17 +58,74 @@
 
     <!-- 销售出库单列表 -->
     {% if orders %}
+    <div class="row g-3 mb-3">
+        <div class="col-md-3">
+            <div class="card border-primary border-opacity-25 h-100">
+                <div class="card-body py-3">
+                    <div class="text-muted small">销售金额合计{% if not summary.include_draft %}（不含未提交）{% endif %}</div>
+                    <div class="h4 mb-0 text-primary">¥{{ "%.2f"|format(summary.total_amount) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100">
+                <div class="card-body py-3">
+                    <div class="text-muted small">销售数量合计</div>
+                    <div class="h4 mb-0">{{ "%.2f"|format(summary.total_qty) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-warning border-opacity-25 h-100">
+                <div class="card-body py-3">
+                    <div class="text-muted small">运费总金额{% if not summary.include_draft %}（不含未提交）{% endif %}</div>
+                    <div class="h4 mb-0 text-warning">¥{{ "%.2f"|format(summary.total_freight) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100">
+                <div class="card-body py-3">
+                    <div class="text-muted small">运输数量 / 车次</div>
+                    <div class="h4 mb-0">{{ "%.2f"|format(summary.transport_qty) }}
+                        {% if summary.transport_count > 0 %}
+                        <span class="fs-6 text-muted">· {{ summary.transport_count }} 车</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <div class="card">
+        <div class="card-header py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span class="text-muted small">勾选后可批量反提交（不含待审核、已完成）</span>
+            <div class="d-flex gap-2 align-items-center">
+                <span class="text-muted small" id="unsubmitSelectedHint">已选 0 笔</span>
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleAllUnsubmit(true)">全选可反提交</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleAllUnsubmit(false)">取消全选</button>
+                <button type="submit" form="batchUnsubmitForm" class="btn btn-warning btn-sm"
+                        onclick="return confirmBatchUnsubmit()">
+                    <i class="bi bi-arrow-counterclockwise"></i> 批量反提交
+                </button>
+            </div>
+        </div>
+        <form id="batchUnsubmitForm" method="POST" action="{{ url_for('sales_order_batch_unsubmit') }}"></form>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover table-striped mb-0">
                     <thead class="table-light">
                         <tr>
+                            <th style="width:42px" class="text-center">
+                                <input type="checkbox" class="form-check-input" id="selectAllUnsubmit"
+                                       title="全选本页可反提交" onchange="toggleAllUnsubmit(this.checked)">
+                            </th>
                             <th>出库单号</th>
                             <th>项目</th>
                             <th>客户名称</th>
                             <th class="text-end">销售金额</th>
                             <th class="text-end">销售数量</th>
+                            <th class="text-end">运输数量</th>
+                            <th class="text-end">运费汇总</th>
                             <th>下单日期</th>
                             <th>运输车次</th>
                             <th>状态</th>
@@ -77,11 +135,33 @@
                     <tbody>
                         {% for o in orders %}
                         <tr>
+                            <td class="text-center">
+                                {% if sales_can_unsubmit(o.status) %}
+                                <input type="checkbox" class="form-check-input unsubmit-check" form="batchUnsubmitForm"
+                                       name="order_ids" value="{{ o.id }}" onchange="updateUnsubmitHint()">
+                                {% else %}
+                                <input type="checkbox" class="form-check-input" disabled title="不可反提交">
+                                {% endif %}
+                            </td>
                             <td><a href="{{ url_for('sales_order_detail', id=o.id) }}"><code>{{ o.order_no }}</code></a></td>
                             <td>{{ o.project_name or '-' }}</td>
                             <td>{{ o.customer_name or '-' }}</td>
                             <td class="text-end">{{ "%.2f"|format(o.total_amount or 0) }}</td>
                             <td class="text-end">{{ "%.2f"|format(o.total_qty or 0) }}</td>
+                            <td class="text-end">
+                                {% if o.transport_qty and o.transport_qty > 0 %}
+                                {{ "%g"|format(o.transport_qty) }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if o.total_freight and o.total_freight > 0 %}
+                                <span class="text-warning fw-semibold">¥{{ "%.2f"|format(o.total_freight) }}</span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
                             <td>{{ o.order_date or '-' }}</td>
                             <td class="text-center">
                                 {% if o.transport_count > 0 %}
@@ -122,6 +202,20 @@
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </form>
+                                    {% elif sales_is_submitted(o.status) %}
+                                    <a href="{{ url_for('sales_order_edit', id=o.id) }}" class="btn btn-outline-secondary" title="编辑">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <form method="POST" action="{{ url_for('sales_order_unsubmit', id=o.id) }}" style="display:inline"
+                                          onsubmit="return confirm('确定反提交此出库单？')">
+                                        <button type="submit" class="btn btn-outline-warning" title="反提交">
+                                            <i class="bi bi-arrow-counterclockwise"></i>
+                                        </button>
+                                    </form>
+                                    {% elif sales_is_editable(o.status) %}
+                                    <a href="{{ url_for('sales_order_edit', id=o.id) }}" class="btn btn-outline-secondary" title="编辑">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
                                     {% endif %}
                                 </div>
                             </td>
@@ -130,9 +224,11 @@
                     </tbody>
                     <tfoot class="table-light">
                         <tr class="fw-semibold">
-                            <td colspan="3">合计（{{ summary.count }} 笔{% if not summary.include_draft %}，不含未提交{% endif %}）</td>
+                            <td colspan="4">合计（{{ summary.count }} 笔{% if not summary.include_draft %}，不含未提交{% endif %}）</td>
                             <td class="text-end text-primary">¥{{ "%.2f"|format(summary.total_amount) }}</td>
                             <td class="text-end">{{ "%.2f"|format(summary.total_qty) }}</td>
+                            <td class="text-end">{{ "%.2f"|format(summary.transport_qty) }}</td>
+                            <td class="text-end text-warning">¥{{ "%.2f"|format(summary.total_freight) }}</td>
                             <td></td>
                             <td class="text-center">
                                 {% if summary.transport_count > 0 %}
@@ -158,4 +254,33 @@
     </div>
     {% endif %}
 </div>
+<script>
+function unsubmitChecks() {
+    return Array.from(document.querySelectorAll('.unsubmit-check'));
+}
+function updateUnsubmitHint() {
+    const n = unsubmitChecks().filter(c => c.checked).length;
+    const el = document.getElementById('unsubmitSelectedHint');
+    if (el) el.textContent = '已选 ' + n + ' 笔';
+    const all = document.getElementById('selectAllUnsubmit');
+    const boxes = unsubmitChecks();
+    if (all && boxes.length) {
+        all.checked = boxes.every(c => c.checked);
+        all.indeterminate = n > 0 && n < boxes.length;
+    }
+}
+function toggleAllUnsubmit(checked) {
+    unsubmitChecks().forEach(c => { c.checked = !!checked; });
+    updateUnsubmitHint();
+}
+function confirmBatchUnsubmit() {
+    const n = unsubmitChecks().filter(c => c.checked).length;
+    if (n === 0) {
+        alert('请先勾选需要反提交的出库单');
+        return false;
+    }
+    return confirm('确定将选中的 ' + n + ' 笔出库单反提交为「待审核」吗？');
+}
+document.addEventListener('DOMContentLoaded', updateUnsubmitHint);
+</script>
 {% endblock %}

@@ -2,6 +2,24 @@
 
 目标目录：`/opt/project_manager/project_manager/`
 
+## 自动部署（推荐）
+
+代码改动后会自动尝试部署，无需每次手动执行：
+
+1. **Cursor Agent**：项目已配置 `.cursor/hooks.json`，每轮对话结束（`stop`）时运行 `tools/deploy_to_server.ps1`。日志：`.cursor/deploy-last.log`
+2. **Agent 规则**：`.cursor/rules/auto-deploy-production.mdc` 要求助手在改完业务代码后执行部署脚本
+3. **Git 提交（可选）**：`powershell -File tools/install-git-deploy-hook.ps1` 安装 post-commit 钩子
+
+前提：项目根目录存在 `.ssh_deploy_key`（勿提交 Git），或设置 `$env:DEPLOY_SSH_KEY`。
+
+手动立即部署：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\deploy_to_server.ps1
+```
+
+静默模式（钩子用）：加参数 `-Quiet`。
+
 ## 方式一：自动脚本（需 SSH 私钥）
 
 1. 将部署私钥放到项目根目录 `.ssh_deploy_key`，或设置环境变量：

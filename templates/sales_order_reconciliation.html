@@ -63,8 +63,8 @@
                     </thead>
                     <tbody>
                         {% for row in reconciliation_data %}
-                        <tr class="{% if row.diff != 0 %}table-warning{% endif %}">
-                            <td>{{ row.item.item_name }}</td>
+                        <tr class="{% if row.is_unlinked|default(false) %}table-info{% elif row.diff != 0 %}table-warning{% endif %}">
+                            <td>{{ row.item.item_name }}{% if row.is_unlinked|default(false) %} <span class="badge bg-info text-dark">整单</span>{% endif %}</td>
                             <td>{{ row.item.specification or '-' }}</td>
                             <td class="text-end">{{ "%.2f"|format(row.sale_qty) }}</td>
                             <td class="text-end">{{ "%.2f"|format(row.transport_qty) }}</td>
@@ -123,6 +123,7 @@
                 <li><span class="badge bg-danger">少运</span>：销售数量 > 运输数量，表示还有货物未运输</li>
                 <li><span class="badge bg-warning text-dark">多运</span>：销售数量 < 运输数量，表示运输数量超出销售数量</li>
                 <li><span class="badge bg-success">相符</span>：销售数量 = 运输数量，账实相符</li>
+                <li><span class="badge bg-info text-dark">整单</span>：运输记录已挂在出库单上，尚未关联到具体销售明细；数量计入「运输记录数量」合计</li>
             </ul>
         </div>
     </div>

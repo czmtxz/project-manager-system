@@ -1,0 +1,59 @@
+{% extends "nav_base.html" %}
+{% block title %}{{ direction_label }} OCR导入{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{{ url_for('invoice_hub') }}">发票管理</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('invoice_sales' if direction == 'sales' else 'invoice_purchase') }}">{{ direction_label }}</a></li>
+            <li class="breadcrumb-item active">OCR导入</li>
+        </ol>
+    </nav>
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-camera"></i> {{ direction_label }} — 图片识别导入</h5>
+                    <small class="text-muted">识别后自动登记为{% if direction == 'sales' %}销售{% else %}采购{% endif %}发票并写入明细合计行</small>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">默认项目</label>
+                            <select name="project_id" class="form-select">
+                                <option value="">不指定</option>
+                                {% for p in projects %}
+                                <option value="{{ p.id }}" {% if project_id and project_id|string == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">发票图片 <span class="text-danger">*</span></label>
+                            <input type="file" name="ocr_image" class="form-control" accept=".jpg,.jpeg,.png,.bmp" multiple required>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i> 识别并导入</button>
+                            <a href="{{ url_for('invoice_sales' if direction == 'sales' else 'invoice_purchase') }}" class="btn btn-secondary">返回</a>
+                        </div>
+                    </form>
+                    {% if results %}
+                    <hr>
+                    <h6>识别结果</h6>
+                    {% for r in results %}
+                    <div class="card mb-2 {% if r.saved %}border-success{% elif r.error %}border-danger{% else %}border-warning{% endif %}">
+                        <div class="card-body py-2 small">
+                            <strong>{{ r.filename }}</strong>
+                            {% if r.saved %}<span class="badge bg-success ms-2">已导入</span>
+                            {% elif r.error %}<span class="text-danger">{{ r.error }}</span>
+                            {% else %}<span class="text-warning">信息不完整</span>{% endif %}
+                            {% if r.invoice_no %}<div>票号：{{ r.invoice_no }} 金额：{{ r.total_amount or r.amount }}</div>{% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
