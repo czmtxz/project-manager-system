@@ -732,6 +732,10 @@ def init_db():
         cursor.execute("ALTER TABLE sales_order_items ADD COLUMN sales_order_id INTEGER")
     except:
         pass  # 列已存在
+    try:
+        cursor.execute("ALTER TABLE transport_records ADD COLUMN sales_order_id INTEGER")
+    except:
+        pass  # 列已存在
 
     db.commit()
     db.close()
@@ -6320,6 +6324,8 @@ def api_transport_get(id):
 
 
 
+@app.route('/api/transport/save', methods=['POST'])
+@login_required
 def api_transport_save():
     """保存运输记录（按实际表结构动态写入，兼容采购明细关联）"""
     db = get_db()
@@ -6337,11 +6343,15 @@ def api_transport_save():
         record_id = None
 
     purchase_id = payload.get('purchase_id')
-    sales_order_id = payload.get('sales_order_id')
+    sales_order_id = payload.get('sales_order_id') or payload.get('order_id')
     try:
         purchase_id = int(purchase_id) if purchase_id not in (None, '', 'null') else None
     except (TypeError, ValueError):
         purchase_id = None
+    try:
+        sales_order_id = int(sales_order_id) if sales_order_id not in (None, '', 'null') else None
+    except (TypeError, ValueError):
+        sales_order_id = None
 
     quantity = _coerce_float(payload.get('quantity'))
     unit_price = _coerce_float(payload.get('unit_price'))
@@ -6373,6 +6383,7 @@ def api_transport_save():
         'unit_price': unit_price,
         'freight_amount': freight_amount,
         'remark': _val('remark'),
+        'status': _val('status') or None,
     }
     invoice_id = payload.get('invoice_id')
     try:
@@ -7570,28 +7581,6 @@ register_missing_routes(app, {
     'uuid': uuid,
     'recalc_investment_ratios': recalc_investment_ratios,
 })
-
-@app.route('/api/transport/save', methods=['POST'])
-@login_required
-def api_transport_save():
-    db = get_db()
-    payload = request.get_json(silent=True)
-    if not payload:
-        return jsonify({'success': False, 'message': '无效数据'}), 400
-    try:
-        fields = {k: v for k, v in payload.items() if v != '' and v is not None}
-        if 'id' in fields and fields['id']:
-            db.execute("UPDATE transport_records SET " + ','.join(f"{k}=?" for k in fields if k != 'id') + " WHERE id=?", 
-                       [fields[k] for k in fields if k != 'id'] + [fields['id']])
-        else:
-            fields.pop('id', None)
-            cols = list(fields.keys())
-            db.execute("INSERT INTO transport_records (" + ','.join(cols) + ") VALUES (" + ','.join(['?']*len(cols)) + ")", list(fields.values()))
-        db.commit()
-        return jsonify({'success': True})
-    except Exception as e:
-        db.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 if __name__ == '__main__':
