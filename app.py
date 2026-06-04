@@ -860,18 +860,36 @@ def init_categories(cursor):
             )
 
 
-def add_log(user_id, username, action, detail, ip='', entity_count=None, feature_module=None):
-    """记录操作日志（含功能模块与影响条数，供统计分析）。"""
+def add_log(user_id, username, action, detail, ip='', entity_count=None, feature_module=None,
+            doc_type=None, op_type=None, doc_count=None, record_count=None):
+    """记录操作日志（含单据类型、操作类型、张数、明细条数，供统计分析）。"""
     try:
-        from log_analytics import classify_log_action, ensure_log_schema
+        from log_analytics import parse_log_metadata, ensure_log_schema
         db = get_db()
         ensure_log_schema(db)
-        if feature_module is None or entity_count is None:
-            mod, ec = classify_log_action(action, detail)
-            feature_module = feature_module if feature_module is not None else mod
-            entity_count = entity_count if entity_count is not None else ec
+        meta = parse_log_metadata(action, detail)
+        if feature_module is None:
+            feature_module = meta['feature_module']
+        if doc_type is None:
+            doc_type = meta['doc_type']
+        if op_type is None:
+            op_type = meta['op_type']
+        if doc_count is None:
+            doc_count = meta['doc_count']
+        if record_count is None:
+            record_count = meta['record_count']
+        if entity_count is None:
+            entity_count = record_count
         cols = {r[1] for r in db.execute('PRAGMA table_info(logs)').fetchall()}
-        if 'feature_module' in cols and 'entity_count' in cols:
+        if 'doc_type' in cols:
+            db.execute(
+                """INSERT INTO logs (user_id, username, action, detail, ip,
+                   feature_module, entity_count, doc_type, op_type, doc_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (user_id, username, action, detail, ip, feature_module, entity_count,
+                 doc_type, op_type, doc_count),
+            )
+        elif 'feature_module' in cols:
             db.execute(
                 """INSERT INTO logs (user_id, username, action, detail, ip, feature_module, entity_count)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -4074,16 +4092,16 @@ def api_backup_preview():
 def log_list():
     from log_analytics import (
         ensure_log_schema, query_logs, query_logs_by_day,
-        backfill_log_metadata, MODULE_LABELS,
+        backfill_log_metadata, MODULE_LABELS, DOC_TYPE_LABELS, OP_TYPE_LABELS,
     )
     db = get_db()
     ensure_log_schema(db)
     pending = db.execute(
         """SELECT COUNT(*) FROM logs
-           WHERE feature_module IS NULL OR feature_module = ''"""
+           WHERE doc_type IS NULL OR doc_type = ''"""
     ).fetchone()[0]
     if pending:
-        backfill_log_metadata(db, batch_size=min(pending, 2000))
+        backfill_log_metadata(db, batch_size=min(pending, 3000))
 
     tab = (request.args.get('tab') or 'detail').strip()
     page = request.args.get('page', 1, type=int)
@@ -4126,17 +4144,28 @@ def log_list():
         default_date_from=month_start,
         default_date_to=today,
         module_labels=MODULE_LABELS,
+        doc_type_labels=DOC_TYPE_LABELS,
+        op_type_labels=OP_TYPE_LABELS,
     )
 
 
 @app.route('/logs/analytics')
 @admin_required
 def log_analytics():
-    from log_analytics import build_user_analytics, ensure_log_schema
+    from log_analytics import (
+        build_user_analytics, ensure_log_schema, backfill_log_metadata,
+        analytics_chart_json, DOC_TYPE_LABELS, OP_TYPE_LABELS,
+    )
     db = get_db()
     ensure_log_schema(db)
+    pending = db.execute(
+        "SELECT COUNT(*) FROM logs WHERE doc_type IS NULL OR doc_type = ''"
+    ).fetchone()[0]
+    if pending:
+        backfill_log_metadata(db, batch_size=min(pending, 3000))
     date_from = (request.args.get('date_from') or '').strip()
     date_to = (request.args.get('date_to') or '').strip()
+    focus_user = (request.args.get('user') or '').strip()
     today = datetime.now().strftime('%Y-%m-%d')
     month_start = datetime.now().replace(day=1).strftime('%Y-%m-%d')
     if not date_from:
@@ -4144,13 +4173,18 @@ def log_analytics():
     if not date_to:
         date_to = today
     users = build_user_analytics(db, date_from, date_to)
+    chart_json = analytics_chart_json(users, date_from, date_to)
     return render_template(
         'log_analytics.html',
         users=users,
         date_from=date_from,
         date_to=date_to,
+        focus_user=focus_user,
         default_date_from=month_start,
         default_date_to=today,
+        chart_json=chart_json,
+        doc_type_labels=DOC_TYPE_LABELS,
+        op_type_labels=OP_TYPE_LABELS,
     )
 
 

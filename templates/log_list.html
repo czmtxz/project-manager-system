@@ -112,7 +112,8 @@
                             <th>日期</th>
                             <th class="text-end">操作次数</th>
                             <th class="text-end">活跃用户</th>
-                            <th class="text-end">记录/条数合计</th>
+                            <th class="text-end">单据张数</th>
+                            <th class="text-end">明细条数</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -122,6 +123,7 @@
                             <td><strong>{{ d.log_date }}</strong></td>
                             <td class="text-end">{{ d.op_count }}</td>
                             <td class="text-end">{{ d.user_count }}</td>
+                            <td class="text-end">{{ d.doc_count or 0 }}</td>
                             <td class="text-end">{{ d.record_count or 0 }}</td>
                             <td class="text-end">
                                 <a class="btn btn-sm btn-outline-primary"
@@ -164,7 +166,9 @@
                             <th>ID</th>
                             <th>用户</th>
                             <th>操作</th>
-                            <th>功能</th>
+                            <th>类型</th>
+                            <th>单据</th>
+                            <th class="text-end">张数</th>
                             <th class="text-end">条数</th>
                             <th>详情</th>
                             <th>IP</th>
@@ -187,7 +191,9 @@
                                 <span class="badge bg-primary">{{ log.action }}</span>
                                 {% endif %}
                             </td>
-                            <td><small class="text-muted">{{ module_labels.get(log.feature_module, log.feature_module or '—') }}</small></td>
+                            <td><small>{{ op_type_labels.get(log['op_type'], log['op_type'] or '—') if log['op_type'] else '—' }}</small></td>
+                            <td><small class="text-muted">{{ doc_type_labels.get(log['doc_type'], log['doc_type'] or '—') if log['doc_type'] else module_labels.get(log['feature_module'], '—') }}</small></td>
+                            <td class="text-end">{% if log['doc_count'] %}{{ log['doc_count'] }}{% else %}—{% endif %}</td>
                             <td class="text-end">{{ log.entity_count if log.entity_count is not none else '—' }}</td>
                             <td>{{ log.detail or '-' }}</td>
                             <td><small class="text-muted">{{ log.ip or '-' }}</small></td>

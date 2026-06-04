@@ -11,11 +11,8 @@
 
     <div class="alert alert-light border mb-3 small">
         <i class="bi bi-info-circle"></i>
-        统计说明：<strong>操作次数</strong>为写入日志的业务操作；
-        <strong>功能种类</strong>为涉及的业务模块数；
-        <strong>功能点击</strong>为访问各菜单/页面的累计次数（自本次升级后统计）；
-        <strong>单据操作</strong>为新增/修改/删除/提交类操作次数；
-        <strong>记录条数</strong>为日志中累计的影响行数（含导入条数等）。
+        统计各用户<strong>新增/导入</strong>的单据类型、<strong>单据张数</strong>与<strong>明细条数</strong>；下方可按用户查看图表。
+        历史日志会自动解析补全；新操作将写入结构化字段（单据类型、操作类型、张数、条数）。
     </div>
 
     <div class="card mb-3">
@@ -29,34 +26,101 @@
                     <label class="form-label small mb-0">结束日期</label>
                     <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}" required>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-3">
+                    <label class="form-label small mb-0">聚焦用户（图表）</label>
+                    <select class="form-select form-select-sm" name="user" id="focusUserSelect">
+                        <option value="">— 全部用户概览 —</option>
+                        {% for u in users %}
+                        <option value="{{ u.username }}" {% if focus_user == u.username %}selected{% endif %}>{{ u.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-1">
                     <button type="submit" class="btn btn-primary btn-sm w-100">分析</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <div class="card">
+    {% if users %}
+    <div class="row g-3 mb-4" id="globalCharts">
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header py-2"><h6 class="mb-0">各用户操作次数</h6></div>
+                <div class="card-body"><canvas id="chartUserOps" height="220"></canvas></div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header py-2"><h6 class="mb-0">各用户新增单据张数</h6></div>
+                <div class="card-body"><canvas id="chartUserNewDocs" height="220"></canvas></div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header py-2"><h6 class="mb-0">全员新增单据构成（张数）</h6></div>
+                <div class="card-body"><canvas id="chartDocPie" height="220"></canvas></div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header py-2"><h6 class="mb-0">全员新增明细条数（按单据类型）</h6></div>
+                <div class="card-body"><canvas id="chartRecordBar" height="220"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4" id="userDetailCharts" style="display:none;">
+        <div class="card-header bg-primary bg-opacity-10">
+            <h6 class="mb-0"><i class="bi bi-person-badge"></i> 用户图表：<span id="userChartTitle"></span></h6>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <canvas id="chartUserDaily" height="200"></canvas>
+                    <p class="small text-muted text-center mb-0">每日操作次数</p>
+                </div>
+                <div class="col-md-6">
+                    <canvas id="chartUserHour" height="200"></canvas>
+                    <p class="small text-muted text-center mb-0">操作时段分布</p>
+                </div>
+                <div class="col-md-6">
+                    <canvas id="chartUserCreateDocs" height="200"></canvas>
+                    <p class="small text-muted text-center mb-0">新增单据张数（按类型）</p>
+                </div>
+                <div class="col-md-6">
+                    <canvas id="chartUserCreateRecords" height="200"></canvas>
+                    <p class="small text-muted text-center mb-0">新增明细条数（按类型）</p>
+                </div>
+                <div class="col-md-6">
+                    <canvas id="chartUserFeatures" height="200"></canvas>
+                    <p class="small text-muted text-center mb-0">功能页面点击</p>
+                </div>
+                <div class="col-md-6">
+                    <canvas id="chartUserOpTypes" height="200"></canvas>
+                    <p class="small text-muted text-center mb-0">操作类型分布</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
         <div class="card-header">
-            <h6 class="mb-0">用户操作分析表（{{ date_from }} 至 {{ date_to }}，共 {{ users|length }} 人）</h6>
+            <h6 class="mb-0">用户汇总（{{ date_from }} 至 {{ date_to }}，{{ users|length }} 人）</h6>
         </div>
         <div class="card-body p-0">
-            {% if users %}
             <div class="table-responsive">
                 <table class="table table-bordered table-hover table-sm mb-0">
                     <thead class="table-light">
                         <tr>
                             <th>用户</th>
-                            <th class="text-end" title="日志条数">操作次数</th>
-                            <th class="text-end" title="不同业务模块">功能种类</th>
-                            <th class="text-end" title="访问的不同功能页面">点击功能数</th>
-                            <th class="text-end" title="菜单/页面访问累计">功能点击次数</th>
-                            <th class="text-end" title="单据类操作">单据操作次数</th>
-                            <th class="text-end" title="影响记录/明细条数">记录条数</th>
-                            <th>主要操作时段</th>
-                            <th>常用操作</th>
-                            <th>常用业务模块</th>
-                            <th>常访问功能</th>
+                            <th class="text-end">操作次数</th>
+                            <th class="text-end">新增单据(张)</th>
+                            <th class="text-end">新增明细(条)</th>
+                            <th class="text-end">功能点击</th>
+                            <th>新增单据明细</th>
+                            <th>主要时段</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -64,24 +128,182 @@
                         <tr>
                             <td><strong>{{ u.username }}</strong></td>
                             <td class="text-end">{{ u.op_count }}</td>
-                            <td class="text-end">{{ u.feature_type_count }}</td>
-                            <td class="text-end">{{ u.feature_nav_count }}</td>
+                            <td class="text-end text-primary fw-semibold">{{ u.new_doc_count }}</td>
+                            <td class="text-end text-success">{{ u.new_record_count }}</td>
                             <td class="text-end">{{ u.feature_click_count }}</td>
-                            <td class="text-end">{{ u.doc_op_count }}</td>
-                            <td class="text-end">{{ u.record_count }}</td>
+                            <td><small>{{ u.new_doc_summary }}</small></td>
                             <td><small>{{ u.peak_hours }}</small></td>
-                            <td><small>{{ u.top_actions }}</small></td>
-                            <td><small>{{ u.top_modules }}</small></td>
-                            <td><small>{{ u.top_feature_nav }}</small></td>
+                            <td>
+                                <a href="?date_from={{ date_from }}&date_to={{ date_to }}&user={{ u.username|urlencode }}#user-{{ loop.index }}"
+                                   class="btn btn-sm btn-outline-primary">图表</a>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-            {% else %}
-            <p class="text-muted text-center py-5">该时段无操作记录</p>
-            {% endif %}
         </div>
     </div>
+
+    <div class="accordion" id="userDocAccordion">
+        {% for u in users %}
+        <div class="accordion-item" id="user-{{ loop.index }}">
+            <h2 class="accordion-header">
+                <button class="accordion-button {% if not focus_user or focus_user != u.username %}collapsed{% endif %}" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
+                    <strong>{{ u.username }}</strong>
+                    <span class="ms-2 badge bg-primary">新增 {{ u.new_doc_count }} 张</span>
+                    <span class="badge bg-success">明细 {{ u.new_record_count }} 条</span>
+                    <span class="ms-1 text-muted small">操作 {{ u.op_count }} 次</span>
+                </button>
+            </h2>
+            <div id="collapse{{ loop.index }}" class="accordion-collapse collapse {% if focus_user == u.username %}show{% endif %}"
+                 data-bs-parent="#userDocAccordion">
+                <div class="accordion-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <h6 class="small fw-bold text-primary">新增单据（按类型）</h6>
+                            {% if u.create_breakdown %}
+                            <table class="table table-sm table-bordered mb-0">
+                                <thead><tr><th>单据类型</th><th class="text-end">张数</th><th class="text-end">明细条数</th></tr></thead>
+                                <tbody>
+                                    {% for item in u.create_breakdown %}
+                                    <tr>
+                                        <td>{{ item.label }}</td>
+                                        <td class="text-end">{{ item.doc_count }}</td>
+                                        <td class="text-end">{{ item.record_count }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% else %}
+                            <p class="text-muted small">无「新增」类单据记录</p>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="small fw-bold text-info">导入数据（按类型）</h6>
+                            {% if u.import_breakdown %}
+                            <table class="table table-sm table-bordered mb-0">
+                                <thead><tr><th>单据类型</th><th class="text-end">涉及单数</th><th class="text-end">导入条数</th></tr></thead>
+                                <tbody>
+                                    {% for item in u.import_breakdown %}
+                                    <tr>
+                                        <td>{{ item.label }}</td>
+                                        <td class="text-end">{{ item.doc_count }}</td>
+                                        <td class="text-end">{{ item.record_count }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% else %}
+                            <p class="text-muted small">无导入记录</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="mt-2 small text-muted">
+                        常用操作：{{ u.top_actions }} · 模块：{{ u.top_modules }} · 页面：{{ u.top_feature_nav }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted text-center py-5">该时段无操作记录</p>
+    {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    const payload = {{ chart_json|safe }};
+    if (!payload || !payload.users || !payload.users.length) return;
+
+    const colors = ['#0d6efd','#198754','#dc3545','#ffc107','#6f42c1','#fd7e14','#20c997','#0dcaf0','#d63384','#6c757d'];
+    const charts = {};
+
+    function destroyChart(id) {
+        if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+    }
+
+    function barChart(id, labels, datasets, opts) {
+        destroyChart(id);
+        const el = document.getElementById(id);
+        if (!el || !labels.length) return;
+        charts[id] = new Chart(el, {
+            type: 'bar',
+            data: { labels: labels, datasets: datasets },
+            options: Object.assign({ responsive: true, scales: { y: { beginAtZero: true } } }, opts || {})
+        });
+    }
+
+    function pieChart(id, labels, values) {
+        destroyChart(id);
+        const el = document.getElementById(id);
+        if (!el || !labels.length) return;
+        charts[id] = new Chart(el, {
+            type: 'doughnut',
+            data: { labels: labels, datasets: [{ data: values, backgroundColor: colors }] },
+            options: { responsive: true }
+        });
+    }
+
+    barChart('chartUserOps', payload.user_labels, [{
+        label: '操作次数', data: payload.user_ops, backgroundColor: '#0d6efd'
+    }]);
+    barChart('chartUserNewDocs', payload.user_labels, [{
+        label: '新增单据(张)', data: payload.user_new_docs, backgroundColor: '#198754'
+    }]);
+    if (payload.doc_labels.length) {
+        pieChart('chartDocPie', payload.doc_labels, payload.doc_counts);
+        barChart('chartRecordBar', payload.doc_labels, [{
+            label: '明细条数', data: payload.record_counts, backgroundColor: '#20c997'
+        }]);
+    }
+
+    function renderUserCharts(username) {
+        const panel = document.getElementById('userDetailCharts');
+        if (!username) {
+            panel.style.display = 'none';
+            return;
+        }
+        const u = payload.users.find(function(x) { return x.username === username; });
+        if (!u) return;
+        panel.style.display = 'block';
+        document.getElementById('userChartTitle').textContent = username;
+
+        barChart('chartUserDaily', u.daily_labels, [{
+            label: '操作', data: u.daily_values, backgroundColor: '#0d6efd'
+        }]);
+        barChart('chartUserHour', u.hour_labels, [{
+            label: '次数', data: u.hour_values, backgroundColor: '#6f42c1'
+        }]);
+        if (u.create_chart_labels.length) {
+            barChart('chartUserCreateDocs', u.create_chart_labels, [{
+                label: '单据张数', data: u.create_chart_docs, backgroundColor: '#198754'
+            }]);
+            barChart('chartUserCreateRecords', u.create_chart_labels, [{
+                label: '明细条数', data: u.create_chart_records, backgroundColor: '#20c997'
+            }]);
+        }
+        if (u.feature_chart_labels.length) {
+            pieChart('chartUserFeatures', u.feature_chart_labels, u.feature_chart_values);
+        }
+        if (u.op_type_labels.length) {
+            pieChart('chartUserOpTypes', u.op_type_labels, u.op_type_values);
+        }
+    }
+
+    const focus = {{ focus_user|tojson }};
+    if (focus) {
+        renderUserCharts(focus);
+        document.getElementById('userDetailCharts').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.getElementById('focusUserSelect').addEventListener('change', function() {
+        renderUserCharts(this.value);
+    });
+})();
+</script>
 {% endblock %}
