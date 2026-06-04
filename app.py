@@ -6041,56 +6041,113 @@ def api_sales_order_item_delete(item_id):
 @app.route('/sales/order/<int:order_id>/item/import', methods=['GET', 'POST'])
 @login_required
 def sales_order_item_import(order_id):
-    """销售明细导入"""
+    """销售明细导入（Excel / 运输截图 OCR）"""
     db = get_db()
     order = db.execute("SELECT * FROM sales_orders WHERE id=?", (order_id,)).fetchone()
     if not order:
         flash('出库单不存在', 'danger')
         return redirect(url_for('sales_order_list'))
 
-    if request.method == 'POST':
-        if 'file' not in request.files:
-            flash('请选择文件', 'danger')
-            return redirect(request.url)
+    back_url = url_for('sales_order_detail', id=order_id)
 
-        f = request.files['file']
-        if not f.filename:
-            flash('请选择文件', 'danger')
-            return redirect(request.url)
+    if request.method == 'POST':
+        import_type = (request.form.get('import_type') or '').strip()
+
+        # 图片识别 → 物流截图 OCR，跳转确认页
+        if import_type == 'ocr' or request.files.get('ocr_image'):
+            files = request.files.getlist('ocr_image') or request.files.getlist('image')
+            if not files or not any(f and f.filename for f in files):
+                flash('请选择要识别的图片', 'danger')
+                return redirect(back_url)
+            try:
+                from ocr_utils import recognize_logistics_screenshot
+            except ImportError:
+                flash('OCR 组件未安装，请联系管理员', 'danger')
+                return redirect(back_url)
+
+            ocr_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'ocr')
+            os.makedirs(ocr_dir, exist_ok=True)
+            all_records = []
+            image_name = ''
+            for f in files:
+                if not f or not f.filename:
+                    continue
+                ext = f.filename.rsplit('.', 1)[-1].lower()
+                if ext not in ('jpg', 'jpeg', 'png', 'bmp', 'gif', 'webp'):
+                    flash(f'不支持的图片格式：{f.filename}', 'danger')
+                    return redirect(back_url)
+                save_name = f'ocr_transport_{uuid.uuid4().hex[:8]}_{f.filename}'
+                filepath = os.path.join(ocr_dir, save_name)
+                f.save(filepath)
+                image_name = save_name
+                recs = recognize_logistics_screenshot(filepath)
+                if recs:
+                    all_records.extend(recs)
+
+            if not all_records:
+                flash('未识别到有效运输记录，请检查图片是否清晰', 'warning')
+                return redirect(back_url)
+
+            session['ocr_transport_results'] = all_records
+            session['ocr_transport_image'] = image_name
+            return redirect(url_for('sales_order_ocr_confirm', order_id=order_id))
+
+        # Excel 导入
+        f = request.files.get('excel_file') or request.files.get('file')
+        if not f or not f.filename:
+            flash('请选择 Excel 文件', 'danger')
+            return redirect(back_url)
+        if not f.filename.lower().endswith(('.xlsx', '.xls')):
+            flash('请上传 .xlsx 或 .xls 文件', 'danger')
+            return redirect(back_url)
 
         try:
             import openpyxl
             wb = openpyxl.load_workbook(f, data_only=True)
             ws = wb.active
             count = 0
-            max_order = db.execute("SELECT COALESCE(MAX(sort_order), 0) FROM sales_order_items WHERE sales_order_id=?", (order_id,)).fetchone()[0]
+            max_order = db.execute(
+                "SELECT COALESCE(MAX(sort_order), 0) FROM sales_order_items WHERE sales_order_id=?",
+                (order_id,),
+            ).fetchone()[0]
 
             for row in ws.iter_rows(min_row=2, values_only=True):
                 if not row or not row[0]:
                     continue
                 item_name = str(row[0]).strip() if row[0] else ''
                 specification = str(row[1]).strip() if len(row) > 1 and row[1] else ''
-                unit = str(row[2]).strip() if len(row) > 2 and row[2] else ''
+                unit = str(row[2]).strip() if len(row) > 2 and row[2] else '吨'
                 quantity = float(row[3]) if len(row) > 3 and row[3] else 0
                 unit_price = float(row[4]) if len(row) > 4 and row[4] else 0
                 amount = round(quantity * unit_price, 2)
                 max_order += 1
 
-                db.execute("""INSERT INTO sales_order_items (order_id, sales_order_id, item_name, specification, unit, quantity, unit_price, amount, sort_order)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                           (order_id, order_id, item_name, specification, unit, quantity, unit_price, amount, max_order))
+                db.execute(
+                    """INSERT INTO sales_order_items
+                       (order_id, sales_order_id, item_name, specification, unit, quantity, unit_price, amount, sort_order)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (order_id, order_id, item_name, specification, unit, quantity, unit_price, amount, max_order),
+                )
                 count += 1
 
-            total_amount = db.execute("SELECT COALESCE(SUM(amount), 0) FROM sales_order_items WHERE sales_order_id=?", (order_id,)).fetchone()[0]
-            total_quantity = db.execute("SELECT COALESCE(SUM(quantity), 0) FROM sales_order_items WHERE sales_order_id=?", (order_id,)).fetchone()[0]
-            db.execute("UPDATE sales_orders SET total_amount=?, total_quantity=? WHERE id=?", (total_amount, total_quantity, order_id))
+            total_amount = db.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM sales_order_items WHERE sales_order_id=?", (order_id,)
+            ).fetchone()[0]
+            total_quantity = db.execute(
+                "SELECT COALESCE(SUM(quantity), 0) FROM sales_order_items WHERE sales_order_id=?", (order_id,)
+            ).fetchone()[0]
+            db.execute(
+                "UPDATE sales_orders SET total_amount=?, total_quantity=? WHERE id=?",
+                (total_amount, total_quantity, order_id),
+            )
             db.commit()
-            add_log(session.get('user_id'), session.get('username', ''), '导入销售明细', f'出库单ID: {order_id}, 导入{count}条')
+            add_log(session.get('user_id'), session.get('username', ''), '导入销售明细',
+                    f'出库单ID: {order_id}, 导入{count}条')
             flash(f'成功导入 {count} 条明细', 'success')
         except Exception as e:
             flash(f'导入失败: {str(e)}', 'danger')
 
-        return redirect(url_for('sales_order_detail', id=order_id))
+        return redirect(back_url)
 
     return render_template('sales_order_item_import.html', order=order)
 
@@ -6098,37 +6155,68 @@ def sales_order_item_import(order_id):
 @app.route('/sales/order/<int:order_id>/reconciliation')
 @login_required
 def sales_order_reconciliation(order_id):
-    """对账差异分析"""
+    """对账差异分析：销售明细 vs 关联运输数量"""
     db = get_db()
-    order = db.execute("""SELECT so.*, p.name as project_name
-                          FROM sales_orders so
-                          LEFT JOIN projects p ON so.project_id = p.id
-                          WHERE so.id = ?""", (order_id,)).fetchone()
+    order = db.execute(
+        """SELECT so.*, p.name as project_name
+           FROM sales_orders so
+           LEFT JOIN projects p ON so.project_id = p.id
+           WHERE so.id = ?""",
+        (order_id,),
+    ).fetchone()
     if not order:
         flash('出库单不存在', 'danger')
         return redirect(url_for('sales_order_list'))
 
-    items = db.execute("""SELECT soi.*,
-                                 COALESCE(sit_total.linked_qty, 0) as linked_qty,
-                                 soi.quantity - COALESCE(sit_total.linked_qty, 0) as diff_qty
-                          FROM sales_order_items soi
-                          LEFT JOIN (SELECT sales_item_id, SUM(quantity) as linked_qty
-                                     FROM sales_item_transport GROUP BY sales_item_id) sit_total
-                          ON soi.id = sit_total.sales_item_id
-                          WHERE soi.sales_order_id = ?
-                          ORDER BY soi.sort_order, soi.id""", (order_id,)).fetchall()
+    items = db.execute(
+        """SELECT soi.*,
+                  COALESCE(sit_total.linked_qty, 0) as linked_qty
+           FROM sales_order_items soi
+           LEFT JOIN (
+               SELECT sales_item_id, SUM(quantity) as linked_qty
+               FROM sales_item_transport GROUP BY sales_item_id
+           ) sit_total ON soi.id = sit_total.sales_item_id
+           WHERE soi.sales_order_id = ?
+           ORDER BY soi.sort_order, soi.id""",
+        (order_id,),
+    ).fetchall()
 
-    # 关联回款
-    payments = db.execute("""SELECT * FROM sales_payments
-                             WHERE customer_name = ? AND project_id = ?
-                             ORDER BY payment_date DESC""",
-                          (order['customer_name'], order['project_id'])).fetchall()
+    reconciliation_data = []
+    total_sale_qty = 0.0
+    total_transport_qty = 0.0
 
-    total_payment = sum(p['amount'] for p in payments) if payments else 0
-    diff_amount = order['total_amount'] - total_payment
+    for item in items:
+        sale_qty = float(item['quantity'] or 0)
+        transport_qty = float(item['linked_qty'] or 0)
+        diff = round(sale_qty - transport_qty, 2)
+        linked_transports = db.execute(
+            """SELECT tr.id, tr.batch_no, tr.transport_date, sit.quantity
+               FROM sales_item_transport sit
+               JOIN transport_records tr ON tr.id = sit.transport_id
+               WHERE sit.sales_item_id = ?
+               ORDER BY tr.transport_date, tr.id""",
+            (item['id'],),
+        ).fetchall()
+        reconciliation_data.append({
+            'item': item,
+            'sale_qty': sale_qty,
+            'transport_qty': transport_qty,
+            'diff': diff,
+            'linked_transports': linked_transports,
+        })
+        total_sale_qty += sale_qty
+        total_transport_qty += transport_qty
 
-    return render_template('sales_order_reconciliation.html', order=order, items=items,
-                           payments=payments, total_payment=total_payment, diff_amount=diff_amount)
+    total_diff = round(total_sale_qty - total_transport_qty, 2)
+
+    return render_template(
+        'sales_order_reconciliation.html',
+        order=order,
+        reconciliation_data=reconciliation_data,
+        total_sale_qty=total_sale_qty,
+        total_transport_qty=total_transport_qty,
+        total_diff=total_diff,
+    )
 
 
 @app.route('/api/sales/batch/link/transport', methods=['POST'])
@@ -7751,12 +7839,13 @@ register_reports_blueprint(app, get_db)
 @login_required
 def api_sales_ocr_transport(order_id):
     """识别运输记录截图，返回识别结果供确认"""
-    if 'file' not in request.files:
+    file = request.files.get('file') or request.files.get('ocr_image')
+    if not file or not file.filename:
         return jsonify({'success': False, 'message': '请上传图片'}), 400
 
-    file = request.files['file']
-    if not file.filename:
-        return jsonify({'success': False, 'message': '未选择文件'}), 400
+    order = get_db().execute("SELECT id FROM sales_orders WHERE id=?", (order_id,)).fetchone()
+    if not order:
+        return jsonify({'success': False, 'message': '出库单不存在'}), 404
 
     try:
         import uuid as _uuid
