@@ -90,6 +90,46 @@
                             </div>
                         </div>
                         
+                        {% if can_import_backup and backup_files %}
+                        <div class="card mb-3 border-info border-opacity-50">
+                            <div class="card-header py-2 bg-info bg-opacity-10">
+                                <h6 class="mb-0"><i class="bi bi-database-down"></i> 从备份引入业务数据（可选）</h6>
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted small mb-3">
+                                    新建项目保存后，可将备份库中<strong>某一历史项目</strong>的采购、销售、合同、费用等数据复制到新项目。
+                                    请先预览确认再勾选引入。
+                                </p>
+                                <div class="mb-2">
+                                    <label class="form-label">备份文件</label>
+                                    <select class="form-select" id="importBackupFile" name="import_backup_file">
+                                        <option value="">不引入，仅创建空项目</option>
+                                        {% for b in backup_files %}
+                                        <option value="{{ b.name }}">{{ b.name }}（{{ b.time }}）</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">源项目（备份内）</label>
+                                    <select class="form-select" id="importSourceProject" name="import_source_project_id" disabled>
+                                        <option value="">请先选择备份文件</option>
+                                    </select>
+                                </div>
+                                <div class="mb-2">
+                                    <button type="button" class="btn btn-outline-info btn-sm" id="btnPreviewImport" disabled>
+                                        <i class="bi bi-eye"></i> 预览将引入的数据
+                                    </button>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="confirm_import" value="1" id="confirmImport" disabled>
+                                    <label class="form-check-label" for="confirmImport">
+                                        我已预览并确认：保存项目时从上述备份引入业务数据
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
                         <div class="d-flex gap-2">
                             <button type="submit" class="btn btn-primary">
                                 <i class="bi bi-check-circle"></i> 保存
@@ -256,4 +296,65 @@ function collapseAll() {
     document.querySelectorAll('[id^="children_"]').forEach(el => el.classList.add('collapse'));
 }
 </script>
+{% if can_import_backup and backup_files %}
+{% include 'partials/backup_preview_modal.html' %}
+<script>
+(function() {
+    const fileSel = document.getElementById('importBackupFile');
+    const projSel = document.getElementById('importSourceProject');
+    const btnPreview = document.getElementById('btnPreviewImport');
+    const confirmCb = document.getElementById('confirmImport');
+    if (!fileSel) return;
+
+    function syncState() {
+        const hasFile = !!fileSel.value;
+        const hasProj = !!projSel.value;
+        projSel.disabled = !hasFile;
+        btnPreview.disabled = !hasFile || !hasProj;
+        if (!hasFile) {
+            confirmCb.checked = false;
+            confirmCb.disabled = true;
+        }
+    }
+
+    fileSel.addEventListener('change', function() {
+        confirmCb.checked = false;
+        confirmCb.disabled = true;
+        if (this.value) {
+            loadBackupProjects(projSel, this.value, projSel);
+        } else {
+            projSel.innerHTML = '<option value="">请先选择备份文件</option>';
+            projSel.disabled = true;
+            btnPreview.disabled = true;
+        }
+        syncState();
+    });
+
+    projSel.addEventListener('change', function() {
+        confirmCb.checked = false;
+        confirmCb.disabled = !this.value;
+        syncState();
+    });
+
+    btnPreview.addEventListener('click', function() {
+        if (fileSel.value && projSel.value) {
+            openBackupPreview(fileSel.value, projSel.value);
+        }
+    });
+
+    document.getElementById('projectForm').addEventListener('submit', function(e) {
+        if (confirmCb.checked && (!fileSel.value || !projSel.value)) {
+            e.preventDefault();
+            alert('请先选择备份文件和源项目');
+            return false;
+        }
+        if (fileSel.value && projSel.value && !confirmCb.checked) {
+            if (!confirm('未勾选「确认引入」，将只创建空项目而不复制备份数据。是否继续？')) {
+                e.preventDefault();
+            }
+        }
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

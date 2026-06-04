@@ -40,7 +40,7 @@ Write-Deploy "==> Testing SSH..."
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $coreExplicit = @(
-    "app.py", "user_access.py", "project_display.py", "invoice_mgmt.py",
+    "app.py", "user_access.py", "project_display.py", "invoice_mgmt.py", "backup_data_utils.py",
     "auth_utils.py", "client_portal_utils.py", "client_collab_ops.py",
     "client_collab_scope.py", "client_collab_reports.py", "route_extensions.py",
     "project_category_utils.py", "partner_import_utils.py", "ocr_utils.py",

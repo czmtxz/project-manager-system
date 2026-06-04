@@ -1,6 +1,7 @@
 .ssh_deploy_key
 .cursor/deploy-last.log
 .cursor/deploy-last.log.tmp
+.cursor/auto-sync.log
 *.pem
 __pycache__/
 *.pyc

@@ -11,15 +11,13 @@ if (-not (Test-Path (Join-Path $ProjectRoot ".git"))) {
 
 $hookContent = @'
 #!/bin/sh
-# Auto-deploy after commit (Windows: run via PowerShell)
+# Auto push + deploy after commit (Windows: PowerShell)
 ROOT="$(git rev-parse --show-toplevel)"
-if [ -f "$ROOT/.ssh_deploy_key" ] || [ -n "$DEPLOY_SSH_KEY" ]; then
-  powershell.exe -ExecutionPolicy Bypass -NoProfile -File "$ROOT/tools/deploy_to_server.ps1" -Quiet
-fi
+powershell.exe -ExecutionPolicy Bypass -NoProfile -File "$ROOT/tools/auto_git_push_deploy.ps1" -Quiet
 exit 0
 '@
 
 New-Item -ItemType Directory -Force -Path $hooksDir | Out-Null
 Set-Content -Path $hookPath -Value $hookContent -Encoding UTF8 -NoNewline
 Write-Host "Installed: $hookPath" -ForegroundColor Green
-Write-Host "Each git commit will trigger deploy_to_server.ps1 (if SSH key present)."
+Write-Host "Each git commit will run auto_git_push_deploy.ps1 (push + deploy if SSH key present)."

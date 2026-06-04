@@ -1,0 +1,28 @@
+---
+description: 改完业务代码后自动提交、推送 GitHub 并部署生产
+alwaysApply: true
+---
+
+# 自动 Git 推送与生产部署
+
+完成**业务代码**修改后，除手动执行外，系统会在 Cursor 对话结束（`stop` 钩子）时尝试：
+
+1. `git add -A` + `git commit`（消息 `Auto sync 时间戳`）
+2. `git push origin main`
+3. `tools/deploy_to_server.ps1`（需项目根目录 `.ssh_deploy_key` 或 `DEPLOY_SSH_KEY`）
+
+日志：`.cursor/auto-sync.log`
+
+手动立即同步：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\auto_git_push_deploy.ps1
+```
+
+仅部署不提交：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\deploy_to_server.ps1
+```
+
+勿提交：`.ssh_deploy_key`、`*.db`、`backups/`、`.env`（已在 .gitignore）。

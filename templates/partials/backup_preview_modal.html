@@ -1,0 +1,117 @@
+{# 备份数据预览弹窗 + 脚本；用于备份管理、新建项目 #}
+<div class="modal fade" id="backupPreviewModal" tabindex="-1" aria-labelledby="backupPreviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="backupPreviewModalLabel">
+                    <i class="bi bi-eye"></i> 备份数据预览
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="backupPreviewLoading" class="text-center py-4 text-muted d-none">
+                    <div class="spinner-border spinner-border-sm"></div> 正在读取备份…
+                </div>
+                <div id="backupPreviewError" class="alert alert-danger d-none"></div>
+                <div id="backupPreviewContent"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+(function() {
+    const modalEl = document.getElementById('backupPreviewModal');
+    if (!modalEl) return;
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    const loadingEl = document.getElementById('backupPreviewLoading');
+    const errorEl = document.getElementById('backupPreviewError');
+    const contentEl = document.getElementById('backupPreviewContent');
+
+    function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : String(s);
+        return d.innerHTML;
+    }
+
+    function renderCounts(counts) {
+        if (!counts || !counts.length) return '<p class="text-muted">无业务数据</p>';
+        let html = '<table class="table table-sm table-bordered mb-0"><thead><tr><th>数据类型</th><th class="text-end">条数</th></tr></thead><tbody>';
+        counts.forEach(c => {
+            html += `<tr><td>${esc(c.label)}</td><td class="text-end">${c.count}</td></tr>`;
+        });
+        html += '</tbody></table>';
+        return html;
+    }
+
+    function renderFilePreview(data) {
+        let html = `<p class="mb-2">共 <strong>${data.project_count}</strong> 个项目`;
+        if (data.truncated) html += '（仅显示前 50 个）';
+        html += '</p>';
+        data.projects.forEach(p => {
+            html += `<div class="card mb-2"><div class="card-header py-2 small fw-semibold">#${p.id} ${esc(p.name)} <span class="badge bg-secondary">${esc(p.status)}</span> <span class="text-muted">合计约 ${p.total_rows} 条</span></div><div class="card-body py-2">${renderCounts(p.counts)}</div></div>`;
+        });
+        return html;
+    }
+
+    function renderProjectPreview(data) {
+        const p = data.project;
+        let html = `<div class="alert alert-light border"><strong>${esc(p.name)}</strong> <span class="badge bg-secondary">${esc(p.status)}</span>`;
+        if (p.budget) html += ` · 预算 ${p.budget}`;
+        html += `<br><span class="text-muted small">备份中项目 ID：${p.id}，合计约 ${data.total_rows} 条业务记录</span></div>`;
+        html += renderCounts(data.counts);
+        return html;
+    }
+
+    window.openBackupPreview = function(filename, projectId) {
+        if (!filename) return;
+        loadingEl.classList.remove('d-none');
+        errorEl.classList.add('d-none');
+        contentEl.innerHTML = '';
+        document.getElementById('backupPreviewModalLabel').innerHTML =
+            '<i class="bi bi-eye"></i> 预览：' + esc(filename) + (projectId ? ' / 项目 #' + projectId : '');
+        modal.show();
+
+        let url = '{{ url_for("api_backup_preview") }}?filename=' + encodeURIComponent(filename);
+        if (projectId) url += '&project_id=' + encodeURIComponent(projectId);
+
+        fetch(url).then(r => r.json()).then(res => {
+            loadingEl.classList.add('d-none');
+            if (!res.success) {
+                errorEl.textContent = res.message || '预览失败';
+                errorEl.classList.remove('d-none');
+                return;
+            }
+            const d = res.data;
+            if (d.mode === 'file') contentEl.innerHTML = renderFilePreview(d);
+            else if (d.mode === 'project') contentEl.innerHTML = renderProjectPreview(d);
+            else contentEl.innerHTML = '<p class="text-muted">无预览数据</p>';
+        }).catch(err => {
+            loadingEl.classList.add('d-none');
+            errorEl.textContent = '请求失败：' + err;
+            errorEl.classList.remove('d-none');
+        });
+    };
+
+    window.loadBackupProjects = function(selectEl, filename, targetProjectSelect) {
+        if (!filename || !selectEl) return;
+        selectEl.innerHTML = '<option value="">加载中…</option>';
+        fetch('{{ url_for("api_backup_projects") }}?filename=' + encodeURIComponent(filename))
+            .then(r => r.json())
+            .then(res => {
+                if (!res.success) {
+                    selectEl.innerHTML = '<option value="">加载失败</option>';
+                    return;
+                }
+                let html = '<option value="">请选择源项目…</option>';
+                res.projects.forEach(p => {
+                    html += `<option value="${p.id}">${esc(p.name)} (${esc(p.status)})</option>`;
+                });
+                selectEl.innerHTML = html;
+                if (targetProjectSelect) targetProjectSelect.disabled = false;
+            });
+    };
+})();
+</script>

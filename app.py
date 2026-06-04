@@ -1697,11 +1697,20 @@ def _project_form_context(db, project=None):
     selected_categories = set()
     if project:
         selected_categories = set(get_project_enabled_category_ids(db, project['id']))
+    backup_files = []
+    if project is None:
+        backup_files = [
+            b for b in _list_backup_records()
+            if b['name'].endswith('.db')
+        ]
+    from user_access import user_is_admin
     return {
         'categories': categories,
         'controllers': controllers,
         'selected_categories': selected_categories,
         'project': project,
+        'backup_files': backup_files,
+        'can_import_backup': user_is_admin(session.get('role')),
     }
 
 
@@ -1756,10 +1765,35 @@ def project_add():
         project_id = cur.lastrowid
         if category_ids:
             set_project_categories(db, project_id, category_ids)
-        db.commit()
+
+        import_file = (request.form.get('import_backup_file') or '').strip()
+        import_src = request.form.get('import_source_project_id', type=int)
+        confirm_import = request.form.get('confirm_import') == '1'
+        flash_kind, flash_msg = 'success', '项目创建成功'
+        if confirm_import and import_file and import_src:
+            fpath = _resolve_backup_filepath(import_file)
+            if not fpath:
+                flash_kind, flash_msg = 'warning', '项目已创建，但备份文件无效，未引入数据'
+            else:
+                from backup_data_utils import import_project_data_from_backup
+                ok, msg, stats = import_project_data_from_backup(
+                    db, fpath, import_src, project_id,
+                )
+                if ok:
+                    detail = '；'.join(f'{k}:{v}' for k, v in stats.items() if not k.startswith('_'))
+                    add_log(
+                        session['user_id'], session.get('username', ''),
+                        '从备份引入项目数据', f'{name} <- {import_file} ({detail[:200]})',
+                        request.remote_addr,
+                    )
+                    flash_kind, flash_msg = 'success', f'项目创建成功，{msg}'
+                else:
+                    flash_kind, flash_msg = 'warning', f'项目已创建，但引入失败：{msg}'
+
         add_log(session['user_id'], session['username'], '新增项目', f'新增项目: {name}', request.remote_addr)
-        flash('项目创建成功', 'success')
-        return redirect(url_for('project_list'))
+        db.commit()
+        flash(flash_msg, flash_kind)
+        return redirect(url_for('project_detail', id=project_id))
 
     return render_template('project_form.html', **ctx)
 
@@ -3804,6 +3838,43 @@ def backup_batch_delete():
     else:
         flash(f'该时间段内没有可删除的备份文件（{date_from} 至 {date_to}）', 'info')
     return redirect(url_for('backup_manage'))
+
+
+@app.route('/api/backup/projects')
+@login_required
+@permission_required('backup.manage')
+def api_backup_projects():
+    """列出备份库中的项目（供新建项目引入）。"""
+    filename = (request.args.get('filename') or '').strip()
+    fpath = _resolve_backup_filepath(filename)
+    if not fpath or not filename.endswith('.db'):
+        return jsonify({'success': False, 'message': '无效的备份文件'})
+    try:
+        from backup_data_utils import list_projects_in_backup
+        projects = list_projects_in_backup(fpath)
+        return jsonify({'success': True, 'projects': projects})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/backup/preview')
+@login_required
+@permission_required('backup.manage')
+def api_backup_preview():
+    """预览备份文件或其中某一项目的数据量。"""
+    filename = (request.args.get('filename') or '').strip()
+    project_id = request.args.get('project_id', type=int)
+    fpath = _resolve_backup_filepath(filename)
+    if not fpath or not filename.endswith('.db'):
+        return jsonify({'success': False, 'message': '无效的备份文件'})
+    try:
+        from backup_data_utils import preview_backup_file
+        data = preview_backup_file(fpath, project_id)
+        if data.get('error'):
+            return jsonify({'success': False, 'message': data['error']})
+        return jsonify({'success': True, 'data': data})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
 
 
 # ==================== 路由：操作日志 ====================
