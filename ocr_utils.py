@@ -460,6 +460,82 @@ def parse_contract_docx(docx_path):
     return result
 
 
+# ==================== 运费明细表识别 ====================
+
+def recognize_freight_transport_table(image_path):
+    """
+    识别运费明细表：车牌号、司机、运输日期、数量(吨)、单价运费、运费金额
+    :return: list[dict]
+    """
+    lines = [l.strip() for l in ocr_image_to_lines(image_path) if l and l.strip()]
+    records = []
+    seen = set()
+
+    plate_re = re.compile(
+        r'[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏琼宁]'
+        r'[\s]*[A-HJ-NP-Z][\s]*[A-HJ-NP-Z0-9]{4,5}[A-HJ-NP-Z0-9挂学警港澳]?'
+    )
+    date_re = re.compile(r'(\d{4})[-/\.年](\d{1,2})[-/\.月](\d{1,2})')
+    header_kw = ('车牌', '司机', '运输日期', '数量', '单价', '运费金额', '备注', '合计')
+
+    for line in lines:
+        if any(k in line for k in header_kw):
+            continue
+        if len(line) < 6:
+            continue
+
+        plate_m = plate_re.search(line) or plate_re.search(re.sub(r'\s+', '', line))
+        if not plate_m:
+            continue
+
+        vehicle_no = re.sub(r'\s+', '', plate_m.group())
+        if vehicle_no in seen:
+            continue
+        seen.add(vehicle_no)
+
+        transport_date = ''
+        dm = date_re.search(line)
+        if dm:
+            transport_date = f"{dm.group(1)}-{int(dm.group(2)):02d}-{int(dm.group(3)):02d}"
+
+        driver_name = ''
+        skip_names = {'车牌号', '司机', '运输', '日期', '数量', '单价', '运费', '金额', '备注', '合计', '内蒙古'}
+        for name in re.findall(r'[\u4e00-\u9fff]{2,4}', line):
+            if name in skip_names or any(k in name for k in skip_names):
+                continue
+            driver_name = name
+            break
+
+        tail = line[plate_m.end():] if plate_m.end() <= len(line) else line
+        nums = [float(x) for x in re.findall(r'\d+\.?\d*', tail)]
+        quantity = unit_price = freight_amount = 0.0
+        if len(nums) >= 3:
+            quantity, unit_price, freight_amount = nums[-3], nums[-2], nums[-1]
+        elif len(nums) == 2:
+            quantity, unit_price = nums[0], nums[1]
+            freight_amount = round(quantity * unit_price, 2)
+        elif len(nums) == 1:
+            quantity = nums[0]
+
+        if freight_amount == 0 and quantity and unit_price:
+            freight_amount = round(quantity * unit_price, 2)
+
+        if not vehicle_no and not driver_name and freight_amount == 0:
+            continue
+
+        records.append({
+            'vehicle_no': vehicle_no,
+            'driver_name': driver_name,
+            'transport_date': transport_date or None,
+            'quantity': quantity,
+            'unit_price': unit_price,
+            'freight_amount': freight_amount,
+            'remark': '图片识别导入',
+        })
+
+    return records
+
+
 # ==================== 物流系统截图识别 ====================
 
 def recognize_logistics_screenshot(image_path):

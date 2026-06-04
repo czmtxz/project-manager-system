@@ -1597,33 +1597,84 @@ def project_list():
     return render_template('project_list.html', project_data=project_data)
 
 
+def _project_form_context(db, project=None):
+    """项目新增/编辑表单所需数据。"""
+    from route_extensions import build_category_manage_trees
+
+    ensure_project_categories_table(db)
+    expense_tree, income_tree, _, _ = build_category_manage_trees(db)
+    categories = {'expense': expense_tree, 'income': income_tree}
+    controllers = db.execute(
+        "SELECT id, name FROM participants WHERE COALESCE(status, 'active') = 'active' ORDER BY name"
+    ).fetchall()
+    selected_categories = set()
+    if project:
+        selected_categories = set(get_project_enabled_category_ids(db, project['id']))
+    return {
+        'categories': categories,
+        'controllers': controllers,
+        'selected_categories': selected_categories,
+        'project': project,
+    }
+
+
 @app.route('/project/add', methods=['GET', 'POST'])
 @login_required
 def project_add():
+    db = get_db()
+    ctx = _project_form_context(db)
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
         description = request.form.get('description', '').strip()
         status = request.form.get('status', '进行中')
         budget = float(request.form.get('budget', 0) or 0)
-        start_date = request.form.get('start_date', '')
-        end_date = request.form.get('end_date', '')
+        start_date = request.form.get('start_date', '') or None
+        end_date = request.form.get('end_date', '') or None
+        controller_id = request.form.get('controller_id', type=int)
+        total_quantity = float(request.form.get('total_quantity', 0) or 0)
+        loss_rate = float(request.form.get('loss_rate', 0) or 0)
+        freight_link_enabled = 1 if request.form.get('freight_link_enabled') else 0
+        category_ids = request.form.getlist('categories')
 
         if not name:
             flash('项目名称不能为空', 'warning')
-            return render_template('project_form.html')
+            return render_template('project_form.html', **ctx)
 
-        db = get_db()
-        db.execute(
-            """INSERT INTO projects (name, description, status, budget, start_date, end_date, user_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (name, description, status, budget, start_date, end_date, session['user_id'])
+        proj_cols = _table_columns(db, 'projects')
+        fields = {
+            'name': name,
+            'description': description,
+            'status': status,
+            'budget': budget,
+            'start_date': start_date,
+            'end_date': end_date,
+            'user_id': session['user_id'],
+        }
+        optional = {
+            'controller_id': controller_id,
+            'total_quantity': total_quantity,
+            'loss_rate': loss_rate,
+            'freight_link_enabled': freight_link_enabled,
+        }
+        for k, v in optional.items():
+            if k in proj_cols:
+                fields[k] = v
+        fields = {k: v for k, v in fields.items() if k in proj_cols}
+        columns = ', '.join(fields.keys())
+        placeholders = ', '.join('?' for _ in fields)
+        cur = db.execute(
+            f"INSERT INTO projects ({columns}) VALUES ({placeholders})",
+            list(fields.values()),
         )
+        project_id = cur.lastrowid
+        if category_ids:
+            set_project_categories(db, project_id, category_ids)
         db.commit()
         add_log(session['user_id'], session['username'], '新增项目', f'新增项目: {name}', request.remote_addr)
         flash('项目创建成功', 'success')
         return redirect(url_for('project_list'))
 
-    return render_template('project_form.html')
+    return render_template('project_form.html', **ctx)
 
 
 @app.route('/project/delete/<int:pid>')
