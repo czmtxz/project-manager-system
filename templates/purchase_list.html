@@ -129,6 +129,22 @@
                         </tr>
                         {% endfor %}
                     </tbody>
+                    <tfoot class="table-light">
+                        <tr class="fw-semibold">
+                            <td colspan="4">合计（{{ summary.count }} 笔）</td>
+                            <td class="text-end text-primary">¥{{ "%.2f"|format(summary.total_amount) }}</td>
+                            <td class="text-end">{{ "%.2f"|format(summary.total_qty) }}</td>
+                            <td></td>
+                            <td class="text-center">
+                                {% if summary.transport_count > 0 %}
+                                <span class="badge bg-info">{{ summary.transport_count }} 车</span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
         </div>

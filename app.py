@@ -5256,10 +5256,23 @@ def purchase_list():
     sql += " ORDER BY po.created_at DESC"
     purchases = db.execute(sql, params).fetchall()
 
+    def _purchase_list_amount(row):
+        calc = row['total_amount_calc']
+        if calc is not None:
+            return float(calc or 0)
+        return float(row['total_amount'] or 0)
+
+    summary = {
+        'count': len(purchases),
+        'total_amount': sum(_purchase_list_amount(p) for p in purchases),
+        'total_qty': sum(float(p['total_qty'] or 0) for p in purchases),
+        'transport_count': sum(int(p['transport_count'] or 0) for p in purchases),
+    }
+
     projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
     filters = {'project_id': project_id, 'status': status, 'keyword': keyword}
     return render_template('purchase_list.html', purchases=purchases, projects=projects,
-                           filters=filters)
+                           filters=filters, summary=summary)
 
 
 @app.route('/purchase/add', methods=['GET', 'POST'])
