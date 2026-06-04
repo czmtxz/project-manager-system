@@ -349,12 +349,12 @@ function showTransportModal() {
 }
 
 function editTransport(id) {
-    // 加载运输记录数据并显示弹窗
-    fetch(`/api/sales/transport/${id}`)
+    fetch(`/api/transport/${id}`)
         .then(res => res.json())
-        .then(data => {
+        .then(resp => {
+            const data = resp.data || resp;
             document.getElementById('transport_id').value = data.id;
-            document.getElementById('batch_no').value = data.batch_no;
+            document.getElementById('batch_no').value = data.batch_no || '';
             document.getElementById('vehicle_no').value = data.vehicle_no || '';
             document.getElementById('driver_name').value = data.driver_name || '';
             document.getElementById('driver_phone').value = data.driver_phone || '';
@@ -394,7 +394,7 @@ function saveTransport(e) {
 function deleteTransport(id) {
     if (!confirm('确定要删除此运输记录吗？')) return;
 
-    fetch(`/api/sales/transport/${id}/delete`, { method: 'POST' })
+    fetch(`/api/transport/${id}/delete`, { method: 'POST' })
         .then(res => res.json())
         .then(data => {
             if (data.success) {

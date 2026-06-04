@@ -5778,26 +5778,47 @@ def sales_order_detail(id):
                           WHERE soi.sales_order_id = ?
                           ORDER BY soi.sort_order, soi.id""", (id,)).fetchall()
 
-    # 关联的运输记录
-    transport_ids = db.execute("""SELECT DISTINCT sit.transport_id
-                                  FROM sales_item_transport sit
-                                  JOIN sales_order_items soi ON sit.sales_item_id = soi.id
-                                  WHERE soi.sales_order_id = ?""", (id,)).fetchall()
-    transport_list = []
-    if transport_ids:
-        tid_str = ','.join([str(t['transport_id']) for t in transport_ids])
-        transport_list = db.execute(f"""SELECT tr.* FROM transport_records tr
-                                         WHERE tr.id IN ({tid_str}) ORDER BY tr.transport_date""").fetchall()
+    # 运输记录：优先按 sales_order_id 直接关联，并合并明细关联表中的记录
+    tr_cols = _table_columns(db, 'transport_records')
+    transports = []
+    seen_ids = set()
+    if 'sales_order_id' in tr_cols:
+        for row in db.execute(
+            """SELECT tr.* FROM transport_records tr
+               WHERE tr.sales_order_id = ?
+               ORDER BY tr.transport_date, tr.id""",
+            (id,),
+        ).fetchall():
+            transports.append(row)
+            seen_ids.add(row['id'])
+    linked_ids = db.execute(
+        """SELECT DISTINCT sit.transport_id
+           FROM sales_item_transport sit
+           JOIN sales_order_items soi ON sit.sales_item_id = soi.id
+           WHERE soi.sales_order_id = ?""",
+        (id,),
+    ).fetchall()
+    extra_ids = [t['transport_id'] for t in linked_ids if t['transport_id'] not in seen_ids]
+    if extra_ids:
+        tid_str = ','.join(str(i) for i in extra_ids)
+        transports.extend(
+            db.execute(
+                f"""SELECT tr.* FROM transport_records tr
+                    WHERE tr.id IN ({tid_str})
+                    ORDER BY tr.transport_date, tr.id"""
+            ).fetchall()
+        )
+        transports.sort(key=lambda t: (t['transport_date'] or '', t['id'] or 0))
 
     # 计算汇总数据
     total_item_qty = sum(float(i['quantity'] or 0) for i in items)
     total_item_amount = sum(float(i['amount'] or 0) for i in items)
-    total_transport_qty = sum(float(t['quantity'] or 0) for t in transport_list)
-    total_freight = sum(float(t['freight_amount'] or 0) for t in transport_list)
+    total_transport_qty = sum(float(t['quantity'] or 0) for t in transports)
+    total_freight = sum(float(t['freight_amount'] or 0) for t in transports)
     total_linked_qty = sum(float(i['linked_quantity'] or 0) for i in items)
 
     return render_template('sales_order_detail.html', order=order, items=items,
-                           transport_list=transport_list,
+                           transports=transports,
                            total_item_qty=total_item_qty,
                            total_item_amount=total_item_amount,
                            total_transport_qty=total_transport_qty,
@@ -6322,6 +6343,20 @@ def api_transport_get(id):
     return jsonify({'success': True, 'data': result})
 
 
+@app.route('/api/transport/<int:id>/delete', methods=['POST'])
+@login_required
+def api_transport_delete(id):
+    """删除运输记录"""
+    db = get_db()
+    record = db.execute("SELECT id FROM transport_records WHERE id=?", (id,)).fetchone()
+    if not record:
+        return jsonify({'success': False, 'message': '记录不存在'}), 404
+    db.execute("DELETE FROM transport_purchase_items WHERE transport_id=?", (id,))
+    db.execute("DELETE FROM sales_item_transport WHERE transport_id=?", (id,))
+    db.execute("DELETE FROM transport_records WHERE id=?", (id,))
+    db.commit()
+    add_log(session.get('user_id'), session.get('username', ''), '删除运输记录', f'记录ID: {id}')
+    return jsonify({'success': True})
 
 
 @app.route('/api/transport/save', methods=['POST'])
