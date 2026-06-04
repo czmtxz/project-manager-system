@@ -9,6 +9,25 @@
         return d.innerHTML;
     }
 
+    function fmtMoney(v) {
+        if (v === '' || v == null || v === undefined) return '—';
+        const n = Number(v);
+        if (Number.isNaN(n)) return esc(v);
+        return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function isAmountKey(key) {
+        return /amount|price|freight|quantity|ratio|tax/i.test(key);
+    }
+
+    function fmtCell(key, v) {
+        if (v === '' || v == null) return '<span class="text-muted">—</span>';
+        if (isAmountKey(key) && !Number.isNaN(Number(v))) {
+            return '<span class="text-end d-block">' + fmtMoney(v) + '</span>';
+        }
+        return esc(v);
+    }
+
     function getModal() {
         const modalEl = document.getElementById('backupPreviewModal');
         if (!modalEl) {
@@ -22,9 +41,22 @@
         return { el: modalEl, inst: bootstrap.Modal.getOrCreateInstance(modalEl) };
     }
 
-    function renderCounts(counts) {
-        if (!counts || !counts.length) return '<p class="text-muted">无业务数据</p>';
-        let html = '<table class="table table-sm table-bordered mb-0"><thead><tr><th>数据类型</th><th class="text-end">条数</th></tr></thead><tbody>';
+    function renderSummaryPanel(summary, labels) {
+        if (!summary || !Object.keys(summary).length) return '';
+        const lbl = labels || {};
+        let html = '<div class="card mb-3 border-primary border-opacity-25"><div class="card-header py-2 bg-light"><strong><i class="bi bi-calculator"></i> 金额汇总</strong></div><div class="card-body py-2"><div class="row g-2 small">';
+        Object.keys(summary).forEach(function(k) {
+            const v = summary[k];
+            if (v === 0 || v === '' || v == null) return;
+            html += '<div class="col-md-4 col-lg-3"><span class="text-muted">' + esc(lbl[k] || k) + '</span><div class="fw-semibold text-primary">' + fmtMoney(v) + '</div></div>';
+        });
+        html += '</div></div></div>';
+        return html;
+    }
+
+    function renderCountsTable(counts) {
+        if (!counts || !counts.length) return '';
+        let html = '<table class="table table-sm table-bordered mb-0"><thead class="table-light"><tr><th>数据类型</th><th class="text-end">条数</th></tr></thead><tbody>';
         counts.forEach(function(c) {
             html += '<tr><td>' + esc(c.label) + '</td><td class="text-end">' + c.count + '</td></tr>';
         });
@@ -32,24 +64,109 @@
         return html;
     }
 
-    function renderFilePreview(data) {
-        let html = '<p class="mb-2">共 <strong>' + data.project_count + '</strong> 个项目';
-        if (data.truncated) html += '（仅显示前 50 个）';
-        html += '</p>';
-        (data.projects || []).forEach(function(p) {
-            html += '<div class="card mb-2"><div class="card-header py-2 small fw-semibold">#' + p.id + ' ' + esc(p.name) +
-                ' <span class="badge bg-secondary">' + esc(p.status) + '</span> <span class="text-muted">合计约 ' + (p.total_rows || 0) + ' 条</span></div>' +
-                '<div class="card-body py-2">' + renderCounts(p.counts) + '</div></div>';
+    function renderDetailTable(section) {
+        const cols = section.columns || [];
+        const rows = section.rows || [];
+        if (!cols.length) return '<p class="text-muted small mb-0">无列数据</p>';
+        let html = '<div class="table-responsive"><table class="table table-sm table-striped table-bordered mb-0"><thead class="table-light"><tr>';
+        cols.forEach(function(c) {
+            const align = isAmountKey(c.key) ? ' class="text-end"' : '';
+            html += '<th' + align + '>' + esc(c.label) + '</th>';
         });
+        html += '</tr></thead><tbody>';
+        if (!rows.length) {
+            html += '<tr><td colspan="' + cols.length + '" class="text-muted text-center">暂无记录</td></tr>';
+        } else {
+            rows.forEach(function(row) {
+                html += '<tr>';
+                cols.forEach(function(c) {
+                    const align = isAmountKey(c.key) ? ' class="text-end"' : '';
+                    html += '<td' + align + '>' + fmtCell(c.key, row[c.key]) + '</td>';
+                });
+                html += '</tr>';
+            });
+        }
+        html += '</tbody></table></div>';
+        if (section.truncated) {
+            html += '<p class="text-warning small mb-0 mt-1"><i class="bi bi-exclamation-triangle"></i> 仅显示前 ' + rows.length + ' 条，共 ' + section.count + ' 条</p>';
+        }
+        return html;
+    }
+
+    function renderSections(sections) {
+        if (!sections || !sections.length) {
+            return '<p class="text-muted">该项目在备份中无业务明细</p>';
+        }
+        let html = '<div class="accordion" id="backupPreviewSections">';
+        sections.forEach(function(sec, idx) {
+            const cid = 'bpSec' + idx;
+            let headExtra = '';
+            if (sec.summary && sec.summary.amount != null) {
+                headExtra = ' <span class="badge bg-primary">合计 ' + fmtMoney(sec.summary.amount) + '</span>';
+            }
+            html += '<div class="accordion-item"><h2 class="accordion-header">' +
+                '<button class="accordion-button' + (idx > 0 ? ' collapsed' : '') + '" type="button" data-bs-toggle="collapse" data-bs-target="#' + cid + '">' +
+                esc(sec.label) + ' <span class="badge bg-secondary ms-1">' + sec.count + ' 条</span>' + headExtra +
+                '</button></h2>' +
+                '<div id="' + cid + '" class="accordion-collapse collapse' + (idx === 0 ? ' show' : '') + '" data-bs-parent="#backupPreviewSections">' +
+                '<div class="accordion-body py-2">' + renderDetailTable(sec) + '</div></div></div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
+    function renderProjectSummaryRow(summary, labels) {
+        if (!summary || !Object.keys(summary).length) return '';
+        const parts = [];
+        Object.keys(summary).forEach(function(k) {
+            const v = summary[k];
+            if (!v) return;
+            parts.push('<span class="me-2"><span class="text-muted">' + esc((labels || {})[k] || k) + '</span> ' + fmtMoney(v) + '</span>');
+        });
+        return parts.length ? '<div class="small mt-1">' + parts.join('') + '</div>' : '';
+    }
+
+    function bindProjectDetailButtons(container, filename) {
+        container.querySelectorAll('[data-backup-preview-project]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const pid = parseInt(btn.getAttribute('data-backup-preview-project'), 10);
+                if (filename && pid) openBackupPreview(filename, pid);
+            });
+        });
+    }
+
+    function renderFilePreview(data, filename) {
+        let html = '';
+        if (data.summary && Object.keys(data.summary).length) {
+            html += renderSummaryPanel(data.summary, data.summary_labels);
+        }
+        html += '<p class="mb-2">共 <strong>' + data.project_count + '</strong> 个项目';
+        if (data.truncated) html += '（列表仅显示前 50 个）';
+        html += '。点击「查看明细」可展开该项目的单据与汇总。</p>';
+        html += '<div class="table-responsive"><table class="table table-sm table-bordered"><thead class="table-light"><tr>' +
+            '<th>项目</th><th>状态</th><th class="text-end">记录数</th><th>金额概要</th><th></th></tr></thead><tbody>';
+        (data.projects || []).forEach(function(p) {
+            html += '<tr><td><strong>#' + p.id + '</strong> ' + esc(p.name) + '</td>' +
+                '<td><span class="badge bg-secondary">' + esc(p.status) + '</span></td>' +
+                '<td class="text-end">' + (p.total_rows || 0) + '</td>' +
+                '<td class="small">' + renderProjectSummaryRow(p.summary, data.summary_labels) + '</td>' +
+                '<td class="text-nowrap"><button type="button" class="btn btn-sm btn-outline-primary" data-backup-preview-project="' + p.id + '">查看明细</button></td></tr>';
+        });
+        html += '</tbody></table></div>';
         return html;
     }
 
     function renderProjectPreview(data) {
         const p = data.project;
-        let html = '<div class="alert alert-light border"><strong>' + esc(p.name) + '</strong> <span class="badge bg-secondary">' + esc(p.status) + '</span>';
-        if (p.budget) html += ' · 预算 ' + p.budget;
-        html += '<br><span class="text-muted small">备份中项目 ID：' + p.id + '，合计约 ' + (data.total_rows || 0) + ' 条业务记录</span></div>';
-        html += renderCounts(data.counts);
+        let html = '<div class="alert alert-light border mb-3"><strong>' + esc(p.name) + '</strong> <span class="badge bg-secondary">' + esc(p.status) + '</span>';
+        if (p.budget) html += ' · 预算 ' + fmtMoney(p.budget);
+        html += '<br><span class="text-muted small">备份中项目 ID：' + p.id + '，业务记录约 ' + (data.total_rows || 0) + ' 条</span></div>';
+        html += renderSummaryPanel(data.summary, data.summary_labels);
+        html += '<div class="row g-3 mb-3"><div class="col-md-5"><div class="card h-100"><div class="card-header py-2 small fw-semibold">条数统计</div><div class="card-body py-2">' +
+            renderCountsTable(data.counts) + '</div></div></div>';
+        html += '<div class="col-md-7"><div class="card h-100"><div class="card-header py-2 small fw-semibold"><i class="bi bi-list-ul"></i> 业务明细（按类型展开）</div><div class="card-body py-2">';
+        html += renderSections(data.sections);
+        html += '</div></div></div></div>';
         return html;
     }
 
@@ -63,7 +180,7 @@
         if (ct.indexOf('application/json') >= 0) {
             return r.json();
         }
-        return r.text().then(function(t) {
+        return r.text().then(function() {
             throw new Error('服务器未返回 JSON（可能未登录或权限不足）');
         });
     }
@@ -97,9 +214,19 @@
                     return;
                 }
                 const d = res.data;
-                if (d.mode === 'file') contentEl.innerHTML = renderFilePreview(d);
-                else if (d.mode === 'project') contentEl.innerHTML = renderProjectPreview(d);
-                else contentEl.innerHTML = '<p class="text-muted">无预览数据</p>';
+                if (d.error) {
+                    errorEl.textContent = d.error;
+                    errorEl.classList.remove('d-none');
+                    return;
+                }
+                if (d.mode === 'file') {
+                    contentEl.innerHTML = renderFilePreview(d, filename);
+                    bindProjectDetailButtons(contentEl, filename);
+                } else if (d.mode === 'project') {
+                    contentEl.innerHTML = renderProjectPreview(d);
+                } else {
+                    contentEl.innerHTML = '<p class="text-muted">无预览数据</p>';
+                }
             })
             .catch(function(err) {
                 loadingEl.classList.add('d-none');
