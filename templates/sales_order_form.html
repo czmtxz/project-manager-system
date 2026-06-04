@@ -12,8 +12,8 @@
                 <div class="row">
                     <div class="col-md-6">
                         <div class="mb-3">
-                            <label class="form-label">出库单号 <span class="text-danger">*</span></label>
-                            <input type="text" name="order_no" class="form-control" placeholder="如: CK-2026-001" required value="{{ order.order_no if order else '' }}">
+                            <label class="form-label">出库单号</label>
+                            <input type="text" name="order_no" class="form-control" placeholder="自动生成" readonly value="{{ order.order_no if order else '' }}">
                         </div>
                     </div>
                     <div class="col-md-6">

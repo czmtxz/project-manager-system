@@ -85,7 +85,7 @@
                             <td>{{ p.project_name or '-' }}</td>
                             <td>{{ p.purchase_type }}</td>
                             <td>{{ p.supplier or '-' }}</td>
-                            <td class="text-end">{{ "%.2f"|format(p.total_amount) }}</td>
+                            <td class="text-end">{{ "%.2f"|format(p.total_amount_calc if p.total_amount_calc else p.total_amount) }}</td>
                             <td class="text-end">{{ "%.2f"|format(p.total_qty or 0) }}</td>
                             <td>{{ p.purchase_date or '-' }}</td>
                             <td class="text-center">
@@ -117,10 +117,12 @@
                                     <a href="{{ url_for('purchase_edit', id=p.id) }}" class="btn btn-outline-secondary" title="编辑">
                                         <i class="bi bi-pencil"></i>
                                     </a>
-                                    <a href="{{ url_for('purchase_delete', id=p.id) }}" class="btn btn-outline-danger" title="删除"
-                                       onclick="return confirm('确定要删除此采购单吗？')">
-                                        <i class="bi bi-trash"></i>
-                                    </a>
+                                    <form method="POST" action="{{ url_for('purchase_delete', id=p.id) }}" style="display:inline"
+                                              onsubmit="return confirm('确定删除此采购单?')">
+                                        <button type="submit" class="btn btn-outline-danger" title="删除">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
                                     {% endif %}
                                 </div>
                             </td>

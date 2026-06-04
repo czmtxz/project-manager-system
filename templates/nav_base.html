@@ -32,17 +32,6 @@
                             <i class="bi bi-folder"></i> 项目列表
                         </a>
                     </li>
-                    <!-- 投资管理 -->
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['investment_list', 'investment_import', 'excel_import'] %}active{% endif %}" href="#" data-bs-toggle="dropdown">
-                            <i class="bi bi-cash-stack"></i> 投资管理
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('participant_list') }}">
-                                <i class="bi bi-people"></i> 投资人管理
-                            </a></li>
-                        </ul>
-                    </li>
                     <!-- 销售管理 -->
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {% if request.endpoint in ['sales_contract_list', 'sales_payment_list', 'sales_order_list', 'sales_order_add', 'sales_order_detail', 'sales_order_edit'] %}active{% endif %}" href="#" data-bs-toggle="dropdown">
@@ -107,12 +96,7 @@
                             </a></li>
                         </ul>
                     </li>
-                    <!-- 参与人 -->
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'participant_list' %}active{% endif %}" href="{{ url_for('participant_list') }}">
-                            <i class="bi bi-people"></i> 参与人
-                        </a>
-                    </li>
+
                     <!-- 报表分析 -->
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('reports.') %}active{% endif %}" href="{{ url_for('reports.hub') }}">
@@ -121,12 +105,18 @@
                     </li>
                     <!-- 基础资料 -->
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['base_data', 'supplier_list', 'supplier_add', 'supplier_edit', 'customer_list', 'customer_add', 'customer_edit', 'category_list', 'payment_type_list'] %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['base_data', 'supplier_list', 'supplier_add', 'supplier_edit', 'customer_list', 'customer_add', 'customer_edit', 'category_list', 'payment_type_list', 'participant_list', 'participant_detail', 'participant_edit', 'participant_add'] %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                             <i class="bi bi-database"></i> 基础资料
                         </a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="{{ url_for('base_data') }}">
                                 <i class="bi bi-house"></i> 基础资料首页
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('participant_list') }}">
+                                <i class="bi bi-people"></i> 参与人管理
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('participant_list') }}">
+                                <i class="bi bi-person"></i> 参与人/投资人管理
                             </a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{{ url_for('supplier_list') }}">

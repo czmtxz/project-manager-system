@@ -1,0 +1,217 @@
+{% extends "nav_base.html" %}
+{% block title %}{% if payment %}编辑付款{% else %}新增付款{% endif %} - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="{{ url_for('payment_list', pid=project.id) }}" class="text-muted me-2">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <h4 class="d-inline">{% if payment %}编辑付款记录{% else %}新增付款记录{% endif %}</h4>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <i class="bi bi-cash me-2"></i>付款信息
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data" id="paymentForm">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">关联合同</label>
+                                <select name="contract_id" class="form-select" id="contract_id">
+                                    <option value="">-- 无 --</option>
+                                    {% for c in contracts %}
+                                    <option value="{{ c.id }}" {% if payment and payment.contract_id == c.id %}selected{% endif %}>
+                                        {{ c.contract_name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">付款人 <span class="text-danger">*</span></label>
+                                <select name="participant_id" class="form-select" id="participant_id" required>
+                                    <option value="">-- 请选择 --</option>
+                                    {% for p in participants %}
+                                    <option value="{{ p.id }}" {% if payment and payment.participant_id == p.id %}selected{% endif %}>
+                                        {{ p.name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">付款金额 <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <span class="input-group-text">¥</span>
+                                    <input type="number" name="amount" class="form-control" step="0.01"
+                                           id="amount" value="{{ payment.amount if payment else '' }}" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">付款日期 <span class="text-danger">*</span></label>
+                                <input type="date" name="payment_date" class="form-control" id="payment_date"
+                                       value="{{ payment.payment_date if payment else '' }}" required>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">支付方式</label>
+                                <select name="payment_method" class="form-select" id="payment_method">
+                                    <option value="">-- 选择 --</option>
+                                    <option value="微信" {% if payment and payment.payment_method == '微信' %}selected{% endif %}>微信</option>
+                                    <option value="支付宝" {% if payment and payment.payment_method == '支付宝' %}selected{% endif %}>支付宝</option>
+                                    <option value="银行卡" {% if payment and payment.payment_method == '银行卡' %}selected{% endif %}>银行卡</option>
+                                    <option value="现金" {% if payment and payment.payment_method == '现金' %}selected{% endif %}>现金</option>
+                                    <option value="对公转账" {% if payment and payment.payment_method == '对公转账' %}selected{% endif %}>对公转账</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">附件</label>
+                                <input type="file" name="attachment" class="form-control" accept="image/*,.pdf">
+                                {% if payment and payment.attachment %}
+                                <small class="text-muted">
+                                    当前附件: <a href="/uploads/payments/{{ payment.attachment }}" target="_blank">{{ payment.attachment }}</a>
+                                </small>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">备注</label>
+                            <textarea name="remark" class="form-control" rows="3">{{ payment.remark if payment else '' }}</textarea>
+                        </div>
+                        <div class="d-flex justify-content-end gap-2">
+                            <a href="{{ url_for('payment_list', pid=project.id) }}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle me-1"></i>取消
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle me-1"></i>保存
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card shadow-sm border-primary">
+                <div class="card-header bg-primary text-white">
+                    <i class="bi bi-camera me-2"></i>智能识别付款信息
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">上传付款截图或照片，自动识别金额等信息</p>
+                    <div class="mb-3">
+                        <input type="file" id="ocrFile" class="form-control" accept="image/*">
+                    </div>
+                    <div id="imagePreview" class="mb-3" style="display:none;">
+                        <img id="previewImg" class="img-fluid rounded" style="max-height:200px;">
+                    </div>
+                    <button type="button" class="btn btn-outline-primary w-100" id="ocrBtn" onclick="doOcr()">
+                        <i class="bi bi-magic me-1"></i>开始识别
+                    </button>
+                    <div id="ocrResult" class="mt-3" style="display:none;">
+                        <hr>
+                        <h6 class="text-success"><i class="bi bi-check-circle me-1"></i>识别结果</h6>
+                        <div id="ocrResultContent"></div>
+                        <button type="button" class="btn btn-success btn-sm w-100 mt-2" onclick="applyOcrResult()">
+                            <i class="bi bi-arrow-down-circle me-1"></i>应用到表单
+                        </button>
+                    </div>
+                    <div id="ocrStatus" class="mt-3" style="display:none;">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-2 text-muted">正在识别中，请稍候...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card shadow-sm mt-3">
+                <div class="card-header">
+                    <i class="bi bi-lightbulb me-2"></i>使用说明
+                </div>
+                <div class="card-body small text-muted">
+                    <p><i class="bi bi-1-circle me-1"></i>上传微信/支付宝付款截图</p>
+                    <p><i class="bi bi-2-circle me-1"></i>点击"开始识别"</p>
+                    <p><i class="bi bi-3-circle me-1"></i>识别结果自动填入表单</p>
+                    <p class="mb-0"><i class="bi bi-info-circle me-1"></i>支持jpg/png格式图片</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+var ocrData = null;
+document.getElementById('ocrFile').addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (file) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('previewImg').src = e.target.result;
+            document.getElementById('imagePreview').style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+async function doOcr() {
+    var fileInput = document.getElementById('ocrFile');
+    if (!fileInput.files[0]) {
+        alert('请先选择图片');
+        return;
+    }
+    document.getElementById('ocrStatus').style.display = 'block';
+    document.getElementById('ocrResult').style.display = 'none';
+    document.getElementById('ocrBtn').disabled = true;
+    try {
+        var formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        var resp = await fetch('/api/ocr/recognize_payment', { method: 'POST', body: formData });
+        var result = await resp.json();
+        if (result.success) {
+            ocrData = result.data;
+            var html = '<ul class="list-unstyled mb-0">';
+            if (ocrData.amount) html += '<li><strong>金额:</strong> ¥' + ocrData.amount + '</li>';
+            if (ocrData.date) html += '<li><strong>日期:</strong> ' + ocrData.date + '</li>';
+            if (ocrData.merchant) html += '<li><strong>商户:</strong> ' + ocrData.merchant + '</li>';
+            if (ocrData.payment_method) html += '<li><strong>方式:</strong> ' + ocrData.payment_method + '</li>';
+            html += '</ul>';
+            document.getElementById('ocrResultContent').innerHTML = html;
+            document.getElementById('ocrResult').style.display = 'block';
+        } else {
+            alert('识别失败: ' + (result.message || '未知错误'));
+        }
+    } catch (e) {
+        alert('识别出错: ' + e.message);
+    } finally {
+        document.getElementById('ocrStatus').style.display = 'none';
+        document.getElementById('ocrBtn').disabled = false;
+    }
+}
+
+function applyOcrResult() {
+    if (!ocrData) return;
+    if (ocrData.amount) document.getElementById('amount').value = ocrData.amount;
+    if (ocrData.date) document.getElementById('payment_date').value = ocrData.date;
+    if (ocrData.payment_method) {
+        var sel = document.getElementById('payment_method');
+        for (var i = 0; i < sel.options.length; i++) {
+            if (sel.options[i].value.indexOf(ocrData.payment_method) >= 0 || ocrData.payment_method.indexOf(sel.options[i].value) >= 0) {
+                sel.options[i].selected = true;
+                break;
+            }
+        }
+    }
+    var toast = document.createElement('div');
+    toast.className = 'alert alert-success position-fixed top-0 end-0 m-3';
+    toast.style.zIndex = '9999';
+    toast.innerHTML = '<i class="bi bi-check-circle me-1"></i>已应用识别结果';
+    document.body.appendChild(toast);
+    setTimeout(function(){ toast.remove(); }, 2000);
+}
+</script>
+{% endblock %}

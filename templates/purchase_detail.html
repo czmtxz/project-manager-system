@@ -27,10 +27,12 @@
                onclick="return confirm('确定要提交此采购单吗？提交后可录入运输记录。')">
                 <i class="bi bi-check-circle"></i> 提交
             </a>
-            <a href="{{ url_for('purchase_delete', id=purchase.id) }}" class="btn btn-outline-danger btn-sm"
-               onclick="return confirm('确定要删除此采购单吗？')">
-                <i class="bi bi-trash"></i> 删除
-            </a>
+            <form method="POST" action="{{ url_for('purchase_delete', id=purchase.id) }}" style="display:inline"
+                      onsubmit="return confirm('确定删除此采购单?')">
+                <button type="submit" class="btn btn-outline-danger btn-sm">
+                    <i class="bi bi-trash"></i> 删除
+                </button>
+            </form>
             {% else %}
             <a href="{{ url_for('purchase_edit', id=purchase.id) }}" class="btn btn-outline-primary btn-sm">
                 <i class="bi bi-pencil"></i> 编辑
@@ -178,15 +180,15 @@
                                 {% endfor %}
                             </tbody>
                             <tfoot class="table-light">
-                                <tr>
+                                <tr class="fw-bold">
+                                    <td colspan="4" class="text-end">合计：</td>
+                                    <td class="text-end" id="totalQty">{{ "%.2f"|format(purchase.total_qty or items|sum(attribute='quantity')) }}</td>
                                     <td></td>
-                                    <td colspan="3" class="text-end fw-bold">合计</td>
-                                    <td class="text-end fw-bold">{{ "%.2f"|format(total_purchase_qty) }}</td>
-                                    <td></td>
-                                    <td class="text-end fw-bold">{{ "%.2f"|format(purchase.total_amount) }}</td>
+                                    <td class="text-end" id="totalAmount">¥{{ "%.2f"|format(purchase.total_amount or items|sum(attribute='amount')) }}</td>
                                     <td></td>
                                 </tr>
                             </tfoot>
+                            
                         </table>
                     </div>
                     {% else %}
@@ -253,14 +255,7 @@
                                 </tr>
                                 {% endfor %}
                             </tbody>
-                            <tfoot class="table-light">
-                                <tr>
-                                    <td colspan="5" class="text-end fw-bold">合计</td>
-                                    <td class="text-end fw-bold">{{ "%.2f"|format(total_transport_qty) }}</td>
-                                    <td class="text-end fw-bold">¥{{ "%.2f"|format(total_freight) }}</td>
-                                    <td colspan="2"></td>
-                                </tr>
-                            </tfoot>
+                            
                         </table>
                     </div>
                     {% else %}
@@ -492,7 +487,8 @@ function saveTransport(e) {
     .then(res => res.json())
     .then(data => {
         if (data.success) {
-            location.reload();
+            updatePurchaseSummary();
+                location.reload();
         } else {
             alert(data.message || '保存失败');
         }
@@ -506,12 +502,37 @@ function deleteTransport(id) {
         .then(res => res.json())
         .then(data => {
             if (data.success) {
+                updatePurchaseSummary();
                 location.reload();
             } else {
                 alert(data.message || '删除失败');
             }
         });
 }
+
+function updatePurchaseSummary() {
+    // Calculate from table rows
+    let totalQty = 0;
+    let totalAmount = 0;
+    document.querySelectorAll('tr[data-item-id]').forEach(row => {
+        const qtyCell = row.querySelector('td:nth-child(5)');
+        const amountCell = row.querySelector('td:nth-child(7)');
+        if (qtyCell) totalQty += parseFloat(qtyCell.textContent.replace(/,/g, '')) || 0;
+        if (amountCell) totalAmount += parseFloat(amountCell.textContent.replace(/[^0-9.-]/g, '')) || 0;
+    });
+    const qtyEl = document.getElementById('totalQty');
+    const amountEl = document.getElementById('totalAmount');
+    if (qtyEl) qtyEl.textContent = totalQty.toFixed(2);
+    if (amountEl) amountEl.textContent = '¥' + totalAmount.toFixed(2);
+}
+
+function updateSummaryFromAPI(totalQty, totalAmount) {
+    const qtyEl = document.getElementById('totalQty');
+    const amountEl = document.getElementById('totalAmount');
+    if (qtyEl && totalQty !== undefined) qtyEl.textContent = parseFloat(totalQty).toFixed(2);
+    if (amountEl && totalAmount !== undefined) amountEl.textContent = '¥' + parseFloat(totalAmount).toFixed(2);
+}
+
 </script>
 
 <script>
@@ -548,7 +569,8 @@ function savePurchaseItem() {
     .then(data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('addItemModal')).hide();
-            location.reload();
+            updatePurchaseSummary();
+                location.reload();
         } else {
             alert('保存失败: ' + (data.error || '未知错误'));
             btn.disabled = false;
@@ -570,6 +592,7 @@ function deletePurchaseItem(itemId) {
     .then(res => res.json())
     .then(data => {
         if (data.success) {
+            updatePurchaseSummary();
             location.reload();
         } else {
             alert('删除失败: ' + (data.error || '未知错误'));
@@ -629,7 +652,8 @@ function saveEditPurchaseItem() {
     .then(data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('editItemModal')).hide();
-            location.reload();
+            updatePurchaseSummary();
+                location.reload();
         } else {
             alert('保存失败: ' + (data.error || '未知错误'));
             btn.disabled = false;
@@ -771,6 +795,30 @@ document.getElementById('addItemModal').addEventListener('show.bs.modal', functi
     document.getElementById('item_price').value = '0';
     document.getElementById('item_amount_display').textContent = '0.00';
 });
+
+function updatePurchaseSummary() {
+    // Calculate from table rows
+    let totalQty = 0;
+    let totalAmount = 0;
+    document.querySelectorAll('tr[data-item-id]').forEach(row => {
+        const qtyCell = row.querySelector('td:nth-child(5)');
+        const amountCell = row.querySelector('td:nth-child(7)');
+        if (qtyCell) totalQty += parseFloat(qtyCell.textContent.replace(/,/g, '')) || 0;
+        if (amountCell) totalAmount += parseFloat(amountCell.textContent.replace(/[^0-9.-]/g, '')) || 0;
+    });
+    const qtyEl = document.getElementById('totalQty');
+    const amountEl = document.getElementById('totalAmount');
+    if (qtyEl) qtyEl.textContent = totalQty.toFixed(2);
+    if (amountEl) amountEl.textContent = '¥' + totalAmount.toFixed(2);
+}
+
+function updateSummaryFromAPI(totalQty, totalAmount) {
+    const qtyEl = document.getElementById('totalQty');
+    const amountEl = document.getElementById('totalAmount');
+    if (qtyEl && totalQty !== undefined) qtyEl.textContent = parseFloat(totalQty).toFixed(2);
+    if (amountEl && totalAmount !== undefined) amountEl.textContent = '¥' + parseFloat(totalAmount).toFixed(2);
+}
+
 </script>
 
 <!-- 新增采购明细弹窗 -->

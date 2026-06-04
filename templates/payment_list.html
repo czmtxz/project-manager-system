@@ -1,0 +1,98 @@
+{% extends "nav_base.html" %}
+{% block title %}付款记录管理 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="{{ url_for('project_detail', pid=project.id) }}" class="text-muted me-2">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <h4 class="d-inline">{{ project.name }} - 付款记录管理</h4>
+        </div>
+        <a href="{{ url_for('payment_add_new', pid=project.id) }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i>新增付款
+        </a>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card text-center p-3 border-primary">
+                <small class="text-muted">付款总数</small>
+                <h5 class="text-primary mb-0">{{ payments|length }} 笔</h5>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center p-3 border-danger">
+                <small class="text-muted">付款总额</small>
+                <h5 class="text-danger mb-0">¥{{ "%.2f"|format(payments|sum(attribute='amount')) }}</h5>
+            </div>
+        </div>
+    </div>
+
+    {% if payments %}
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>付款编号</th>
+                        <th>合同</th>
+                        <th>付款人</th>
+                        <th>金额</th>
+                        <th>付款日期</th>
+                        <th>支付方式</th>
+                        <th>附件</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pay in payments %}
+                    <tr>
+                        <td><span class="badge bg-secondary">{{ pay.payment_no }}</span></td>
+                        <td>{{ pay.contract_name or '-' }}</td>
+                        <td>{{ pay.participant_name or pay.payer or '-' }}</td>
+                        <td class="text-danger fw-bold">¥{{ "%.2f"|format(pay.amount) }}</td>
+                        <td>{{ pay.payment_date or '-' }}</td>
+                        <td>
+                            {% if pay.payment_method %}
+                            <span class="badge bg-info">{{ pay.payment_method }}</span>
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>
+                            {% if pay.attachment %}
+                            <a href="/uploads/payments/{{ pay.attachment }}" target="_blank" class="btn btn-sm btn-outline-info">
+                                <i class="bi bi-image"></i>
+                            </a>
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <a href="{{ url_for('payment_edit_record', pid=project.id, id=pay.id) }}"
+                                   class="btn btn-outline-primary" title="编辑">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <form method="POST" action="{{ url_for('payment_delete_record', pid=project.id, id=pay.id) }}"
+                                      onsubmit="return confirm('确定删除此付款记录吗?');" style="display:inline;">
+                                    <button type="submit" class="btn btn-outline-danger" title="删除">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center py-5">
+        <i class="bi bi-cash-stack display-1 text-muted"></i>
+        <p class="text-muted mt-3">暂无付款记录</p>
+        <a href="{{ url_for('payment_add_new', pid=project.id) }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i>添加第一笔付款
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

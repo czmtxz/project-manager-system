@@ -127,6 +127,12 @@
                         </div>
                         <div class="col-md-3">
                             <div class="border rounded p-2 text-center">
+                                <small class="text-muted">总投资金额</small>
+                                <h5 class="mb-0 text-success">{{ "%.2f"|format(participants|sum(attribute='total_investment')|default(0)) }}</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-2 text-center">
                                 <small class="text-muted">总投资比例</small>
                                 <h5 class="mb-0 text-info">{{ participants|sum(attribute='investment_ratio')|default(0) }}%</h5>
                             </div>
@@ -144,6 +150,7 @@
                                 <tr class="thead-labels">
                                     <th>姓名</th>
                                     <th>角色</th>
+                                    <th>投资金额</th>
                                     <th>投资比例 <i class="bi bi-info-circle text-muted small" title="按实际投资金额自动计算，不可手填"></i></th>
                                     <th>分红比例</th>
                                     <th style="width:120px">操作</th>
@@ -161,6 +168,7 @@
                                 <tr data-filter-name="{{ p.name }}" data-filter-role="{{ p.project_role or '' }}">
                                     <td><a href="{{ url_for('participant_detail', pid=p.id) }}">{{ p.name }}</a></td>
                                     <td>{{ p.project_role or '-' }}</td>
+                                    <td class="text-success">{{ "%.2f"|format(p.total_investment or 0) }}</td>
                                     <td>
                                         <span class="badge bg-info-subtle text-info-emphasis" title="按实际投资金额自动计算">
                                             {{ '%g'|format(p.investment_ratio or 0) }}%
@@ -582,9 +590,10 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center py-2">
                     <span class="fw-semibold"><i class="bi bi-credit-card"></i> 付款记录</span>
-                    <a href="{{ url_for('payment_add', pid=project.id) }}" class="btn btn-primary btn-sm">
-                        <i class="bi bi-plus"></i> 新增付款
-                    </a>
+                    <div class="btn-group btn-group-sm">
+                        <a href="{{ url_for('payment_add', pid=project.id) }}" class="btn btn-primary"><i class="bi bi-plus"></i> 新增付款</a>
+                        <a href="{{ url_for('payment_list', pid=project.id) }}" class="btn btn-outline-primary"><i class="bi bi-list-ul"></i> 管理付款</a>
+                    </div>
                 </div>
                 <div class="card-body">
                     {% if payments %}
@@ -643,6 +652,7 @@
                                     <td class="text-end text-danger fw-semibold">{{ "%.2f"|format(pay.amount) }}</td>
                                     <td>{{ pay.remark or '-' }}</td>
                                     <td>
+                                        <a href="{{ url_for('payment_edit_record', pid=project.id, id=pay.id) }}" class="btn btn-sm btn-outline-primary" title="编辑"><i class="bi bi-pencil"></i></a>
                                         <form method="POST" action="{{ url_for('payment_delete', pid=project.id, id=pay.id) }}" style="display:inline" onsubmit="return confirm('确定删除？')">
                                             <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                                         </form>

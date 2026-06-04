@@ -780,7 +780,7 @@ def register_missing_routes(app, ctx):
 
     @app.route('/payment/<int:id>/edit', methods=['GET', 'POST'])
     @login_required
-    def payment_edit(id):
+    def payment_edit_ext(id):
         flash('请从项目详情页管理付款记录', 'info')
         return redirect(url_for('transaction_records'))
 
@@ -828,7 +828,7 @@ def register_missing_routes(app, ctx):
 
     @app.route('/project/<int:pid>/investment/<int:id>/edit', methods=['GET', 'POST'])
     @login_required
-    def investment_edit(pid, id):
+    def investment_edit_ext(pid, id):
         db = get_db()
         inv = db.execute(
             "SELECT * FROM investments WHERE id=? AND project_id=?", (id, pid)
@@ -860,7 +860,7 @@ def register_missing_routes(app, ctx):
 
     @app.route('/project/<int:pid>/investment/<int:id>/delete', methods=['POST'])
     @login_required
-    def investment_delete(pid, id):
+    def investment_delete_ext(pid, id):
         db = get_db()
         db.execute("DELETE FROM investments WHERE id=? AND project_id=?", (id, pid))
         db.commit()
@@ -923,7 +923,7 @@ def register_missing_routes(app, ctx):
 
     @app.route('/project/<int:pid>/payment/<int:id>/delete', methods=['POST'])
     @login_required
-    def payment_delete(pid, id):
+    def payment_delete_ext(pid, id):
         db = get_db()
         db.execute("DELETE FROM payments WHERE id=? AND project_id=?", (id, pid))
         db.commit()

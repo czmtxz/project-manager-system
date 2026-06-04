@@ -458,3 +458,192 @@ def parse_contract_docx(docx_path):
     result['confidence'] = fields_found / 3
     
     return result
+
+
+# ==================== 物流系统截图识别 ====================
+
+def recognize_logistics_screenshot(image_path):
+    """
+    识别物流/过磅系统截图，提取车辆运输记录
+    识别字段：车牌号、发车时间、过磅时间、净重、趟次
+    :param image_path: 图片路径
+    :return: list of dict 每条运输记录
+    """
+    lines = ocr_image_to_lines(image_path)
+    full_text = '\n'.join(lines)
+
+    records = []
+
+    # 识别车牌号（支持多种格式）
+    plate_pattern = r'[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤川青藏琼宁][A-HJ-NP-Z][A-HJ-NP-Z0-9]{4,5}[A-HJ-NP-Z0-9挂学警港澳]'
+
+    # 按行提取车牌号和关联数据
+    all_plates = []
+    for i, line in enumerate(lines):
+        plate_matches = re.findall(plate_pattern, line)
+        for plate in plate_matches:
+            all_plates.append({
+                'plate': plate,
+                'line_idx': i,
+                'line_text': line
+            })
+
+    if not all_plates:
+        # 如果没找到标准车牌，尝试宽松匹配
+        loose_pattern = r'[A-Z][A-Z0-9]{5,7}'
+        for i, line in enumerate(lines):
+            # 跳过明显不是车牌的行
+            if len(line) < 5 or len(line) > 20:
+                continue
+            loose_matches = re.findall(loose_pattern, line)
+            for m in loose_matches:
+                if len(m) >= 7:
+                    all_plates.append({
+                        'plate': m,
+                        'line_idx': i,
+                        'line_text': line
+                    })
+
+    # 为每个车牌提取关联数据
+    for plate_info in all_plates:
+        record = {
+            'vehicle_no': plate_info['plate'],
+            'dispatch_time': '',
+            'weigh_time': '',
+            'net_weight': 0,
+            'unit': '吨',
+            'trips': 1,
+            'quality': '',
+            'status': '',
+            'raw_text': plate_info['line_text'],
+            'confidence': 0.5
+        }
+
+        # 在当前行和前后几行中查找关联数据
+        context_start = max(0, plate_info['line_idx'] - 3)
+        context_end = min(len(lines), plate_info['line_idx'] + 4)
+        context_lines = lines[context_start:context_end]
+        context_text = '\n'.join(context_lines)
+
+        # 识别时间（多种格式）
+        time_patterns = [
+            r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2}:\d{2})',
+            r'(\d{4}年\d{1,2}月\d{1,2}日\s+\d{1,2}:\d{2}:\d{2})',
+            r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2})',
+        ]
+        times_found = []
+        for pattern in time_patterns:
+            times_found.extend(re.findall(pattern, context_text))
+
+        if len(times_found) >= 2:
+            record['dispatch_time'] = times_found[0]
+            record['weigh_time'] = times_found[1]
+        elif len(times_found) == 1:
+            record['dispatch_time'] = times_found[0]
+
+        # 识别净重（多种模式）
+        weight_patterns = [
+            r'(\d+\.\d+)\s*吨',
+            r'净[\s重]*[：:\s]*(\d+\.?\d*)',
+            r'([\d,]+\.\d+)\s*[吨tT]',
+        ]
+        for pattern in weight_patterns:
+            weight_match = re.search(pattern, context_text)
+            if weight_match:
+                try:
+                    record['net_weight'] = float(weight_match.group(1).replace(',', ''))
+                    break
+                except ValueError:
+                    continue
+
+        # 识别趟次
+        trip_match = re.search(r'(\d+)\s*[次趟]', context_text)
+        if trip_match:
+            record['trips'] = int(trip_match.group(1))
+
+        # 识别质量评定
+        if '合格' in context_text:
+            record['quality'] = '合格'
+        elif '不合格' in context_text:
+            record['quality'] = '不合格'
+
+        # 识别状态
+        if '出厂' in context_text or '完成' in context_text:
+            record['status'] = '出厂'
+        elif '进场' in context_text or '入库' in context_text:
+            record['status'] = '进场'
+        elif '在途' in context_text:
+            record['status'] = '在途'
+
+        # 计算置信度
+        confidence_fields = 0
+        if record['net_weight'] > 0:
+            confidence_fields += 0.4
+        if record['dispatch_time']:
+            confidence_fields += 0.2
+        if record['weigh_time']:
+            confidence_fields += 0.1
+        if record['vehicle_no']:
+            confidence_fields += 0.3
+        record['confidence'] = min(1.0, confidence_fields)
+
+        records.append(record)
+
+    return records
+
+
+def recognize_payment_info(image_path):
+    """
+    识别付款截图/回单中的付款信息
+    :param image_path: 图片路径
+    :return: dict 付款信息
+    """
+    lines = ocr_image_to_lines(image_path)
+    full_text = '\n'.join(lines)
+
+    result = {
+        'payment_no': '',
+        'payer': '',
+        'payee': '',
+        'amount': 0,
+        'payment_date': '',
+        'payment_method': '',
+        'remark': '',
+        'raw_text': full_text,
+        'confidence': 0
+    }
+
+    # 识别金额
+    amount_patterns = [
+        r'[¥￥]\s*([0-9,]+\.\d{2})',
+        r'金额[：:\s]*([0-9,]+\.?\d*)',
+        r'(?:大写金额|金额)[：:\s]*([零一二三四五六七八九十百千万亿]+元整?)',
+    ]
+    for pattern in amount_patterns:
+        match = re.search(pattern, full_text)
+        if match:
+            try:
+                result['amount'] = float(match.group(1).replace(',', ''))
+            except (ValueError, IndexError):
+                pass
+            break
+
+    # 识别日期
+    date_match = re.search(r'(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})[日]?', full_text)
+    if date_match:
+        result['payment_date'] = f"{date_match.group(1)}-{int(date_match.group(2)):02d}-{int(date_match.group(3)):02d}"
+
+    # 识别付款人
+    payer_match = re.search(r'(?:付款人|付款方|汇款人)[：:\s]*([^\s,，\n]+)', full_text)
+    if payer_match:
+        result['payer'] = payer_match.group(1).strip()
+
+    # 识别收款人
+    payee_match = re.search(r'(?:收款人|收款方|收款账户)[：:\s]*([^\s,，\n]+)', full_text)
+    if payee_match:
+        result['payee'] = payee_match.group(1).strip()
+
+    fields_found = sum(1 for k in ['amount', 'payment_date', 'payer'] if result[k])
+    result['confidence'] = fields_found / 3
+
+    return result

@@ -40,7 +40,7 @@
                         </small>
                     </div>
                     {% if not msg.is_read %}
-                    <form method="POST" action="{{ url_for('portal_message_read', msg_id=msg.id) }}">
+                    <form method="POST" action="{{ url_for('portal_message_read', id=msg.id) }}">
                         <button type="submit" class="btn btn-sm btn-outline-success" title="标记已读">
                             <i class="bi bi-check"></i>
                         </button>

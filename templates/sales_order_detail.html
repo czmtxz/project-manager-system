@@ -97,7 +97,10 @@
                         <button class="btn btn-sm btn-warning" id="batchLinkTransportBtn" style="display:none" onclick="batchLinkTransport()">
                             <i class="bi bi-link"></i> 关联运输 (<span id="selectedItemCount">0</span>)
                         </button>
-                        {{ import_btn('importSalesItemsModal', 'btn-sm btn-outline-primary', '导入') }}
+                        {{ import_btn('importSalesItemsModal', 'btn-sm btn-outline-primary', '导入Excel') }}
+                        <button class="btn btn-sm btn-outline-info" onclick="showOcrImportModal()" title="上传运输截图自动识别导入">
+                            <i class="bi bi-camera"></i> 图片识别导入
+                        </button>
                         <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addItemModal">
                             <i class="bi bi-plus-circle"></i> 新增明细
                         </button>
@@ -234,7 +237,7 @@
                 <h5 class="modal-title" id="transportModalTitle">添加运输记录</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form id="transportForm" method="POST" enctype="multipart/form-data">
+            <form id="transportForm" method="POST" enctype="multipart/form-data" action="">
                 <div class="modal-body">
                     <input type="hidden" name="transport_id" id="transport_id">
                     <div class="row">
@@ -368,22 +371,24 @@ function editTransport(id) {
 
 function saveTransport(e) {
     e.preventDefault();
-
     const formData = new FormData(document.getElementById('transportForm'));
-    formData.append('order_id', ORDER_ID);
-
-    fetch('/api/sales/transport/save', {
+    formData.append('sales_order_id', ORDER_ID);
+    const transportId = document.getElementById('transport_id').value;
+    if (transportId) formData.append('id', transportId);
+    fetch('/api/transport/save', {
         method: 'POST',
-        body: formData
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(Object.fromEntries(formData))
     })
-    .then(res => res.json())
+    .then(resp => resp.json())
     .then(data => {
         if (data.success) {
             location.reload();
         } else {
-            alert(data.message || '保存失败');
+            alert('保存失败: ' + (data.message || '未知错误'));
         }
-    });
+    })
+    .catch(err => alert('保存失败: ' + err.message));
 }
 
 function deleteTransport(id) {
@@ -428,21 +433,20 @@ function saveSalesItem() {
             unit_price: parseFloat(document.getElementById('item_price').value) || 0
         })
     })
-    .then(res => res.json())
+    .then(resp => resp.json())
     .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-circle"></i> 保存';
         if (data.success) {
-            bootstrap.Modal.getInstance(document.getElementById('addItemModal')).hide();
             location.reload();
         } else {
-            alert('保存失败: ' + (data.error || '未知错误'));
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-check-circle"></i> 保存';
+            alert('保存失败: ' + (data.message || '未知错误'));
         }
     })
     .catch(err => {
-        alert('保存失败，请重试');
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-check-circle"></i> 保存';
+        alert('保存失败: ' + err.message);
     });
 }
 
@@ -456,10 +460,10 @@ function deleteSalesItem(itemId) {
         if (data.success) {
             location.reload();
         } else {
-            alert('删除失败: ' + (data.error || '未知错误'));
+            alert('删除失败: ' + (data.message || '未知错误'));
         }
     })
-    .catch(err => alert('删除失败，请重试'));
+    .catch(err => alert('删除失败: ' + err.message));
 }
 
 // 编辑销售明细
@@ -473,11 +477,12 @@ function editSalesItem(itemId) {
     if (!row) return;
 
     const cells = row.querySelectorAll('td');
-    document.getElementById('edit_item_name').value = cells[0].textContent.trim();
-    document.getElementById('edit_item_spec').value = cells[1].textContent.trim() === '-' ? '' : cells[1].textContent.trim();
-    document.getElementById('edit_item_unit').value = cells[2].textContent.trim();
-    document.getElementById('edit_item_qty').value = cells[3].textContent.trim();
-    document.getElementById('edit_item_price').value = cells[4].textContent.trim();
+    // cells[0] = checkbox, cells[1] = 品名, cells[2] = 规格, cells[3] = 单位, cells[4] = 数量, cells[5] = 单价
+    document.getElementById('edit_item_name').value = cells[1].textContent.trim();
+    document.getElementById('edit_item_spec').value = cells[2].textContent.trim() === '-' ? '' : cells[2].textContent.trim();
+    document.getElementById('edit_item_unit').value = cells[3].textContent.trim();
+    document.getElementById('edit_item_qty').value = cells[4].textContent.trim().replace(/,/g, '');
+    document.getElementById('edit_item_price').value = cells[5].textContent.trim().replace(/,/g, '');
     calcEditItemAmount();
 
     new bootstrap.Modal(document.getElementById('editItemModal')).show();

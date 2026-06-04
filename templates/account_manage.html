@@ -264,6 +264,9 @@
                                         {% endif %}
                                         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#bindModal{{ acc.id }}">绑定</button>
                                         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#pwdModal{{ acc.id }}">重置密码</button>
+                                        {% if acc.status in ('approved', 'active') %}
+                                        <a href="{{ url_for('portal_login') }}" class="btn btn-sm btn-outline-success" target="_blank" title="客户门户登录入口"><i class="bi bi-box-arrow-in-right"></i> 登录入口</a>
+                                        {% endif %}
                                     </td>
                                 </tr>
                                 {% else %}

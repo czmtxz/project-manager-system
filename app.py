@@ -1460,10 +1460,23 @@ def dashboard():
     if role in ('admin', 'finance'):
         projects = db.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
     else:
-        projects = db.execute(
-            "SELECT * FROM projects WHERE user_id=? ORDER BY created_at DESC",
-            (user_id,)
-        ).fetchall()
+        # 查找用户关联的参与人ID
+        participant = db.execute("SELECT id FROM participants WHERE user_id=?", (user_id,)).fetchone()
+        participant_id = participant['id'] if participant else None
+        
+        if participant_id:
+            # 可以看到：自己创建的 或 自己参与的（有投资记录）
+            projects = db.execute("""
+                SELECT DISTINCT p.* FROM projects p
+                LEFT JOIN investments i ON i.project_id = p.id AND i.participant_id = ?
+                WHERE p.user_id = ? OR i.id IS NOT NULL
+                ORDER BY p.created_at DESC
+            """, (participant_id, user_id)).fetchall()
+        else:
+            projects = db.execute(
+                "SELECT * FROM projects WHERE user_id=? ORDER BY created_at DESC",
+                (user_id,)
+            ).fetchall()
 
     project_ids = [p['id'] for p in projects]
 
@@ -1527,10 +1540,20 @@ def project_list():
     if role in ('admin', 'finance'):
         projects = db.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
     else:
-        projects = db.execute(
-            "SELECT * FROM projects WHERE user_id=? ORDER BY created_at DESC",
-            (user_id,)
-        ).fetchall()
+        participant = db.execute("SELECT id FROM participants WHERE user_id=?", (user_id,)).fetchone()
+        participant_id = participant['id'] if participant else None
+        if participant_id:
+            projects = db.execute("""
+                SELECT DISTINCT p.* FROM projects p
+                LEFT JOIN investments i ON i.project_id = p.id AND i.participant_id = ?
+                WHERE p.user_id = ? OR i.id IS NOT NULL
+                ORDER BY p.created_at DESC
+            """, (participant_id, user_id)).fetchall()
+        else:
+            projects = db.execute(
+                "SELECT * FROM projects WHERE user_id=? ORDER BY created_at DESC",
+                (user_id,)
+            ).fetchall()
 
     # 为每个项目计算收支
     project_data = []
@@ -1661,11 +1684,12 @@ def project_detail(pid):
 
     # 参与人列表
     participants = db.execute("""
-        SELECT p.*, pp.project_role, pp.investment_ratio, pp.dividend_ratio
+        SELECT p.*, pp.project_role, pp.investment_ratio, pp.dividend_ratio,
+               (SELECT COALESCE(SUM(amount),0) FROM investments WHERE project_id=? AND participant_id=p.id) as total_investment
         FROM participants p
         JOIN project_participants pp ON p.id = pp.participant_id
         WHERE pp.project_id=?
-    """, (pid,)).fetchall()
+    """, (pid, pid)).fetchall()
 
     # 投资记录
     investments = db.execute("""
@@ -1888,6 +1912,75 @@ def investment_add(pid):
     flash('投资记录添加成功', 'success')
     return redirect(url_for('project_detail', pid=pid))
 
+@app.route('/project/<int:pid>/investment/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def investment_edit(pid, id):
+    """编辑投资记录"""
+    db = get_db()
+    inv = db.execute("SELECT * FROM investments WHERE id=? AND project_id=?", (id, pid)).fetchone()
+    if not inv:
+        flash('投资记录不存在', 'danger')
+        return redirect(url_for('project_detail', pid=pid))
+
+    if request.method == 'POST':
+        participant_id = request.form.get('participant_id')
+        invest_date = request.form.get('invest_date')
+        amount = float(request.form.get('amount', 0) or 0)
+        invest_type = request.form.get('invest_type', '启动资金')
+        payment_method = request.form.get('payment_method', '')
+        remark = request.form.get('remark', '')
+
+        # 处理附件上传
+        attachment = inv['attachment']
+        if 'attachment' in request.files:
+            file = request.files['attachment']
+            if file.filename:
+                import uuid
+                filename = f"invest_{uuid.uuid4().hex[:8]}_{file.filename}"
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+                attachment = filename
+
+        db.execute(
+            """UPDATE investments SET participant_id=?, invest_date=?, amount=?, invest_type=?, 
+               payment_method=?, remark=?, attachment=? WHERE id=?""",
+            (participant_id, invest_date, amount, invest_type, payment_method, remark, attachment, id)
+        )
+        db.commit()
+        recalc_investment_ratios(db, pid)
+        add_log(session['user_id'], session['username'], '修改投资',
+                f'项目{pid}修改投资记录{id}: {amount}元', request.remote_addr)
+        flash('投资记录修改成功', 'success')
+        return redirect(url_for('project_detail', pid=pid))
+
+    participants = db.execute("""
+        SELECT p.* FROM participants p
+        JOIN project_participants pp ON p.id = pp.participant_id
+        WHERE pp.project_id=?
+    """, (pid,)).fetchall()
+    project = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+    return render_template('investment_edit.html', inv=inv, participants=participants, project=project)
+
+
+@app.route('/project/<int:pid>/investment/<int:id>/delete', methods=['POST'])
+@login_required
+def investment_delete(pid, id):
+    """删除投资记录"""
+    db = get_db()
+    inv = db.execute("SELECT * FROM investments WHERE id=? AND project_id=?", (id, pid)).fetchone()
+    if not inv:
+        flash('投资记录不存在', 'danger')
+        return redirect(url_for('project_detail', pid=pid))
+    
+    db.execute("DELETE FROM investments WHERE id=?", (id,))
+    db.commit()
+    recalc_investment_ratios(db, pid)
+    add_log(session['user_id'], session['username'], '删除投资',
+            f'项目{pid}删除投资记录{id}: {inv["amount"]}元', request.remote_addr)
+    flash('投资记录已删除', 'success')
+    return redirect(url_for('project_detail', pid=pid))
+
+
 
 # ==================== 路由：分红记录 ====================
 
@@ -2074,7 +2167,275 @@ def payment_add(pid):
         add_log(session['user_id'], session['username'], '新增付款',
                 f'项目{pid}新增付款: {payment_no} {amount}元', request.remote_addr)
         flash('付款记录添加成功', 'success')
+        
+    # GET request - show form
+    contracts = db.execute("SELECT * FROM contracts WHERE project_id=? ORDER BY contract_name", (pid,)).fetchall()
+    participants = db.execute("SELECT * FROM participants ORDER BY name").fetchall()
+    return render_template('payment_edit.html', project=project, payment=None,
+                          contracts=contracts, participants=participants)
+
+@app.route('/project/<int:pid>/payment/list')
+@login_required
+def payment_list(pid):
+    """付款记录列表"""
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+    if not project:
+        flash('项目不存在', 'danger')
+        return redirect(url_for('project_list'))
+    
+    payments = db.execute("""
+        SELECT py.*, c.contract_name, p.name as participant_name
+        FROM payments py
+        LEFT JOIN contracts c ON py.contract_id = c.id
+        LEFT JOIN participants p ON py.participant_id = p.id
+        WHERE py.project_id=?
+        ORDER BY py.payment_date DESC, py.id DESC
+    """, (pid,)).fetchall()
+    
+    total_amount = sum(float(p['amount'] or 0) for p in payments)
+    return render_template('payment_list.html', project=project, payments=payments, total_amount=total_amount)
+
+
+
+@app.route('/project/<int:pid>/payment/add_new', methods=['GET', 'POST'])
+@login_required
+def payment_add_new(pid):
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+    if not project:
+        flash('项目不存在', 'error')
+        return redirect(url_for('project_list'))
+    contracts = db.execute("SELECT * FROM contracts WHERE project_id=? ORDER BY contract_name", (pid,)).fetchall()
+    participants = db.execute("SELECT * FROM participants ORDER BY name").fetchall()
+    if request.method == 'POST':
+        contract_id = request.form.get('contract_id') or None
+        participant_id = request.form.get('participant_id') or None
+        amount = float(request.form.get('amount', 0) or 0)
+        payment_date = request.form.get('payment_date')
+        payment_method = request.form.get('payment_method', '')
+        payer = request.form.get('payer', '')
+        remark = request.form.get('remark', '')
+        count = db.execute("SELECT COUNT(*) FROM payments WHERE project_id=?", (pid,)).fetchone()[0]
+        payment_no = 'P{}-{:04d}'.format(pid, count+1)
+        attachment = ''
+        if 'attachment' in request.files:
+            file = request.files['attachment']
+            if file and file.filename:
+                import uuid as _uuid
+                ext = file.filename.rsplit('.', 1)[-1].lower()
+                if ext in ['jpg', 'jpeg', 'png', 'gif', 'pdf']:
+                    filename = 'pay_{}_{}'.format(_uuid.uuid4().hex[:12], file.filename)
+                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'payments', filename)
+                    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                    file.save(filepath)
+                    attachment = filename
+        db.execute(
+            "INSERT INTO payments (project_id, contract_id, participant_id, payment_no, "
+            "amount, payment_date, payment_method, payer, remark, attachment) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (pid, contract_id, participant_id, payment_no, amount, payment_date,
+              payment_method, payer, remark, attachment))
+        db.commit()
+        add_log(session['user_id'], session['username'], '新增付款',
+                '项目{}新增付款: {}元 ({})'.format(pid, amount, payment_no), request.remote_addr)
+        flash('付款记录添加成功', 'success')
+        return redirect(url_for('payment_list', pid=pid))
+    return render_template('payment_edit.html', project=project, payment=None,
+                          contracts=contracts, participants=participants)
+
+
+@app.route('/project/<int:pid>/payment/<int:id>/edit_record', methods=['GET', 'POST'])
+@login_required
+def payment_edit_record(pid, id):
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+    payment = db.execute("SELECT * FROM payments WHERE id=? AND project_id=?", (id, pid)).fetchone()
+    if not project or not payment:
+        flash('记录不存在', 'error')
+        return redirect(url_for('payment_list', pid=pid))
+    contracts = db.execute("SELECT * FROM contracts WHERE project_id=? ORDER BY contract_name", (pid,)).fetchall()
+    participants = db.execute("SELECT * FROM participants ORDER BY name").fetchall()
+    if request.method == 'POST':
+        contract_id = request.form.get('contract_id') or None
+        participant_id = request.form.get('participant_id') or None
+        amount = float(request.form.get('amount', 0) or 0)
+        payment_date = request.form.get('payment_date')
+        payment_method = request.form.get('payment_method', '')
+        payer = request.form.get('payer', '')
+        remark = request.form.get('remark', '')
+        attachment = payment['attachment']
+        if 'attachment' in request.files:
+            file = request.files['attachment']
+            if file and file.filename:
+                import uuid as _uuid
+                ext = file.filename.rsplit('.', 1)[-1].lower()
+                if ext in ['jpg', 'jpeg', 'png', 'gif', 'pdf']:
+                    filename = 'pay_{}_{}'.format(_uuid.uuid4().hex[:12], file.filename)
+                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'payments', filename)
+                    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                    file.save(filepath)
+                    attachment = filename
+        db.execute(
+            "UPDATE payments SET contract_id=?, participant_id=?, amount=?, "
+            "payment_date=?, payment_method=?, payer=?, remark=?, attachment=? "
+            "WHERE id=? AND project_id=?",
+            (contract_id, participant_id, amount, payment_date, payment_method,
+              payer, remark, attachment, id, pid))
+        db.commit()
+        add_log(session['user_id'], session['username'], '修改付款',
+                '项目{}修改付款记录#{}: {}元'.format(pid, id, amount), request.remote_addr)
+        flash('付款记录修改成功', 'success')
+        return redirect(url_for('payment_list', pid=pid))
+    return render_template('payment_edit.html', project=project, payment=payment,
+                          contracts=contracts, participants=participants)
+
+
+
+@app.route('/project/<int:pid>/payment/<int:id>/delete_record', methods=['POST'])
+@login_required
+def payment_delete_record(pid, id):
+    db = get_db()
+    payment = db.execute("SELECT * FROM payments WHERE id=? AND project_id=?", (id, pid)).fetchone()
+    if not payment:
+        flash('记录不存在', 'error')
+        return redirect(url_for('payment_list', pid=pid))
+    db.execute("DELETE FROM payments WHERE id=? AND project_id=?", (id, pid))
+    db.commit()
+    add_log(session['user_id'], session['username'], '删除付款',
+            '项目{}删除付款记录#{}'.format(pid, id), request.remote_addr)
+    flash('付款记录已删除', 'success')
+    return redirect(url_for('payment_list', pid=pid))
+
+
+@app.route('/api/ocr/recognize', methods=['POST'])
+@login_required
+def ocr_recognize_payment():
+    if 'file' not in request.files:
+        return {'success': False, 'message': '未上传文件'}, 400
+    file = request.files['file']
+    if not file.filename:
+        return {'success': False, 'message': '未选择文件'}, 400
+    try:
+        import uuid as _uuid
+        ext = file.filename.rsplit('.', 1)[-1].lower()
+        temp_filename = 'ocr_temp_{}.{}'.format(_uuid.uuid4().hex[:8], ext)
+        temp_path = os.path.join(app.config['UPLOAD_FOLDER'], 'ocr', temp_filename)
+        os.makedirs(os.path.dirname(temp_path), exist_ok=True)
+        file.save(temp_path)
+        from ocr_utils import recognize_payment_info
+        result = recognize_payment_info(temp_path)
+        try:
+            os.remove(temp_path)
+        except:
+            pass
+        return {'success': True, 'data': result}
+    except ImportError:
+        return {'success': False, 'message': 'OCR模块未安装，请安装相关依赖'}, 500
+    except Exception as e:
+        return {'success': False, 'message': '识别失败: {}'.format(str(e))}, 500
+
+
+@app.route('/project/<int:pid>/payment/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def payment_edit(pid, id):
+    """编辑付款记录"""
+    db = get_db()
+    pay = db.execute("SELECT * FROM payments WHERE id=? AND project_id=?", (id, pid)).fetchone()
+    if not pay:
+        flash('付款记录不存在', 'danger')
         return redirect(url_for('project_detail', pid=pid))
+
+    if request.method == 'POST':
+        contract_id = request.form.get('contract_id') or None
+        participant_id = request.form.get('participant_id') or None
+        payment_no = request.form.get('payment_no', '').strip()
+        amount = float(request.form.get('amount', 0) or 0)
+        payment_date = request.form.get('payment_date', '')
+        payment_method = request.form.get('payment_method', '')
+        payer = request.form.get('payer', '')
+        remark = request.form.get('remark', '')
+
+        # 处理附件上传
+        attachment = pay['attachment']
+        if 'attachment' in request.files:
+            file = request.files['attachment']
+            if file.filename:
+                import uuid
+                filename = f"payment_{uuid.uuid4().hex[:8]}_{file.filename}"
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+                attachment = filename
+
+        db.execute(
+            """UPDATE payments SET contract_id=?, participant_id=?, payment_no=?, amount=?,
+               payment_date=?, payment_method=?, payer=?, remark=?, attachment=? WHERE id=?""",
+            (contract_id, participant_id, payment_no, amount, payment_date,
+             payment_method, payer, remark, attachment, id)
+        )
+        db.commit()
+        add_log(session['user_id'], session['username'], '修改付款',
+                f'项目{pid}修改付款记录{id}: {payment_no} {amount}元', request.remote_addr)
+        flash('付款记录修改成功', 'success')
+        return redirect(url_for('project_detail', pid=pid))
+
+    contracts = db.execute(
+        "SELECT * FROM contracts WHERE project_id=? AND contract_type='支出合同'", (pid,)
+    ).fetchall()
+    participants = db.execute("""
+        SELECT p.* FROM participants p
+        JOIN project_participants pp ON p.id = pp.participant_id
+        WHERE pp.project_id=?
+    """, (pid,)).fetchall()
+    project = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+    return render_template('payment_edit.html', pay=pay, contracts=contracts, 
+                           participants=participants, project=project)
+
+
+@app.route('/project/<int:pid>/payment/<int:id>/delete', methods=['POST'])
+@login_required
+def payment_delete(pid, id):
+    """删除付款记录"""
+    db = get_db()
+    pay = db.execute("SELECT * FROM payments WHERE id=? AND project_id=?", (id, pid)).fetchone()
+    if not pay:
+        flash('付款记录不存在', 'danger')
+        return redirect(url_for('project_detail', pid=pid))
+    
+    db.execute("DELETE FROM payments WHERE id=?", (id,))
+    db.commit()
+    add_log(session['user_id'], session['username'], '删除付款',
+            f'项目{pid}删除付款记录{id}: {pay["payment_no"]} {pay["amount"]}元', request.remote_addr)
+    flash('付款记录已删除', 'success')
+    return redirect(url_for('project_detail', pid=pid))
+
+
+@app.route('/api/ocr/recognize', methods=['POST'])
+@login_required
+def ocr_recognize():
+    """OCR识别接口 - 从图片中识别付款信息"""
+    if 'file' not in request.files:
+        return {'success': False, 'message': '未上传文件'}, 400
+    
+    file = request.files['file']
+    if not file.filename:
+        return {'success': False, 'message': '未选择文件'}, 400
+    
+    try:
+        # 保存临时文件
+        import uuid
+        filename = f"ocr_{uuid.uuid4().hex[:8]}_{file.filename}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        # 调用OCR识别
+        from ocr_utils import recognize_payment_info
+        result = recognize_payment_info(filepath)
+        
+        return {'success': True, 'data': result, 'filename': filename}
+    except Exception as e:
+        return {'success': False, 'message': str(e)}, 500
+
 
     return render_template('payment_form.html', pid=pid, contracts=contracts, participants=participants, now=datetime.now())
 
@@ -2429,6 +2790,11 @@ def category_edit(cid):
 
 
 # ==================== 路由：账号管理 ====================
+
+@app.route('/account/manage')
+@login_required
+def account_manage_redirect():
+    return redirect(url_for('account_manage'))
 
 @app.route('/account')
 @login_required
@@ -3310,7 +3676,7 @@ def portal_deliveries():
             ORDER BY so.created_at DESC""",
         fparams,
     ).fetchall()
-    return render_template('portal_deliveries.html', deliveries=deliveries)
+    return render_template('portal_deliveries.html', deliveries=deliveries, total_amount=0)
 
 
 @app.route('/portal/delivery/<int:id>')
@@ -3367,7 +3733,7 @@ def portal_messages():
         f"SELECT * FROM client_messages WHERE client_id IN ({ph}) ORDER BY created_at DESC",
         scope_ids,
     ).fetchall()
-    return render_template('portal_messages.html', messages=messages)
+    return render_template('portal_messages.html', messages=messages, unread_count=session.get("unread_count", 0))
 
 
 @app.route('/portal/message/<int:id>/read')
@@ -4348,6 +4714,43 @@ def admin_client_account_approve(id):
     return _redirect_collab_user_mgmt('accounts')
 
 
+
+@app.route('/admin/login_as/<int:user_id>')
+@login_required
+def admin_login_as(user_id):
+    """管理员以其他用户身份登录"""
+    # Only allow admin users to use this feature
+    if session.get('role') not in ('admin', 'superadmin'):
+        flash('权限不足', 'error')
+        return redirect(url_for('dashboard'))
+
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    if not user:
+        flash('用户不存在', 'error')
+        return redirect(url_for('account_manage'))
+
+    # Save original admin info in session
+    session['original_user_id'] = session.get('user_id')
+    session['original_username'] = session.get('username')
+
+    # Switch to target user
+    session['user_id'] = user['id']
+    session['username'] = user['username']
+    session['role'] = user['role']
+
+    add_log(session.get('original_user_id', 0), session.get('original_username', 'admin'), '代登录',
+            f'管理员以{user["username"]}身份登录', request.remote_addr)
+
+    flash(f'已切换到用户: {user["username"]}', 'success')
+
+    # Redirect based on user role
+    if user['role'] == 'client_portal':
+        return redirect(url_for('portal_dashboard'))
+    else:
+        return redirect(url_for('dashboard'))
+
+
 @app.route('/admin/client-accounts/<int:id>/reject')
 @login_required
 @module_required(MODULE_CLIENT_PORTAL)
@@ -4724,7 +5127,11 @@ def _replace_purchase_items(db, purchase_id):
     quantities = request.form.getlist('quantity[]')
     prices = request.form.getlist('unit_price[]')
 
+    # 先清理 transport_records 中的引用（解除外键约束）
+    db.execute("UPDATE transport_records SET purchase_item_id=NULL WHERE purchase_item_id IN (SELECT id FROM purchase_items WHERE purchase_id=?)", (purchase_id,))
+    # 再删除 purchase_items
     db.execute("DELETE FROM purchase_items WHERE purchase_id=?", (purchase_id,))
+
     item_cols = _table_columns(db, 'purchase_items')
     for idx, name in enumerate(item_names):
         name = (name or '').strip()
@@ -4770,7 +5177,9 @@ def purchase_list():
                     (SELECT COUNT(DISTINCT tpi.transport_id) 
                      FROM transport_purchase_items tpi 
                      JOIN purchase_items pi ON tpi.purchase_item_id = pi.id 
-                     WHERE pi.purchase_id = po.id) as transport_count
+                     WHERE pi.purchase_id = po.id) as transport_count,
+                    COALESCE(po.total_qty, (SELECT COALESCE(SUM(pi2.quantity), 0) FROM purchase_items pi2 WHERE pi2.purchase_id = po.id)) as total_qty,
+                    COALESCE(po.total_amount, (SELECT COALESCE(SUM(pi2.amount), 0) FROM purchase_items pi2 WHERE pi2.purchase_id = po.id)) as total_amount_calc
              FROM purchase_orders po
              LEFT JOIN projects p ON po.project_id = p.id
              LEFT JOIN contracts c ON po.contract_id = c.id
@@ -5024,6 +5433,7 @@ def api_purchase_item_add(purchase_id=None):
 
     if purchase_id is None:
         purchase_id = payload.get('purchase_id')
+    sales_order_id = payload.get('sales_order_id')
     try:
         purchase_id = int(purchase_id)
     except (TypeError, ValueError):
@@ -5059,10 +5469,14 @@ def api_purchase_item_add(purchase_id=None):
         "SELECT COALESCE(SUM(amount), 0) FROM purchase_items WHERE purchase_id=?",
         (purchase_id,),
     ).fetchone()[0]
-    db.execute("UPDATE purchase_orders SET total_amount=? WHERE id=?", (total, purchase_id))
+    total_qty = db.execute(
+        "SELECT COALESCE(SUM(quantity), 0) FROM purchase_items WHERE purchase_id=?",
+        (purchase_id,),
+    ).fetchone()[0]
+    db.execute("UPDATE purchase_orders SET total_amount=?, total_qty=? WHERE id=?", (total, total_qty, purchase_id))
     db.commit()
 
-    return jsonify({'success': True, 'item_id': item_id, 'amount': amount, 'total': total})
+    return jsonify({'success': True, 'item_id': item_id, 'amount': amount, 'total': total, 'total_qty': total_qty})
 
 
 @app.route('/api/purchase/item/<int:item_id>/edit', methods=['POST'])
@@ -5088,9 +5502,10 @@ def api_purchase_item_edit(item_id):
                   WHERE id=?""", (item_name, specification, unit, quantity, unit_price, amount, item_id))
 
     total = db.execute("SELECT COALESCE(SUM(amount), 0) FROM purchase_items WHERE purchase_id=?", (item['purchase_id'],)).fetchone()[0]
-    db.execute("UPDATE purchase_orders SET total_amount=? WHERE id=?", (total, item['purchase_id']))
+    total_qty = db.execute("SELECT COALESCE(SUM(quantity), 0) FROM purchase_items WHERE purchase_id=?", (item['purchase_id'],)).fetchone()[0]
+    db.execute("UPDATE purchase_orders SET total_amount=?, total_qty=? WHERE id=?", (total, total_qty, item['purchase_id']))
     db.commit()
-    return jsonify({'success': True, 'amount': amount, 'total': total})
+    return jsonify({'success': True, 'amount': amount, 'total': total, 'total_qty': total_qty})
 
 
 @app.route('/api/purchase/item/<int:item_id>/delete', methods=['POST'])
@@ -5107,9 +5522,10 @@ def api_purchase_item_delete(item_id):
     db.execute("DELETE FROM purchase_items WHERE id=?", (item_id,))
 
     total = db.execute("SELECT COALESCE(SUM(amount), 0) FROM purchase_items WHERE purchase_id=?", (purchase_id,)).fetchone()[0]
-    db.execute("UPDATE purchase_orders SET total_amount=? WHERE id=?", (total, purchase_id))
+    total_qty = db.execute("SELECT COALESCE(SUM(quantity), 0) FROM purchase_items WHERE purchase_id=?", (purchase_id,)).fetchone()[0]
+    db.execute("UPDATE purchase_orders SET total_amount=?, total_qty=? WHERE id=?", (total, total_qty, purchase_id))
     db.commit()
-    return jsonify({'success': True, 'total': total})
+    return jsonify({'success': True, 'total': total, 'total_qty': total_qty})
 
 
 @app.route('/purchase/<int:purchase_id>/item/import', methods=['GET', 'POST'])
@@ -5253,7 +5669,11 @@ def sales_order_list():
     status = request.args.get('status', '')
     keyword = request.args.get('keyword', '')
 
-    sql = """SELECT so.*, p.name as project_name, c.contract_name
+    customer = request.args.get('customer', '')
+
+    sql = """SELECT so.*, p.name as project_name, c.contract_name,
+             so.total_quantity as total_qty,
+             (SELECT COUNT(*) FROM sales_transport_records str WHERE str.order_id = so.id) as transport_count
              FROM sales_orders so
              LEFT JOIN projects p ON so.project_id = p.id
              LEFT JOIN contracts c ON so.contract_id = c.id
@@ -5266,6 +5686,9 @@ def sales_order_list():
     if status:
         sql += " AND so.status = ?"
         params.append(status)
+    if customer:
+        sql += " AND so.customer_name LIKE ?"
+        params.append(f'%{customer}%')
     if keyword:
         sql += " AND (so.order_no LIKE ? OR so.customer_name LIKE ?)"
         params.extend([f'%{keyword}%', f'%{keyword}%'])
@@ -5273,7 +5696,7 @@ def sales_order_list():
     sql += " ORDER BY so.created_at DESC"
     orders = db.execute(sql, params).fetchall()
     projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
-    filters = {'project_id': project_id, 'status': status, 'keyword': keyword}
+    filters = {'project_id': project_id, 'status': status, 'keyword': keyword, 'customer': customer}
     return render_template('sales_order_list.html', orders=orders, projects=projects,
                            filters=filters)
 
@@ -5362,8 +5785,20 @@ def sales_order_detail(id):
         transport_list = db.execute(f"""SELECT tr.* FROM transport_records tr
                                          WHERE tr.id IN ({tid_str}) ORDER BY tr.transport_date""").fetchall()
 
+    # 计算汇总数据
+    total_item_qty = sum(float(i['quantity'] or 0) for i in items)
+    total_item_amount = sum(float(i['amount'] or 0) for i in items)
+    total_transport_qty = sum(float(t['quantity'] or 0) for t in transport_list)
+    total_freight = sum(float(t['freight_amount'] or 0) for t in transport_list)
+    total_linked_qty = sum(float(i['linked_quantity'] or 0) for i in items)
+
     return render_template('sales_order_detail.html', order=order, items=items,
-                           transport_list=transport_list)
+                           transport_list=transport_list,
+                           total_item_qty=total_item_qty,
+                           total_item_amount=total_item_amount,
+                           total_transport_qty=total_transport_qty,
+                           total_freight=total_freight,
+                           total_linked_qty=total_linked_qty)
 
 
 @app.route('/sales/order/<int:id>/edit', methods=['GET', 'POST'])
@@ -5435,30 +5870,48 @@ def sales_order_delete(id):
 def api_sales_order_item_add():
     """API添加销售明细"""
     db = get_db()
-    data = request.get_json() or request.form
-    sales_order_id = data.get('sales_order_id', type=int)
-    item_name = data.get('item_name', '')
-    specification = data.get('specification', '')
-    unit = data.get('unit', '')
-    quantity = data.get('quantity', type=float) or 0
-    unit_price = data.get('unit_price', type=float) or 0
-    amount = round(quantity * unit_price, 2)
+    try:
+        if request.is_json:
+            data = request.get_json()
+        else:
+            data = request.form
 
-    max_order = db.execute("SELECT COALESCE(MAX(sort_order), 0) FROM sales_order_items WHERE sales_order_id=?", (sales_order_id,)).fetchone()[0]
+        # 兼容前端发送的 order_id 和 sales_order_id
+        sales_order_id = data.get('sales_order_id') or data.get('order_id')
+        if sales_order_id:
+            sales_order_id = int(sales_order_id)
+        else:
+            return jsonify({'success': False, 'message': '缺少订单ID'}), 400
 
-    db.execute("""INSERT INTO sales_order_items (sales_order_id, item_name, specification, unit, quantity, unit_price, amount, sort_order)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-               (sales_order_id, item_name, specification, unit, quantity, unit_price, amount, max_order + 1))
+        item_name = data.get('item_name', '')
+        specification = data.get('specification', '')
+        unit = data.get('unit', '吨')
+        quantity = float(data.get('quantity') or 0)
+        unit_price = float(data.get('unit_price') or 0)
+        amount = round(quantity * unit_price, 2)
 
-    total_amount = db.execute("SELECT COALESCE(SUM(amount), 0) FROM sales_order_items WHERE sales_order_id=?", (sales_order_id,)).fetchone()[0]
-    total_quantity = db.execute("SELECT COALESCE(SUM(quantity), 0) FROM sales_order_items WHERE sales_order_id=?", (sales_order_id,)).fetchone()[0]
-    db.execute("UPDATE sales_orders SET total_amount=?, total_quantity=? WHERE id=?", (total_amount, total_quantity, sales_order_id))
-    db.commit()
+        # 验证订单存在
+        order = db.execute("SELECT id FROM sales_orders WHERE id=?", (sales_order_id,)).fetchone()
+        if not order:
+            return jsonify({'success': False, 'message': '销售单不存在: id=' + str(sales_order_id)}), 404
 
-    item_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-    return jsonify({'success': True, 'item_id': item_id, 'amount': amount,
-                    'total_amount': total_amount, 'total_quantity': total_quantity})
+        max_sort = db.execute("SELECT COALESCE(MAX(sort_order), 0) FROM sales_order_items WHERE sales_order_id=?", (sales_order_id,)).fetchone()[0]
 
+        db.execute("""INSERT INTO sales_order_items (order_id, sales_order_id, item_name, specification, unit, quantity, unit_price, amount, sort_order)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (sales_order_id, sales_order_id, item_name, specification, unit, quantity, unit_price, amount, max_sort + 1))
+
+        total_amount = db.execute("SELECT COALESCE(SUM(amount), 0) FROM sales_order_items WHERE sales_order_id=?", (sales_order_id,)).fetchone()[0]
+        total_quantity = db.execute("SELECT COALESCE(SUM(quantity), 0) FROM sales_order_items WHERE sales_order_id=?", (sales_order_id,)).fetchone()[0]
+        db.execute("UPDATE sales_orders SET total_amount=?, total_quantity=? WHERE id=?", (total_amount, total_quantity, sales_order_id))
+        db.commit()
+
+        item_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return jsonify({'success': True, 'item_id': item_id, 'amount': amount,
+                        'total_amount': total_amount, 'total_quantity': total_quantity})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/sales/order/item/<int:item_id>/edit', methods=['POST'])
 @login_required
@@ -5545,9 +5998,9 @@ def sales_order_item_import(order_id):
                 amount = round(quantity * unit_price, 2)
                 max_order += 1
 
-                db.execute("""INSERT INTO sales_order_items (sales_order_id, item_name, specification, unit, quantity, unit_price, amount, sort_order)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                           (order_id, item_name, specification, unit, quantity, unit_price, amount, max_order))
+                db.execute("""INSERT INTO sales_order_items (order_id, sales_order_id, item_name, specification, unit, quantity, unit_price, amount, sort_order)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           (order_id, order_id, item_name, specification, unit, quantity, unit_price, amount, max_order))
                 count += 1
 
             total_amount = db.execute("SELECT COALESCE(SUM(amount), 0) FROM sales_order_items WHERE sales_order_id=?", (order_id,)).fetchone()[0]
@@ -5865,8 +6318,8 @@ def api_transport_get(id):
     return jsonify({'success': True, 'data': result})
 
 
-@app.route('/api/transport/save', methods=['POST'])
-@login_required
+
+
 def api_transport_save():
     """保存运输记录（按实际表结构动态写入，兼容采购明细关联）"""
     db = get_db()
@@ -5884,6 +6337,7 @@ def api_transport_save():
         record_id = None
 
     purchase_id = payload.get('purchase_id')
+    sales_order_id = payload.get('sales_order_id')
     try:
         purchase_id = int(purchase_id) if purchase_id not in (None, '', 'null') else None
     except (TypeError, ValueError):
@@ -5909,6 +6363,7 @@ def api_transport_save():
 
     fields = {
         'purchase_id': purchase_id,
+        'sales_order_id': sales_order_id,
         'batch_no': _val('batch_no'),
         'vehicle_no': _val('vehicle_no'),
         'driver_name': _val('driver_name'),
@@ -6340,15 +6795,56 @@ def invoice_add():
 def base_data():
     """基础资料首页"""
     db = get_db()
+    # 各模块数据量
+    participant_count = db.execute("SELECT COUNT(*) FROM participants").fetchone()[0]
     supplier_count = db.execute("SELECT COUNT(*) FROM suppliers WHERE is_active=1").fetchone()[0]
     customer_count = db.execute("SELECT COUNT(*) FROM customers WHERE is_active=1").fetchone()[0]
     category_count = db.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
     payment_type_count = db.execute("SELECT COUNT(*) FROM payment_types").fetchone()[0]
+
+    # 参与人角色分布
+    participant_roles = db.execute("""
+        SELECT role, COUNT(*) as cnt FROM participants GROUP BY role ORDER BY cnt DESC
+    """).fetchall()
+
+    # 参与人投资汇总
+    total_investment = db.execute("SELECT COALESCE(SUM(amount),0) FROM investments").fetchone()[0]
+
+    # 最近添加的参与人
+    recent_participants = db.execute("SELECT id, name, role, created_at FROM participants ORDER BY created_at DESC LIMIT 5").fetchall()
+
+    # 最近添加的供应商
+    recent_suppliers = db.execute("SELECT id, name, created_at FROM suppliers WHERE is_active=1 ORDER BY created_at DESC LIMIT 3").fetchall()
+
+    # 最近添加的客户
+    recent_customers = db.execute("SELECT id, name, created_at FROM customers WHERE is_active=1 ORDER BY created_at DESC LIMIT 3").fetchall()
+
+    # 最近操作日志
+    recent_logs = db.execute("SELECT action, username, created_at FROM logs ORDER BY created_at DESC LIMIT 8").fetchall()
+
+    # 投资人统计 - 使用正确的表
+    investor_count = db.execute("SELECT COUNT(*) FROM participants WHERE role='investor'").fetchone()[0]
+    investment_count = db.execute("SELECT COUNT(*) FROM investments").fetchone()[0]
+    total_fund_in = db.execute("SELECT COALESCE(SUM(amount),0) FROM investments WHERE amount > 0").fetchone()[0]
+    total_fund_out = db.execute("SELECT COALESCE(ABS(SUM(amount)),0) FROM investments WHERE amount < 0").fetchone()[0]
+
     return render_template('base_data.html',
+                           participant_count=participant_count,
                            supplier_count=supplier_count,
                            customer_count=customer_count,
                            category_count=category_count,
-                           payment_type_count=payment_type_count)
+                           payment_type_count=payment_type_count,
+                           participant_roles=participant_roles,
+                           total_investment=total_investment,
+                           recent_participants=recent_participants,
+                           recent_suppliers=recent_suppliers,
+                           recent_customers=recent_customers,
+                           recent_logs=recent_logs,
+                           now=datetime.now(),
+                           investor_count=investor_count,
+                           fund_count=investment_count,
+                           total_fund_in=total_fund_in,
+                           total_fund_out=total_fund_out)
 
 
 @app.route('/supplier/list')
@@ -6942,6 +7438,120 @@ def inject_public_urls():
 from reports_routes import register_reports_blueprint
 register_reports_blueprint(app, get_db)
 
+# ==================== 路由：运输记录图片OCR识别 ====================
+
+@app.route('/api/sales/order/<int:order_id>/ocr_transport', methods=['POST'])
+@login_required
+def api_sales_ocr_transport(order_id):
+    """识别运输记录截图，返回识别结果供确认"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': '请上传图片'}), 400
+
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'success': False, 'message': '未选择文件'}), 400
+
+    try:
+        import uuid as _uuid
+        ext = file.filename.rsplit('.', 1)[-1].lower()
+        if ext not in ['jpg', 'jpeg', 'png', 'bmp', 'gif']:
+            return jsonify({'success': False, 'message': '仅支持图片格式'}), 400
+
+        filename = 'ocr_transport_{}_{}'.format(_uuid.uuid4().hex[:8], file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'ocr', filename)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        file.save(filepath)
+
+        from ocr_utils import recognize_logistics_screenshot
+        records = recognize_logistics_screenshot(filepath)
+
+        # Store results in session for confirmation
+        session['ocr_transport_results'] = records
+        session['ocr_transport_image'] = filename
+
+        return jsonify({
+            'success': True,
+            'records': records,
+            'count': len(records),
+            'image': filename
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': '识别失败: {}'.format(str(e))}), 500
+
+
+@app.route('/sales/order/<int:order_id>/ocr_confirm', methods=['GET', 'POST'])
+@login_required
+def sales_order_ocr_confirm(order_id):
+    """确认OCR识别结果并导入到出库明细"""
+    db = get_db()
+    order = db.execute("SELECT * FROM sales_orders WHERE id=?", (order_id,)).fetchone()
+    if not order:
+        flash('出库单不存在', 'danger')
+        return redirect(url_for('sales_order_list'))
+
+    records = session.get('ocr_transport_results', [])
+    image_file = session.get('ocr_transport_image', '')
+
+    if request.method == 'POST':
+        # Get selected records from form
+        selected = request.form.getlist('selected_items')
+        item_name = request.form.get('item_name', '运输出库')
+        unit_price = float(request.form.get('unit_price', 0) or 0)
+
+        count = 0
+        max_sort = db.execute("SELECT COALESCE(MAX(sort_order), 0) FROM sales_order_items WHERE sales_order_id=?", (order_id,)).fetchone()[0]
+
+        for idx in selected:
+            idx = int(idx)
+            if idx < len(records):
+                rec = records[idx]
+                max_sort += 1
+                quantity = rec.get('net_weight', 0)
+                amount = round(quantity * unit_price, 2)
+
+                # 品名 = 车牌号
+                name = rec.get('vehicle_no', item_name)
+                spec = rec.get('dispatch_time', '')
+
+                db.execute("""INSERT INTO sales_order_items (order_id, sales_order_id, item_name, specification, unit, quantity, unit_price, amount, sort_order)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           (order_id, order_id, name, spec, rec.get('unit', '吨'),
+                            quantity, unit_price, amount, max_sort))
+
+                # 同时添加运输记录
+                db.execute("""INSERT INTO transport_records (sales_order_id, batch_no, vehicle_no, transport_date, quantity, remark, status)
+                              VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                           (order_id, '第{}车'.format(count+1), rec.get('vehicle_no', ''),
+                            rec.get('dispatch_time', '')[:10] if rec.get('dispatch_time') else None,
+                            quantity, 'OCR导入', 'completed'))
+                count += 1
+
+        if count > 0:
+            # 更新订单汇总
+            total_amount = db.execute("SELECT COALESCE(SUM(amount), 0) FROM sales_order_items WHERE sales_order_id=?", (order_id,)).fetchone()[0]
+            total_quantity = db.execute("SELECT COALESCE(SUM(quantity), 0) FROM sales_order_items WHERE sales_order_id=?", (order_id,)).fetchone()[0]
+            db.execute("UPDATE sales_orders SET total_amount=?, total_quantity=? WHERE id=?", (total_amount, total_quantity, order_id))
+            db.commit()
+
+            add_log(session['user_id'], session['username'], 'OCR导入',
+                    '出库单{} OCR导入{}条运输记录'.format(order_id, count), request.remote_addr)
+            flash('成功导入{}条运输记录'.format(count), 'success')
+        else:
+            flash('未选择任何记录', 'warning')
+
+        # Clear session
+        session.pop('ocr_transport_results', None)
+        session.pop('ocr_transport_image', None)
+
+        return redirect(url_for('sales_order_detail', order_id=order_id))
+
+    return render_template('sales_order_ocr_confirm.html',
+                          order=order, records=records, image_file=image_file)
+                          
+
+
+
+
 from route_extensions import register_missing_routes
 register_missing_routes(app, {
     'login_required': login_required,
@@ -6960,6 +7570,28 @@ register_missing_routes(app, {
     'uuid': uuid,
     'recalc_investment_ratios': recalc_investment_ratios,
 })
+
+@app.route('/api/transport/save', methods=['POST'])
+@login_required
+def api_transport_save():
+    db = get_db()
+    payload = request.get_json(silent=True)
+    if not payload:
+        return jsonify({'success': False, 'message': '无效数据'}), 400
+    try:
+        fields = {k: v for k, v in payload.items() if v != '' and v is not None}
+        if 'id' in fields and fields['id']:
+            db.execute("UPDATE transport_records SET " + ','.join(f"{k}=?" for k in fields if k != 'id') + " WHERE id=?", 
+                       [fields[k] for k in fields if k != 'id'] + [fields['id']])
+        else:
+            fields.pop('id', None)
+            cols = list(fields.keys())
+            db.execute("INSERT INTO transport_records (" + ','.join(cols) + ") VALUES (" + ','.join(['?']*len(cols)) + ")", list(fields.values()))
+        db.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 if __name__ == '__main__':

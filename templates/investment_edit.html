@@ -1,0 +1,81 @@
+{% extends "nav_base.html" %}
+{% block title %}编辑投资记录 - 项目费用归集系统{% endblock %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="{{ url_for('project_detail', pid=project.id) }}" class="text-muted me-2">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <h4 class="d-inline">编辑投资记录</h4>
+        </div>
+    </div>
+
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <i class="bi bi-pencil-square me-2"></i>修改投资信息
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label class="form-label">参与人 <span class="text-danger">*</span></label>
+                            <select name="participant_id" class="form-select" required>
+                                {% for par in participants %}
+                                <option value="{{ par.id }}" {% if par.id == inv.participant_id %}selected{% endif %}>
+                                    {{ par.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">投资日期 <span class="text-danger">*</span></label>
+                            <input type="date" name="invest_date" class="form-control"
+                                   value="{{ inv.invest_date }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">投资金额 <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text">¥</span>
+                                <input type="number" name="amount" class="form-control" step="0.01"
+                                       value="{{ inv.amount }}" required>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">投资类型</label>
+                            <select name="invest_type" class="form-select">
+                                <option value="启动资金" {% if inv.invest_type == '启动资金' %}selected{% endif %}>启动资金</option>
+                                <option value="追加投资" {% if inv.invest_type == '追加投资' %}selected{% endif %}>追加投资</option>
+                                <option value="借款" {% if inv.invest_type == '借款' %}selected{% endif %}>借款</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">支付方式</label>
+                            <select name="payment_method" class="form-select">
+                                <option value="">-- 选择 --</option>
+                                <option value="微信" {% if inv.payment_method == '微信' %}selected{% endif %}>微信</option>
+                                <option value="支付宝" {% if inv.payment_method == '支付宝' %}selected{% endif %}>支付宝</option>
+                                <option value="银行卡" {% if inv.payment_method == '银行卡' %}selected{% endif %}>银行卡</option>
+                                <option value="现金" {% if inv.payment_method == '现金' %}selected{% endif %}>现金</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">备注</label>
+                            <textarea name="remark" class="form-control" rows="3">{{ inv.remark or '' }}</textarea>
+                        </div>
+                        <div class="d-flex justify-content-end gap-2">
+                            <a href="{{ url_for('project_detail', pid=project.id) }}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle me-1"></i>取消
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle me-1"></i>保存修改
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
