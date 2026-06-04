@@ -1,53 +1,131 @@
 ﻿{% extends "nav_base.html" %}
-{% block title %}备份管理 - 工程项目投资采运销分红系统{% endblock %}
+{% block title %}备份管理 - {{ app_display_name }}{% endblock %}
 {% block content %}
 <div class="container-fluid px-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h4><i class="bi bi-cloud-arrow-up"></i> 备份管理</h4>
-        <div class="d-flex gap-2">
-            <a href="{{ url_for('backup_manual') }}" class="btn btn-primary">
-                <i class="bi bi-download"></i> 手动备份
-            </a>
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <h4 class="mb-0"><i class="bi bi-cloud-arrow-up"></i> 备份管理</h4>
+        <form method="POST" action="{{ url_for('backup_manual') }}" class="d-inline">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> 立即手动备份
+            </button>
+        </form>
+    </div>
+
+    <div class="alert alert-info mb-3">
+        <i class="bi bi-info-circle"></i>
+        系统每天 <strong>02:00</strong> 自动备份数据库至 <code>backups/</code> 目录。
+        手动备份完成后可在下方列表中<strong>查看记录并下载</strong>。
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card h-100 border-primary border-opacity-25">
+                <div class="card-body py-3">
+                    <div class="text-muted small">备份文件总数</div>
+                    <div class="h4 mb-0">{{ backup_count }} 个</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body py-3">
+                    <div class="text-muted small">占用空间合计</div>
+                    <div class="h4 mb-0">{{ total_size_mb }} MB</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body py-3">
+                    <div class="text-muted small">最近备份</div>
+                    <div class="h6 mb-0 text-truncate">
+                        {% if backups %}{{ backups[0].time }}{% else %}暂无{% endif %}
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <div class="alert alert-info">
-        <i class="bi bi-info-circle"></i>
-        系统每天凌晨 2:00 自动备份数据库。你也可以点击"手动备份"立即创建备份。
+    <div class="card mb-4 border-warning border-opacity-50">
+        <div class="card-header py-2 bg-warning bg-opacity-10">
+            <h6 class="mb-0"><i class="bi bi-calendar-range"></i> 按时间段批量删除</h6>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                按备份文件的<strong>修改时间</strong>筛选（含起止日期当天）。
+                删除后不可恢复，请确认该时段备份已不再需要。
+            </p>
+            <form method="POST" action="{{ url_for('backup_batch_delete') }}"
+                  class="row g-3 align-items-end"
+                  onsubmit="return confirmBatchDeleteBackup()">
+                <div class="col-md-3">
+                    <label for="date_from" class="form-label">开始日期</label>
+                    <input type="date" class="form-control" id="date_from" name="date_from"
+                           value="{{ default_date_from }}" required>
+                </div>
+                <div class="col-md-3">
+                    <label for="date_to" class="form-label">结束日期</label>
+                    <input type="date" class="form-control" id="date_to" name="date_to"
+                           value="{{ default_date_to }}" required>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-warning w-100">
+                        <i class="bi bi-trash"></i> 批量删除该时段备份
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <div class="card">
-        <div class="card-header">
-            <h6 class="mb-0"><i class="bi bi-archive"></i> 备份文件列表</h6>
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-archive"></i> 备份记录</h6>
+            {% if backups %}
+            <span class="badge bg-secondary">{{ backup_count }} 条记录</span>
+            {% endif %}
         </div>
         <div class="card-body p-0">
             {% if backups %}
             <div class="table-responsive">
-                <table class="table table-hover mb-0">
+                <table class="table table-hover mb-0" id="backupTable">
                     <thead class="table-light">
                         <tr>
                             <th>文件名</th>
-                            <th>大小(KB)</th>
+                            <th>类型</th>
+                            <th class="text-end">大小</th>
                             <th>备份时间</th>
-                            <th>操作</th>
+                            <th class="text-center" style="min-width:160px">操作</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for b in backups %}
-                        <tr>
+                        <tr {% if highlight == b.name %}id="backup-highlight-row"{% endif %}
+                            class="{% if highlight == b.name %}table-success{% endif %}">
                             <td>
-                                <i class="bi bi-file-earmark-zip"></i> {{ b.name }}
+                                <i class="bi bi-file-earmark-binary text-primary"></i>
+                                <code class="small">{{ b.name }}</code>
+                                {% if highlight == b.name %}
+                                <span class="badge bg-success ms-1">刚创建</span>
+                                {% endif %}
                             </td>
-                            <td>{{ b.size }}</td>
+                            <td><span class="badge bg-{{ b.kind_class }}">{{ b.kind }}</span></td>
+                            <td class="text-end">{{ b.size }} KB</td>
                             <td>{{ b.time }}</td>
-                            <td>
-                                <a href="{{ url_for('backup_download', filename=b.name) }}" class="btn btn-sm btn-outline-primary">
-                                    <i class="bi bi-download"></i> 下载
-                                </a>
-                                <a href="{{ url_for('backup_delete', filename=b.name) }}" class="btn btn-sm btn-outline-danger"
-                                   onclick="return confirm('确定删除此备份？')">
-                                    <i class="bi bi-trash"></i>
-                                </a>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{{ url_for('backup_download', filename=b.name) }}"
+                                       class="btn btn-outline-primary" title="下载到本地">
+                                        <i class="bi bi-download"></i> 下载
+                                    </a>
+                                    <form method="POST"
+                                          action="{{ url_for('backup_delete', filename=b.name) }}"
+                                          class="d-inline"
+                                          onsubmit="return confirm('确定删除备份 {{ b.name }}？')">
+                                        <button type="submit" class="btn btn-outline-danger" title="删除">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -55,9 +133,28 @@
                 </table>
             </div>
             {% else %}
-            <p class="text-muted text-center py-4">暂无备份文件</p>
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-inbox" style="font-size:3rem"></i>
+                <p class="mt-3 mb-2">暂无备份文件</p>
+                <p class="small">点击右上角「立即手动备份」创建第一份备份</p>
+            </div>
             {% endif %}
         </div>
     </div>
 </div>
+<script>
+function confirmBatchDeleteBackup() {
+    const from = document.getElementById('date_from').value;
+    const to = document.getElementById('date_to').value;
+    if (!from || !to) {
+        alert('请填写开始和结束日期');
+        return false;
+    }
+    return confirm('确定删除修改时间在 ' + from + ' 至 ' + to + ' 之间的所有备份文件吗？\n此操作不可恢复。');
+}
+document.addEventListener('DOMContentLoaded', function() {
+    const row = document.getElementById('backup-highlight-row');
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+</script>
 {% endblock %}

@@ -3629,57 +3629,180 @@ def data_clear():
 
 # ==================== 路由：备份管理 ====================
 
+def _backup_file_kind(filename):
+    """根据文件名判断备份类型标签。"""
+    if filename.startswith('auto_backup'):
+        return '自动', 'secondary'
+    if filename.startswith('pre_deploy'):
+        return '部署前', 'warning'
+    if filename.startswith('manual_') or filename.startswith('backup_'):
+        return '手动', 'primary'
+    if filename.endswith('.json'):
+        return '导出', 'info'
+    return '其他', 'dark'
+
+
+def _resolve_backup_filepath(filename):
+    """校验文件名并返回备份文件绝对路径，非法则返回 None。"""
+    if not filename or '..' in filename or '/' in filename or '\\' in filename:
+        return None
+    safe = secure_filename(filename)
+    if safe != filename:
+        return None
+    if not (safe.endswith('.db') or safe.endswith('.json')):
+        return None
+    backup_dir = os.path.realpath(app.config['BACKUP_DIR'])
+    fpath = os.path.realpath(os.path.join(app.config['BACKUP_DIR'], safe))
+    if not fpath.startswith(backup_dir + os.sep) and fpath != backup_dir:
+        return None
+    if not os.path.isfile(fpath):
+        return None
+    return fpath
+
+
+def _list_backup_records():
+    """扫描备份目录，返回按时间倒序的备份记录列表。"""
+    records = []
+    backup_dir = app.config['BACKUP_DIR']
+    if not os.path.isdir(backup_dir):
+        return records
+    for name in os.listdir(backup_dir):
+        if not (name.endswith('.db') or name.endswith('.json')):
+            continue
+        fpath = os.path.join(backup_dir, name)
+        if not os.path.isfile(fpath):
+            continue
+        stat = os.stat(fpath)
+        mtime = datetime.fromtimestamp(stat.st_mtime)
+        kind_label, kind_class = _backup_file_kind(name)
+        records.append({
+            'name': name,
+            'size': round(stat.st_size / 1024, 1),
+            'size_bytes': stat.st_size,
+            'time': mtime.strftime('%Y-%m-%d %H:%M:%S'),
+            'mtime': mtime,
+            'date': mtime.strftime('%Y-%m-%d'),
+            'kind': kind_label,
+            'kind_class': kind_class,
+        })
+    records.sort(key=lambda x: x['mtime'], reverse=True)
+    return records
+
+
+def _delete_backup_files_by_mtime(date_from, date_to):
+    """按备份文件修改日期（含起止日）批量删除。返回 (删除数量, 文件名列表)。"""
+    if not date_from or not date_to:
+        return 0, [], '请填写开始日期和结束日期'
+    try:
+        d0 = datetime.strptime(date_from, '%Y-%m-%d').date()
+        d1 = datetime.strptime(date_to, '%Y-%m-%d').date()
+    except ValueError:
+        return 0, [], '日期格式无效，请使用 YYYY-MM-DD'
+    if d0 > d1:
+        return 0, [], '开始日期不能晚于结束日期'
+
+    deleted = []
+    for rec in _list_backup_records():
+        fd = rec['mtime'].date()
+        if d0 <= fd <= d1:
+            fpath = _resolve_backup_filepath(rec['name'])
+            if fpath:
+                os.remove(fpath)
+                deleted.append(rec['name'])
+    return len(deleted), deleted, None
+
+
 @app.route('/backup')
 @login_required
-@admin_required
+@permission_required('backup.manage')
 def backup_manage():
-    backups = []
-    backup_dir = app.config['BACKUP_DIR']
-    if os.path.exists(backup_dir):
-        for f in sorted(os.listdir(backup_dir), reverse=True):
-            if f.endswith('.db') or f.endswith('.json'):
-                fpath = os.path.join(backup_dir, f)
-                stat = os.stat(fpath)
-                backups.append({
-                    'name': f,
-                    'size': round(stat.st_size / 1024, 1),
-                    'time': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                })
-    return render_template('backup.html', backups=backups)
+    backups = _list_backup_records()
+    total_size_mb = round(sum(r['size_bytes'] for r in backups) / 1024 / 1024, 2)
+    highlight = request.args.get('highlight', '').strip()
+    if highlight and not _resolve_backup_filepath(highlight):
+        highlight = ''
+    today = datetime.now().strftime('%Y-%m-%d')
+    month_start = datetime.now().replace(day=1).strftime('%Y-%m-%d')
+    return render_template(
+        'backup.html',
+        backups=backups,
+        backup_count=len(backups),
+        total_size_mb=total_size_mb,
+        highlight=highlight,
+        default_date_from=month_start,
+        default_date_to=today,
+    )
 
 
-@app.route('/backup/manual')
+@app.route('/backup/manual', methods=['POST'])
 @login_required
-@admin_required
+@permission_required('backup.manage')
 def backup_manual():
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    backup_file = os.path.join(app.config['BACKUP_DIR'], f'backup_{timestamp}.db')
-    shutil.copy2(app.config['DATABASE'], backup_file)
-    add_log(session['user_id'], session['username'], '手动备份', f'备份数据库: backup_{timestamp}.db', request.remote_addr)
-    flash('手动备份成功', 'success')
-    return redirect(url_for('backup_manage'))
+    filename = f'manual_backup_{timestamp}.db'
+    backup_file = os.path.join(app.config['BACKUP_DIR'], filename)
+    try:
+        shutil.copy2(app.config['DATABASE'], backup_file)
+    except OSError as e:
+        flash(f'备份失败：{e}', 'danger')
+        return redirect(url_for('backup_manage'))
+    add_log(
+        session['user_id'], session.get('username', ''), '手动备份',
+        f'备份数据库: {filename}', request.remote_addr,
+    )
+    flash(f'手动备份成功，文件：{filename}', 'success')
+    return redirect(url_for('backup_manage', highlight=filename))
 
 
 @app.route('/backup/download/<filename>')
 @login_required
-@admin_required
+@permission_required('backup.manage')
 def backup_download(filename):
-    filepath = os.path.join(app.config['BACKUP_DIR'], filename)
-    if os.path.exists(filepath):
-        return send_file(filepath, as_attachment=True)
-    flash('文件不存在', 'danger')
+    filepath = _resolve_backup_filepath(filename)
+    if not filepath:
+        flash('备份文件不存在或文件名无效', 'danger')
+        return redirect(url_for('backup_manage'))
+    return send_file(filepath, as_attachment=True, download_name=os.path.basename(filepath))
+
+
+@app.route('/backup/delete/<filename>', methods=['POST'])
+@login_required
+@permission_required('backup.manage')
+def backup_delete(filename):
+    filepath = _resolve_backup_filepath(filename)
+    if filepath:
+        os.remove(filepath)
+        add_log(
+            session['user_id'], session.get('username', ''), '删除备份',
+            f'删除备份文件: {filename}', request.remote_addr,
+        )
+        flash(f'已删除备份：{filename}', 'success')
+    else:
+        flash('备份文件不存在', 'warning')
     return redirect(url_for('backup_manage'))
 
 
-@app.route('/backup/delete/<filename>')
+@app.route('/backup/batch-delete', methods=['POST'])
 @login_required
-@admin_required
-def backup_delete(filename):
-    filepath = os.path.join(app.config['BACKUP_DIR'], filename)
-    if os.path.exists(filepath):
-        os.remove(filepath)
-        add_log(session['user_id'], session['username'], '删除备份', f'删除备份文件: {filename}', request.remote_addr)
-        flash('备份文件已删除', 'success')
+@permission_required('backup.manage')
+def backup_batch_delete():
+    """按时间段批量删除备份文件（以文件修改时间为准）。"""
+    date_from = (request.form.get('date_from') or '').strip()
+    date_to = (request.form.get('date_to') or '').strip()
+    count, names, err = _delete_backup_files_by_mtime(date_from, date_to)
+    if err:
+        flash(err, 'warning')
+        return redirect(url_for('backup_manage'))
+    if count:
+        preview = '、'.join(names[:8]) + ('…' if len(names) > 8 else '')
+        add_log(
+            session['user_id'], session.get('username', ''), '批量删除备份',
+            f'{date_from} ~ {date_to} 共 {count} 个: {preview}',
+            request.remote_addr,
+        )
+        flash(f'已删除 {count} 个备份文件（{date_from} 至 {date_to}）', 'success')
+    else:
+        flash(f'该时间段内没有可删除的备份文件（{date_from} 至 {date_to}）', 'info')
     return redirect(url_for('backup_manage'))
 
 
@@ -3719,6 +3842,7 @@ def do_scheduled_backup():
     try:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         backup_file = os.path.join(app.config['BACKUP_DIR'], f'auto_backup_{timestamp}.db')
+        os.makedirs(app.config['BACKUP_DIR'], exist_ok=True)
         shutil.copy2(app.config['DATABASE'], backup_file)
     except Exception:
         pass
@@ -5633,13 +5757,15 @@ def _fetch_purchase_transports(db, purchase_id):
 
 
 def _sales_order_item_filter_sql(db, alias='soi'):
-    """销售明细与出库单关联条件（兼容 order_id / sales_order_id）。"""
+    """销售明细与出库单关联条件（兼容 order_id / sales_order_id）。
+    alias 为 None 或空字符串时不加表前缀，供 DELETE/UPDATE 单表语句使用。"""
     cols = {r[1] for r in db.execute('PRAGMA table_info(sales_order_items)').fetchall()}
+    prefix = f'{alias}.' if alias else ''
     if 'sales_order_id' in cols and 'order_id' in cols:
-        return f'({alias}.sales_order_id = ? OR {alias}.order_id = ?)', 2
+        return f'({prefix}sales_order_id = ? OR {prefix}order_id = ?)', 2
     if 'sales_order_id' in cols:
-        return f'{alias}.sales_order_id = ?', 1
-    return f'{alias}.order_id = ?', 1
+        return f'{prefix}sales_order_id = ?', 1
+    return f'{prefix}order_id = ?', 1
 
 
 def _sales_order_item_filter_params(order_id, param_count):
@@ -6239,13 +6365,62 @@ def purchase_edit(id):
                            contracts=contracts, suppliers=suppliers, items=items)
 
 
+def _delete_purchase_cascade(db, purchase_id):
+    """删除采购单及关联运输、对账、明细。返回 (是否成功, 提示信息)。"""
+    purchase = db.execute(
+        'SELECT id, purchase_no, status FROM purchase_orders WHERE id=?', (purchase_id,)
+    ).fetchone()
+    if not purchase:
+        return False, '采购单不存在'
+    if not _purchase_is_draft(purchase['status']):
+        return False, '仅「草稿」状态的采购单可删除'
+
+    recon_cols = _table_columns(db, 'reconciliations')
+    if 'purchase_id' in recon_cols:
+        db.execute('DELETE FROM reconciliations WHERE purchase_id=?', (purchase_id,))
+
+    transport_ids = set()
+    for row in db.execute(
+        'SELECT id FROM transport_records WHERE purchase_id=?', (purchase_id,)
+    ).fetchall():
+        transport_ids.add(row['id'])
+    item_ids = [
+        r['id'] for r in db.execute(
+            'SELECT id FROM purchase_items WHERE purchase_id=?', (purchase_id,)
+        ).fetchall()
+    ]
+    if item_ids:
+        ph = ','.join('?' * len(item_ids))
+        for row in db.execute(
+            f"""SELECT DISTINCT tpi.transport_id FROM transport_purchase_items tpi
+                WHERE tpi.purchase_item_id IN ({ph})""",
+            item_ids,
+        ).fetchall():
+            if row['transport_id']:
+                transport_ids.add(row['transport_id'])
+
+    for tid in transport_ids:
+        db.execute('DELETE FROM transport_purchase_items WHERE transport_id=?', (tid,))
+        db.execute('DELETE FROM sales_item_transport WHERE transport_id=?', (tid,))
+        db.execute('DELETE FROM transport_records WHERE id=?', (tid,))
+
+    if item_ids:
+        ph = ','.join('?' * len(item_ids))
+        db.execute(f'DELETE FROM transport_purchase_items WHERE purchase_item_id IN ({ph})', item_ids)
+    db.execute('DELETE FROM purchase_items WHERE purchase_id=?', (purchase_id,))
+    db.execute('DELETE FROM purchase_orders WHERE id=?', (purchase_id,))
+    return True, purchase['purchase_no']
+
+
 @app.route('/purchase/<int:id>/delete', methods=['POST'])
 @login_required
 @permission_required('purchase.edit')
 def purchase_delete(id):
     """删除采购单"""
     db = get_db()
-    purchase = db.execute("SELECT * FROM purchase_orders WHERE id = ?", (id,)).fetchone()
+    purchase = db.execute(
+        'SELECT id, purchase_no, project_id, status FROM purchase_orders WHERE id=?', (id,)
+    ).fetchone()
     if not purchase:
         flash('采购单不存在', 'danger')
         return redirect(url_for('purchase_list'))
@@ -6254,13 +6429,20 @@ def purchase_delete(id):
     if denied:
         return denied
 
-    # 删除关联数据
-    db.execute("DELETE FROM transport_purchase_items WHERE purchase_item_id IN (SELECT id FROM purchase_items WHERE purchase_id=?)", (id,))
-    db.execute("DELETE FROM purchase_items WHERE purchase_id = ?", (id,))
-    db.execute("DELETE FROM purchase_orders WHERE id = ?", (id,))
-    db.commit()
-    add_log(session.get('user_id'), session.get('username', ''), '删除采购单', f'采购单ID: {id}')
-    flash('采购单已删除', 'success')
+    try:
+        ok, msg = _delete_purchase_cascade(db, id)
+        if not ok:
+            flash(msg, 'warning')
+            return redirect(url_for('purchase_detail', id=id))
+        db.commit()
+        add_log(session.get('user_id'), session.get('username', ''), '删除采购单', f'采购单号: {msg}')
+        flash('采购单已删除', 'success')
+    except sqlite3.IntegrityError as e:
+        db.rollback()
+        flash(f'删除失败：存在未解除的关联数据（{e}）', 'danger')
+    except Exception as e:
+        db.rollback()
+        flash(f'删除失败：{e}', 'danger')
     return redirect(url_for('purchase_list'))
 
 
@@ -6854,13 +7036,85 @@ def sales_order_edit(id):
                            contracts=contracts, customers=customers)
 
 
+def _delete_sales_order_cascade(db, order_id):
+    """删除销售出库单及关联扣减、运输、明细。返回 (是否成功, 提示信息)。"""
+    order = db.execute('SELECT id, order_no, status FROM sales_orders WHERE id=?', (order_id,)).fetchone()
+    if not order:
+        return False, '出库单不存在'
+    if not _sales_is_draft(order['status']):
+        return False, '仅「待审核」状态的出库单可删除'
+
+    item_sql_sel, n = _sales_order_item_filter_sql(db, 'soi')
+    item_sql_del, _ = _sales_order_item_filter_sql(db, None)
+    item_params = _sales_order_item_filter_params(order_id, n)
+    item_ids = [
+        r['id'] for r in db.execute(
+            f'SELECT soi.id FROM sales_order_items soi WHERE {item_sql_sel}',
+            item_params,
+        ).fetchall()
+    ]
+
+    client_ids = set()
+    for row in db.execute(
+        'SELECT DISTINCT client_id FROM client_deductions WHERE sales_order_id=?',
+        (order_id,),
+    ).fetchall():
+        client_ids.add(row['client_id'])
+    if item_ids:
+        ph = ','.join('?' * len(item_ids))
+        for row in db.execute(
+            f'SELECT DISTINCT client_id FROM client_deductions WHERE sales_item_id IN ({ph})',
+            item_ids,
+        ).fetchall():
+            client_ids.add(row['client_id'])
+        db.execute(f'DELETE FROM client_deductions WHERE sales_item_id IN ({ph})', item_ids)
+    db.execute('DELETE FROM client_deductions WHERE sales_order_id=?', (order_id,))
+
+    transport_ids = set()
+    tr_cols = _table_columns(db, 'transport_records')
+    if 'sales_order_id' in tr_cols:
+        for row in db.execute(
+            'SELECT id FROM transport_records WHERE sales_order_id=?', (order_id,)
+        ).fetchall():
+            transport_ids.add(row['id'])
+    if item_ids:
+        ph = ','.join('?' * len(item_ids))
+        for row in db.execute(
+            f'SELECT DISTINCT transport_id FROM sales_item_transport WHERE sales_item_id IN ({ph})',
+            item_ids,
+        ).fetchall():
+            if row['transport_id']:
+                transport_ids.add(row['transport_id'])
+
+    for tid in transport_ids:
+        db.execute('DELETE FROM transport_purchase_items WHERE transport_id=?', (tid,))
+        db.execute('DELETE FROM sales_item_transport WHERE transport_id=?', (tid,))
+        db.execute('DELETE FROM transport_records WHERE id=?', (tid,))
+
+    if item_ids:
+        ph = ','.join('?' * len(item_ids))
+        db.execute(f'DELETE FROM sales_item_transport WHERE sales_item_id IN ({ph})', item_ids)
+    db.execute(f'DELETE FROM sales_order_items WHERE {item_sql_del}', item_params)
+    if db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sales_transport_records'"
+    ).fetchone():
+        db.execute('DELETE FROM sales_transport_records WHERE order_id=?', (order_id,))
+    db.execute('DELETE FROM sales_orders WHERE id=?', (order_id,))
+
+    for cid in client_ids:
+        _recompute_client_balance(db, cid)
+    return True, order['order_no']
+
+
 @app.route('/sales/order/<int:id>/delete', methods=['POST'])
 @login_required
 @permission_required('sales.edit')
 def sales_order_delete(id):
     """删除销售出库单"""
     db = get_db()
-    order = db.execute("SELECT * FROM sales_orders WHERE id = ?", (id,)).fetchone()
+    order = db.execute(
+        'SELECT id, order_no, project_id, status FROM sales_orders WHERE id=?', (id,)
+    ).fetchone()
     if not order:
         flash('出库单不存在', 'danger')
         return redirect(url_for('sales_order_list'))
@@ -6869,12 +7123,23 @@ def sales_order_delete(id):
     if denied:
         return denied
 
-    db.execute("DELETE FROM sales_item_transport WHERE sales_item_id IN (SELECT id FROM sales_order_items WHERE sales_order_id=?)", (id,))
-    db.execute("DELETE FROM sales_order_items WHERE sales_order_id = ?", (id,))
-    db.execute("DELETE FROM sales_orders WHERE id = ?", (id,))
-    db.commit()
-    add_log(session.get('user_id'), session.get('username', ''), '删除销售出库单', f'出库单ID: {id}')
-    flash('出库单已删除', 'success')
+    try:
+        ok, msg = _delete_sales_order_cascade(db, id)
+        if not ok:
+            flash(msg, 'warning')
+            return redirect(url_for('sales_order_detail', id=id))
+        db.commit()
+        add_log(
+            session.get('user_id'), session.get('username', ''),
+            '删除销售出库单', f'出库单号: {msg}',
+        )
+        flash('出库单已删除', 'success')
+    except sqlite3.IntegrityError as e:
+        db.rollback()
+        flash(f'删除失败：存在未解除的关联数据（{e}）', 'danger')
+    except Exception as e:
+        db.rollback()
+        flash(f'删除失败：{e}', 'danger')
     return redirect(url_for('sales_order_list'))
 
 
