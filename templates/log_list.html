@@ -2,22 +2,156 @@
 {% block title %}操作日志 - 工程项目投资采运销分红系统{% endblock %}
 {% block content %}
 <div class="container-fluid px-4">
-    <h4 class="mb-4"><i class="bi bi-journal-text"></i> 操作日志</h4>
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <h4 class="mb-0"><i class="bi bi-journal-text"></i> 操作日志</h4>
+        <a href="{{ url_for('log_analytics', date_from=date_from, date_to=date_to) }}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-bar-chart-line"></i> 用户操作分析
+        </a>
+    </div>
 
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link {% if tab == 'detail' %}active{% endif %}"
+               href="{{ url_for('log_list', tab='detail', date_from=date_from, date_to=date_to, view_date=view_date, username=username, action_kw=action_kw) }}">
+                明细列表
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if tab == 'day' %}active{% endif %}"
+               href="{{ url_for('log_list', tab='day', date_from=date_from, date_to=date_to, username=username) }}">
+                按天查看
+            </a>
+        </li>
+    </ul>
+
+    <div class="card mb-3">
+        <div class="card-body py-3">
+            <form method="GET" class="row g-2 align-items-end">
+                <input type="hidden" name="tab" value="{{ tab }}">
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">开始日期</label>
+                    <input type="date" class="form-control form-control-sm" name="date_from"
+                           value="{{ date_from or default_date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">结束日期</label>
+                    <input type="date" class="form-control form-control-sm" name="date_to"
+                           value="{{ date_to or default_date_to }}">
+                </div>
+                {% if tab == 'detail' %}
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">指定某一天</label>
+                    <input type="date" class="form-control form-control-sm" name="view_date"
+                           value="{{ view_date }}" placeholder="可选">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">操作关键词</label>
+                    <input type="text" class="form-control form-control-sm" name="action_kw"
+                           value="{{ action_kw }}" placeholder="操作/详情">
+                </div>
+                {% endif %}
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">用户名</label>
+                    <input type="text" class="form-control form-control-sm" name="username"
+                           value="{{ username }}" placeholder="模糊匹配">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-search"></i> 筛选</button>
+                </div>
+                <div class="col-md-2">
+                    <a href="{{ url_for('log_list', tab=tab) }}" class="btn btn-outline-secondary btn-sm w-100">重置</a>
+                </div>
+            </form>
+            {% if tab == 'detail' and view_date %}
+            <p class="small text-info mb-0 mt-2"><i class="bi bi-calendar-day"></i> 当前仅显示 <strong>{{ view_date }}</strong> 当天的日志</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card mb-4 border-danger border-opacity-50">
+        <div class="card-header py-2 bg-danger bg-opacity-10">
+            <h6 class="mb-0"><i class="bi bi-trash"></i> 按时间段删除日志</h6>
+        </div>
+        <div class="card-body py-3">
+            <p class="text-muted small mb-2">按日志记录日期删除，不可恢复。可同时删除同期的功能访问统计。</p>
+            <form method="POST" action="{{ url_for('log_batch_delete') }}"
+                  class="row g-2 align-items-end"
+                  onsubmit="return confirm('确定删除该时段的操作日志？此操作不可恢复。');">
+                <div class="col-md-2">
+                    <label class="form-label small">开始日期</label>
+                    <input type="date" class="form-control form-control-sm" name="date_from"
+                           value="{{ default_date_from }}" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">结束日期</label>
+                    <input type="date" class="form-control form-control-sm" name="date_to"
+                           value="{{ default_date_to }}" required>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="delete_access" value="1" id="deleteAccess" checked>
+                        <label class="form-check-label small" for="deleteAccess">同时删除功能访问统计</label>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-danger btn-sm w-100">批量删除</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if tab == 'day' %}
+    <div class="card">
+        <div class="card-header"><h6 class="mb-0">按天汇总（{{ day_rows|length }} 天）</h6></div>
+        <div class="card-body p-0">
+            {% if day_rows %}
+            <div class="table-responsive">
+                <table class="table table-hover table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>日期</th>
+                            <th class="text-end">操作次数</th>
+                            <th class="text-end">活跃用户</th>
+                            <th class="text-end">记录/条数合计</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in day_rows %}
+                        <tr>
+                            <td><strong>{{ d.log_date }}</strong></td>
+                            <td class="text-end">{{ d.op_count }}</td>
+                            <td class="text-end">{{ d.user_count }}</td>
+                            <td class="text-end">{{ d.record_count or 0 }}</td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-primary"
+                                   href="{{ url_for('log_list', tab='detail', view_date=d.log_date, username=username) }}">
+                                    查看明细
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted text-center py-4">该时段无日志</p>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h6 class="mb-0">共 {{ total }} 条记录</h6>
             <div class="d-flex gap-2">
                 {% if page > 1 %}
-                <a href="{{ url_for('log_list', page=page-1) }}" class="btn btn-sm btn-outline-primary">
-                    <i class="bi bi-chevron-left"></i> 上一页
-                </a>
+                <a href="{{ url_for('log_list', tab='detail', page=page-1, date_from=date_from, date_to=date_to, view_date=view_date, username=username, action_kw=action_kw) }}"
+                   class="btn btn-sm btn-outline-primary"><i class="bi bi-chevron-left"></i> 上一页</a>
                 {% endif %}
                 <span class="btn btn-sm btn-light">第 {{ page }} / {{ total_pages }} 页</span>
                 {% if page < total_pages %}
-                <a href="{{ url_for('log_list', page=page+1) }}" class="btn btn-sm btn-outline-primary">
-                    下一页 <i class="bi bi-chevron-right"></i>
-                </a>
+                <a href="{{ url_for('log_list', tab='detail', page=page+1, date_from=date_from, date_to=date_to, view_date=view_date, username=username, action_kw=action_kw) }}"
+                   class="btn btn-sm btn-outline-primary">下一页 <i class="bi bi-chevron-right"></i></a>
                 {% endif %}
             </div>
         </div>
@@ -30,6 +164,8 @@
                             <th>ID</th>
                             <th>用户</th>
                             <th>操作</th>
+                            <th>功能</th>
+                            <th class="text-end">条数</th>
                             <th>详情</th>
                             <th>IP</th>
                             <th>时间</th>
@@ -51,6 +187,8 @@
                                 <span class="badge bg-primary">{{ log.action }}</span>
                                 {% endif %}
                             </td>
+                            <td><small class="text-muted">{{ module_labels.get(log.feature_module, log.feature_module or '—') }}</small></td>
+                            <td class="text-end">{{ log.entity_count if log.entity_count is not none else '—' }}</td>
                             <td>{{ log.detail or '-' }}</td>
                             <td><small class="text-muted">{{ log.ip or '-' }}</small></td>
                             <td><small>{{ log.created_at[:19] if log.created_at else '-' }}</small></td>
@@ -64,5 +202,6 @@
             {% endif %}
         </div>
     </div>
+    {% endif %}
 </div>
 {% endblock %}

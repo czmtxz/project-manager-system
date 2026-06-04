@@ -169,6 +169,8 @@ def get_db():
             ensure_report_hub_prefs_schema(g.db)
             ensure_user_access_schema(g.db)
             ensure_project_display_schema(g.db)
+            from log_analytics import ensure_log_schema
+            ensure_log_schema(g.db)
             app.config['_schema_extended'] = True
     return g.db
 
@@ -777,6 +779,9 @@ def init_db():
     except:
         pass  # 列已存在
 
+    from log_analytics import ensure_log_schema
+    ensure_log_schema(db)
+
     db.commit()
     db.close()
 
@@ -855,14 +860,28 @@ def init_categories(cursor):
             )
 
 
-def add_log(user_id, username, action, detail, ip=''):
-    """记录操作日志"""
+def add_log(user_id, username, action, detail, ip='', entity_count=None, feature_module=None):
+    """记录操作日志（含功能模块与影响条数，供统计分析）。"""
     try:
+        from log_analytics import classify_log_action, ensure_log_schema
         db = get_db()
-        db.execute(
-            "INSERT INTO logs (user_id, username, action, detail, ip) VALUES (?, ?, ?, ?, ?)",
-            (user_id, username, action, detail, ip)
-        )
+        ensure_log_schema(db)
+        if feature_module is None or entity_count is None:
+            mod, ec = classify_log_action(action, detail)
+            feature_module = feature_module if feature_module is not None else mod
+            entity_count = entity_count if entity_count is not None else ec
+        cols = {r[1] for r in db.execute('PRAGMA table_info(logs)').fetchall()}
+        if 'feature_module' in cols and 'entity_count' in cols:
+            db.execute(
+                """INSERT INTO logs (user_id, username, action, detail, ip, feature_module, entity_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (user_id, username, action, detail, ip, feature_module, entity_count),
+            )
+        else:
+            db.execute(
+                "INSERT INTO logs (user_id, username, action, detail, ip) VALUES (?, ?, ?, ?, ?)",
+                (user_id, username, action, detail, ip),
+            )
         db.commit()
     except Exception:
         pass
@@ -4051,22 +4070,112 @@ def api_backup_preview():
 # ==================== 路由：操作日志 ====================
 
 @app.route('/logs')
-@login_required
+@admin_required
 def log_list():
+    from log_analytics import (
+        ensure_log_schema, query_logs, query_logs_by_day,
+        backfill_log_metadata, MODULE_LABELS,
+    )
     db = get_db()
+    ensure_log_schema(db)
+    pending = db.execute(
+        """SELECT COUNT(*) FROM logs
+           WHERE feature_module IS NULL OR feature_module = ''"""
+    ).fetchone()[0]
+    if pending:
+        backfill_log_metadata(db, batch_size=min(pending, 2000))
+
+    tab = (request.args.get('tab') or 'detail').strip()
     page = request.args.get('page', 1, type=int)
-    per_page = 20
-    offset = (page - 1) * per_page
+    date_from = (request.args.get('date_from') or '').strip()
+    date_to = (request.args.get('date_to') or '').strip()
+    view_date = (request.args.get('view_date') or '').strip()
+    username = (request.args.get('username') or '').strip()
+    action_kw = (request.args.get('action_kw') or '').strip()
+    today = datetime.now().strftime('%Y-%m-%d')
+    month_start = datetime.now().replace(day=1).strftime('%Y-%m-%d')
 
-    total = db.execute("SELECT COUNT(*) FROM logs").fetchone()[0]
-    logs = db.execute(
-        "SELECT * FROM logs ORDER BY created_at DESC LIMIT ? OFFSET ?",
-        (per_page, offset)
-    ).fetchall()
+    if not date_from and not date_to and not view_date and tab == 'detail':
+        date_from = month_start
+        date_to = today
 
-    total_pages = (total + per_page - 1) // per_page
+    logs = []
+    total = 0
+    total_pages = 1
+    day_rows = []
+    if tab == 'day':
+        day_rows = query_logs_by_day(db, date_from, date_to, username)
+    else:
+        logs, total, total_pages = query_logs(
+            db, date_from, date_to, view_date, username, action_kw, page, 50,
+        )
 
-    return render_template('log_list.html', logs=logs, page=page, total_pages=total_pages, total=total)
+    return render_template(
+        'log_list.html',
+        tab=tab,
+        logs=logs,
+        day_rows=day_rows,
+        page=page,
+        total_pages=total_pages,
+        total=total,
+        date_from=date_from,
+        date_to=date_to,
+        view_date=view_date,
+        username=username,
+        action_kw=action_kw,
+        default_date_from=month_start,
+        default_date_to=today,
+        module_labels=MODULE_LABELS,
+    )
+
+
+@app.route('/logs/analytics')
+@admin_required
+def log_analytics():
+    from log_analytics import build_user_analytics, ensure_log_schema
+    db = get_db()
+    ensure_log_schema(db)
+    date_from = (request.args.get('date_from') or '').strip()
+    date_to = (request.args.get('date_to') or '').strip()
+    today = datetime.now().strftime('%Y-%m-%d')
+    month_start = datetime.now().replace(day=1).strftime('%Y-%m-%d')
+    if not date_from:
+        date_from = month_start
+    if not date_to:
+        date_to = today
+    users = build_user_analytics(db, date_from, date_to)
+    return render_template(
+        'log_analytics.html',
+        users=users,
+        date_from=date_from,
+        date_to=date_to,
+        default_date_from=month_start,
+        default_date_to=today,
+    )
+
+
+@app.route('/logs/batch-delete', methods=['POST'])
+@admin_required
+def log_batch_delete():
+    from log_analytics import delete_logs_in_range
+    db = get_db()
+    date_from = (request.form.get('date_from') or '').strip()
+    date_to = (request.form.get('date_to') or '').strip()
+    delete_access = request.form.get('delete_access') == '1'
+    n_logs, n_access, err = delete_logs_in_range(db, date_from, date_to, delete_access)
+    if err:
+        flash(err, 'warning')
+        return redirect(url_for('log_list', tab='detail'))
+    add_log(
+        session['user_id'], session.get('username', ''), '批量删除操作日志',
+        f'{date_from} ~ {date_to} 日志 {n_logs} 条'
+        + (f'、功能访问 {n_access} 条' if delete_access else ''),
+        request.remote_addr,
+    )
+    flash(f'已删除 {n_logs} 条操作日志' + (
+        f'及 {n_access} 条功能访问记录' if delete_access and n_access else ''
+    ), 'success')
+    return redirect(url_for('log_list', tab='detail', date_from=date_from, date_to=date_to))
 
 
 # ==================== 定时备份 ====================
@@ -9430,6 +9539,33 @@ def sales_order_ocr_confirm(order_id):
 
 
 from route_extensions import register_missing_routes
+@app.after_request
+def track_staff_feature_access(response):
+    """记录员工访问各功能页面的次数（按天汇总）。"""
+    try:
+        if request.method != 'GET' or response.status_code >= 400:
+            return response
+        if not session.get('user_id'):
+            return response
+        endpoint = request.endpoint or ''
+        if not endpoint or endpoint == 'static':
+            return response
+        if endpoint.startswith('api_') or endpoint in (
+            'login', 'logout', 'log_list', 'log_analytics', 'log_batch_delete',
+        ):
+            return response
+        from log_analytics import record_feature_access, ensure_log_schema
+        db = get_db()
+        ensure_log_schema(db)
+        record_feature_access(
+            db, session['user_id'], session.get('username', ''),
+            endpoint, request.path,
+        )
+    except Exception:
+        pass
+    return response
+
+
 register_missing_routes(app, {
     'login_required': login_required,
     'admin_required': admin_required,
