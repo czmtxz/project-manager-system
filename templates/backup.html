@@ -14,7 +14,38 @@
     <div class="alert alert-info mb-3">
         <i class="bi bi-info-circle"></i>
         系统每天 <strong>02:00</strong> 自动备份数据库至 <code>backups/</code> 目录。
-        手动备份完成后可在下方列表中<strong>查看记录并下载</strong>。
+        手动备份完成后可在下方列表中<strong>查看记录并下载</strong>；也可从<strong>本机文件夹</strong>上传 <code>.db</code> 备份进行预览或保存到服务器。
+    </div>
+
+    <div class="card mb-4 border-info border-opacity-50">
+        <div class="card-header py-2 bg-info bg-opacity-10">
+            <h6 class="mb-0"><i class="bi bi-pc-display"></i> 本机备份文件</h6>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                从电脑任意文件夹选择 SQLite 备份（<code>*.db</code>），上传后可<strong>预览</strong>各项目汇总与明细，
+                或<strong>保存到服务器备份列表</strong>。若要将某一项目业务数据复制到新项目，请使用
+                <a href="{{ url_for('project_add') }}">新增项目 → 从备份引入</a>。
+            </p>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-6">
+                    <label class="form-label" for="backupLocalFile">选择本机 .db 文件</label>
+                    <input type="file" class="form-control" id="backupLocalFile"
+                           accept=".db,application/x-sqlite3,application/vnd.sqlite3">
+                    <div id="backupLocalStatus" class="form-text"></div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-outline-info" id="btnBackupLocalPreview" disabled>
+                            <i class="bi bi-eye"></i> 预览
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" id="btnBackupSaveUpload" disabled>
+                            <i class="bi bi-cloud-upload"></i> 保存到服务器备份
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="row g-3 mb-4">
@@ -113,8 +144,8 @@
                             <td>{{ b.time }}</td>
                             <td class="text-center">
                                 <div class="btn-group btn-group-sm">
-                                    <button type="button" class="btn btn-outline-info"
-                                            onclick="openBackupPreview('{{ b.name }}')" title="预览备份数据">
+                                    <button type="button" class="btn btn-outline-info btn-backup-preview"
+                                            data-filename="{{ b.name }}" title="预览备份数据">
                                         <i class="bi bi-eye"></i> 预览
                                     </button>
                                     <a href="{{ url_for('backup_download', filename=b.name) }}"
@@ -152,6 +183,102 @@
 {% block extra_js %}
 {% include 'partials/backup_preview_js.html' %}
 <script>
+(function() {
+    const UPLOAD_URL = {{ url_for('api_backup_upload')|tojson }};
+    const SAVE_URL = {{ url_for('api_backup_save_upload')|tojson }};
+    const localInput = document.getElementById('backupLocalFile');
+    const statusEl = document.getElementById('backupLocalStatus');
+    const btnPreview = document.getElementById('btnBackupLocalPreview');
+    const btnSave = document.getElementById('btnBackupSaveUpload');
+    let uploadToken = '';
+    let displayName = '';
+
+    function setReady(ready) {
+        if (btnPreview) btnPreview.disabled = !ready;
+        if (btnSave) btnSave.disabled = !ready;
+    }
+
+    document.querySelectorAll('.btn-backup-preview').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const fn = btn.getAttribute('data-filename');
+            if (fn) openBackupPreview(fn, null, null);
+        });
+    });
+
+    if (!localInput) return;
+
+    localInput.addEventListener('change', function() {
+        const f = this.files && this.files[0];
+        uploadToken = '';
+        displayName = '';
+        setReady(false);
+        if (!f) {
+            if (statusEl) statusEl.textContent = '';
+            return;
+        }
+        if (!f.name.toLowerCase().endsWith('.db')) {
+            if (statusEl) statusEl.textContent = '请选择 .db 格式的备份文件';
+            this.value = '';
+            return;
+        }
+        if (statusEl) statusEl.textContent = '正在上传…';
+        const fd = new FormData();
+        fd.append('file', f);
+        fetch(UPLOAD_URL, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function(r) {
+                if (!r.ok) return r.text().then(function(t) { throw new Error(t || ('HTTP ' + r.status)); });
+                return r.json();
+            })
+            .then(function(res) {
+                if (!res.success) {
+                    if (statusEl) statusEl.textContent = res.message || '上传失败';
+                    localInput.value = '';
+                    return;
+                }
+                uploadToken = res.upload_token;
+                displayName = res.display_name || f.name;
+                if (statusEl) statusEl.innerHTML = '<span class="text-success">已就绪：' + displayName + '</span>';
+                setReady(true);
+            })
+            .catch(function(err) {
+                if (statusEl) statusEl.textContent = '上传失败：' + (err.message || err);
+                localInput.value = '';
+            });
+    });
+
+    if (btnPreview) {
+        btnPreview.addEventListener('click', function() {
+            if (uploadToken) openBackupPreview(null, null, uploadToken, displayName);
+        });
+    }
+
+    if (btnSave) {
+        btnSave.addEventListener('click', function() {
+            if (!uploadToken) return;
+            btnSave.disabled = true;
+            fetch(SAVE_URL, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ upload_token: uploadToken, display_name: displayName }),
+            })
+                .then(function(r) { return r.json(); })
+                .then(function(res) {
+                    if (!res.success) {
+                        alert(res.message || '保存失败');
+                        btnSave.disabled = false;
+                        return;
+                    }
+                    window.location.href = {{ url_for('backup_manage')|tojson }} + '?highlight=' + encodeURIComponent(res.filename);
+                })
+                .catch(function(err) {
+                    alert('保存失败：' + (err.message || err));
+                    btnSave.disabled = false;
+                });
+        });
+    }
+})();
+
 function confirmBatchDeleteBackup() {
     const from = document.getElementById('date_from').value;
     const to = document.getElementById('date_to').value;

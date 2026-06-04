@@ -3974,6 +3974,41 @@ def api_backup_upload():
     })
 
 
+@app.route('/api/backup/save-upload', methods=['POST'])
+@login_required
+@permission_required('backup.manage')
+def api_backup_save_upload():
+    """将已上传的临时备份复制到 backups/ 目录，纳入备份管理列表。"""
+    data = request.get_json(silent=True) or {}
+    token = (data.get('upload_token') or request.form.get('upload_token') or '').strip()
+    fpath = _resolve_upload_backup_token(token)
+    if not fpath:
+        return jsonify({'success': False, 'message': '上传已过期或无效，请重新选择本机文件'})
+
+    base = secure_filename((data.get('display_name') or 'imported_backup.db').strip())
+    if not base.endswith('.db'):
+        base = (base or 'imported') + '.db'
+    stem = base[:-3] if base.lower().endswith('.db') else base
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    dest_name = f'{stem}_{timestamp}.db'
+    dest_name = secure_filename(dest_name) or f'imported_{timestamp}.db'
+    dest_path = os.path.join(app.config['BACKUP_DIR'], dest_name)
+    if os.path.exists(dest_path):
+        dest_name = f'imported_{timestamp}_{secrets.token_hex(4)}.db'
+        dest_path = os.path.join(app.config['BACKUP_DIR'], dest_name)
+
+    try:
+        shutil.copy2(fpath, dest_path)
+    except OSError as e:
+        return jsonify({'success': False, 'message': f'保存失败：{e}'})
+
+    add_log(
+        session['user_id'], session.get('username', ''),
+        '导入本机备份', f'保存至 backups/: {dest_name}', request.remote_addr,
+    )
+    return jsonify({'success': True, 'filename': dest_name})
+
+
 @app.route('/api/backup/projects')
 @login_required
 @permission_required('backup.manage')
