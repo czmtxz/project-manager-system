@@ -5752,10 +5752,16 @@ def sales_order_list():
 
     sql += " ORDER BY so.created_at DESC"
     orders = db.execute(sql, params).fetchall()
+    summary = {
+        'count': len(orders),
+        'total_amount': sum(float(o['total_amount'] or 0) for o in orders),
+        'total_qty': sum(float(o['total_qty'] or 0) for o in orders),
+        'transport_count': sum(int(o['transport_count'] or 0) for o in orders),
+    }
     projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
     filters = {'project_id': project_id, 'status': status, 'keyword': keyword, 'customer': customer}
     return render_template('sales_order_list.html', orders=orders, projects=projects,
-                           filters=filters)
+                           filters=filters, summary=summary)
 
 
 @app.route('/sales/order/add', methods=['GET', 'POST'])
