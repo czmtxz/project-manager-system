@@ -5228,6 +5228,8 @@ def purchase_list():
     db = get_db()
     project_id = request.args.get('project_id', type=int)
     status = request.args.get('status', '')
+    purchase_type = request.args.get('type', '').strip()
+    supplier = request.args.get('supplier', '').strip()
     keyword = request.args.get('keyword', '')
 
     sql = """SELECT po.*, p.name as project_name, c.contract_name,
@@ -5249,6 +5251,12 @@ def purchase_list():
     if status:
         sql += " AND po.status = ?"
         params.append(status)
+    if purchase_type:
+        sql += " AND po.purchase_type = ?"
+        params.append(purchase_type)
+    if supplier:
+        sql += " AND po.supplier LIKE ?"
+        params.append(f'%{supplier}%')
     if keyword:
         sql += " AND (po.purchase_no LIKE ? OR po.supplier LIKE ?)"
         params.extend([f'%{keyword}%', f'%{keyword}%'])
@@ -5270,7 +5278,13 @@ def purchase_list():
     }
 
     projects = db.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
-    filters = {'project_id': project_id, 'status': status, 'keyword': keyword}
+    filters = {
+        'project_id': project_id,
+        'status': status,
+        'type': purchase_type,
+        'supplier': supplier,
+        'keyword': keyword,
+    }
     return render_template('purchase_list.html', purchases=purchases, projects=projects,
                            filters=filters, summary=summary)
 

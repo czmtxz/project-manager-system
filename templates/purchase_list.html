@@ -60,6 +60,36 @@
 
     <!-- 采购单列表 -->
     {% if purchases %}
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
+            <div class="card border-primary border-opacity-25 h-100">
+                <div class="card-body py-3">
+                    <div class="text-muted small">采购金额合计</div>
+                    <div class="h4 mb-0 text-primary">¥{{ "%.2f"|format(summary.total_amount) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body py-3">
+                    <div class="text-muted small">采购数量合计</div>
+                    <div class="h4 mb-0">{{ "%.2f"|format(summary.total_qty) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body py-3">
+                    <div class="text-muted small">单据笔数 / 运输车次</div>
+                    <div class="h4 mb-0">{{ summary.count }} 笔
+                        {% if summary.transport_count > 0 %}
+                        <span class="fs-6 text-muted">· {{ summary.transport_count }} 车</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <div class="card">
         <div class="card-body p-0">
             <div class="table-responsive">
