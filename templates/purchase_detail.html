@@ -255,7 +255,14 @@
                                 </tr>
                                 {% endfor %}
                             </tbody>
-                            
+                            <tfoot class="table-light">
+                                <tr class="fw-semibold">
+                                    <td colspan="5">合计（{{ transports|length }} 车）</td>
+                                    <td class="text-end">{{ "%.2f"|format(total_transport_qty) }}</td>
+                                    <td class="text-end text-primary">¥{{ "%.2f"|format(total_freight) }}</td>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                     {% else %}

@@ -5261,6 +5261,86 @@ def _sync_purchase_qty_from_items(db):
     )
 
 
+def _sql_purchase_total_freight(po_alias='po'):
+    """采购单关联运费合计（直接挂采购单 + 明细关联运输）。"""
+    return f"""(SELECT COALESCE(SUM(tr.freight_amount), 0)
+                FROM transport_records tr
+                WHERE tr.id IN (
+                    SELECT tr0.id FROM transport_records tr0
+                    WHERE tr0.purchase_id = {po_alias}.id
+                    UNION
+                    SELECT tpi.transport_id FROM transport_purchase_items tpi
+                    INNER JOIN purchase_items pi ON tpi.purchase_item_id = pi.id
+                    WHERE pi.purchase_id = {po_alias}.id
+                ))"""
+
+
+def _fetch_purchase_transports(db, purchase_id):
+    """获取采购单下全部运输记录（含明细关联）。"""
+    tr_cols = {r[1] for r in db.execute('PRAGMA table_info(transport_records)').fetchall()}
+    inv_cols = {r[1] for r in db.execute('PRAGMA table_info(invoices)').fetchall()}
+    inv_join = (
+        ' LEFT JOIN invoices i ON tr.invoice_id = i.id'
+        if 'invoice_id' in tr_cols and inv_cols else ''
+    )
+    inv_sel = (
+        ', i.invoice_no'
+        if 'invoice_id' in tr_cols and inv_cols else ", NULL as invoice_no"
+    )
+    if 'purchase_id' in tr_cols:
+        return db.execute(
+            f"""SELECT tr.*{inv_sel}
+                FROM transport_records tr{inv_join}
+                WHERE tr.id IN (
+                    SELECT tr0.id FROM transport_records tr0 WHERE tr0.purchase_id = ?
+                    UNION
+                    SELECT tpi.transport_id FROM transport_purchase_items tpi
+                    INNER JOIN purchase_items pi ON tpi.purchase_item_id = pi.id
+                    WHERE pi.purchase_id = ?
+                )
+                ORDER BY tr.transport_date, tr.id""",
+            (purchase_id, purchase_id),
+        ).fetchall()
+    transport_ids = db.execute(
+        """SELECT DISTINCT tpi.transport_id
+           FROM transport_purchase_items tpi
+           INNER JOIN purchase_items pi ON tpi.purchase_item_id = pi.id
+           WHERE pi.purchase_id = ?""",
+        (purchase_id,),
+    ).fetchall()
+    if not transport_ids:
+        return []
+    tid_str = ','.join(str(t['transport_id']) for t in transport_ids)
+    return db.execute(
+        f"""SELECT tr.*{inv_sel}
+            FROM transport_records tr{inv_join}
+            WHERE tr.id IN ({tid_str})
+            ORDER BY tr.transport_date, tr.id"""
+    ).fetchall()
+
+
+def _transport_item_names_map(db, transports, tr_cols):
+    names = {}
+    for t in transports:
+        tid = t['id']
+        rows = db.execute(
+            """SELECT pi.item_name FROM transport_purchase_items tpi
+               INNER JOIN purchase_items pi ON tpi.purchase_item_id = pi.id
+               WHERE tpi.transport_id = ?""",
+            (tid,),
+        ).fetchall()
+        if rows:
+            names[tid] = '、'.join(r['item_name'] for r in rows)
+        elif 'purchase_item_id' in tr_cols and t['purchase_item_id']:
+            item_row = db.execute(
+                "SELECT item_name FROM purchase_items WHERE id=?",
+                (t['purchase_item_id'],),
+            ).fetchone()
+            if item_row:
+                names[tid] = item_row['item_name']
+    return names
+
+
 @app.route('/purchase/list')
 @login_required
 def purchase_list():
@@ -5274,10 +5354,10 @@ def purchase_list():
     supplier = request.args.get('supplier', '').strip()
     keyword = request.args.get('keyword', '')
 
-    sql = """SELECT po.*, p.name as project_name, c.contract_name,
-                    (SELECT COUNT(DISTINCT tpi.transport_id) 
-                     FROM transport_purchase_items tpi 
-                     JOIN purchase_items pi ON tpi.purchase_item_id = pi.id 
+    sql = f"""SELECT po.*, p.name as project_name, c.contract_name,
+                    (SELECT COUNT(DISTINCT tpi.transport_id)
+                     FROM transport_purchase_items tpi
+                     JOIN purchase_items pi ON tpi.purchase_item_id = pi.id
                      WHERE pi.purchase_id = po.id) as transport_count,
                     COALESCE(
                         NULLIF((SELECT COALESCE(SUM(pi2.quantity), 0) FROM purchase_items pi2 WHERE pi2.purchase_id = po.id), 0),
@@ -5286,7 +5366,8 @@ def purchase_list():
                     COALESCE(
                         NULLIF((SELECT COALESCE(SUM(pi2.amount), 0) FROM purchase_items pi2 WHERE pi2.purchase_id = po.id), 0),
                         po.total_amount, 0
-                    ) as total_amount_calc
+                    ) as total_amount_calc,
+                    {_sql_purchase_total_freight('po')} as total_freight
              FROM purchase_orders po
              LEFT JOIN projects p ON po.project_id = p.id
              LEFT JOIN contracts c ON po.contract_id = c.id
@@ -5322,6 +5403,7 @@ def purchase_list():
         'count': len(purchases),
         'total_amount': sum(_purchase_list_amount(p) for p in purchases),
         'total_qty': sum(float(p['total_qty'] or 0) for p in purchases),
+        'total_freight': sum(float(p['total_freight'] or 0) for p in purchases),
         'transport_count': sum(int(p['transport_count'] or 0) for p in purchases),
     }
 
@@ -5410,51 +5492,10 @@ def purchase_detail(id):
     total_purchase_qty = sum(float(i['quantity'] or 0) for i in items)
 
     tr_cols = {r[1] for r in db.execute('PRAGMA table_info(transport_records)').fetchall()}
-    inv_cols = {r[1] for r in db.execute('PRAGMA table_info(invoices)').fetchall()}
-    inv_join = ' LEFT JOIN invoices i ON tr.invoice_id = i.id' if 'invoice_id' in tr_cols and inv_cols else ''
-    inv_sel = ', i.invoice_no' if 'invoice_id' in tr_cols and inv_cols else ", NULL as invoice_no"
-
-    if 'purchase_id' in tr_cols:
-        transports = db.execute(f"""
-            SELECT tr.*{inv_sel}
-            FROM transport_records tr{inv_join}
-            WHERE tr.purchase_id = ?
-            ORDER BY tr.transport_date, tr.id
-        """, (id,)).fetchall()
-    else:
-        transport_ids = db.execute("""SELECT DISTINCT tpi.transport_id
-                                      FROM transport_purchase_items tpi
-                                      JOIN purchase_items pi ON tpi.purchase_item_id = pi.id
-                                      WHERE pi.purchase_id = ?""", (id,)).fetchall()
-        transports = []
-        if transport_ids:
-            tid_str = ','.join(str(t['transport_id']) for t in transport_ids)
-            transports = db.execute(f"""
-                SELECT tr.*{inv_sel}
-                FROM transport_records tr{inv_join}
-                WHERE tr.id IN ({tid_str})
-                ORDER BY tr.transport_date, tr.id
-            """).fetchall()
-
+    transports = _fetch_purchase_transports(db, id)
     total_transport_qty = sum(float(t['quantity'] or 0) for t in transports)
     total_freight = sum(float(t['freight_amount'] or 0) for t in transports)
-
-    transport_item_names = {}
-    for t in transports:
-        tid = t['id']
-        names = db.execute("""
-            SELECT pi.item_name FROM transport_purchase_items tpi
-            JOIN purchase_items pi ON tpi.purchase_item_id = pi.id
-            WHERE tpi.transport_id = ?
-        """, (tid,)).fetchall()
-        if names:
-            transport_item_names[tid] = '、'.join(r['item_name'] for r in names)
-        elif 'purchase_item_id' in tr_cols and t['purchase_item_id']:
-            item_row = db.execute(
-                "SELECT item_name FROM purchase_items WHERE id=?", (t['purchase_item_id'],)
-            ).fetchone()
-            if item_row:
-                transport_item_names[tid] = item_row['item_name']
+    transport_item_names = _transport_item_names_map(db, transports, tr_cols)
 
     reconciliation = None
     recon_cols = {r[1] for r in db.execute('PRAGMA table_info(reconciliations)').fetchall()}

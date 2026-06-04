@@ -61,7 +61,7 @@
     <!-- 采购单列表 -->
     {% if purchases %}
     <div class="row g-3 mb-3">
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card border-primary border-opacity-25 h-100">
                 <div class="card-body py-3">
                     <div class="text-muted small">采购金额合计</div>
@@ -69,7 +69,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card h-100">
                 <div class="card-body py-3">
                     <div class="text-muted small">采购数量合计</div>
@@ -77,7 +77,15 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
+            <div class="card border-warning border-opacity-25 h-100">
+                <div class="card-body py-3">
+                    <div class="text-muted small">运费合计</div>
+                    <div class="h4 mb-0 text-warning">¥{{ "%.2f"|format(summary.total_freight) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
             <div class="card h-100">
                 <div class="card-body py-3">
                     <div class="text-muted small">单据笔数 / 运输车次</div>
@@ -102,6 +110,7 @@
                             <th>供应商</th>
                             <th class="text-end">采购金额</th>
                             <th class="text-end">采购数量</th>
+                            <th class="text-end">运费汇总</th>
                             <th>采购日期</th>
                             <th>运输车次</th>
                             <th>状态</th>
@@ -119,6 +128,13 @@
                             <td class="text-end">
                                 {% if p.total_qty and p.total_qty > 0 %}
                                 {{ "%g"|format(p.total_qty) }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if p.total_freight and p.total_freight > 0 %}
+                                <span class="text-warning fw-semibold">¥{{ "%.2f"|format(p.total_freight) }}</span>
                                 {% else %}
                                 <span class="text-muted">-</span>
                                 {% endif %}
@@ -170,6 +186,7 @@
                             <td colspan="4">合计（{{ summary.count }} 笔）</td>
                             <td class="text-end text-primary">¥{{ "%.2f"|format(summary.total_amount) }}</td>
                             <td class="text-end">{{ "%.2f"|format(summary.total_qty) }}</td>
+                            <td class="text-end text-warning">¥{{ "%.2f"|format(summary.total_freight) }}</td>
                             <td></td>
                             <td class="text-center">
                                 {% if summary.transport_count > 0 %}
