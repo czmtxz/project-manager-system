@@ -8,11 +8,6 @@ with app.test_client() as c:
         sess['user_id'] = 1
         sess['username'] = 'admin'
         sess['role'] = 'admin'
-    r = c.post('/api/transport/999/delete')
-    print('status', r.status_code)
-    print('body', r.get_data(as_text=True)[:200])
-
-print('--- routes ---')
-for rule in sorted(app.url_map.iter_rules(), key=lambda x: x.rule):
-    if 'transport' in rule.rule:
-        print(rule.rule, rule.methods)
+    for tid in (83, 84, 85):
+        r = c.post(f'/api/transport/{tid}/delete')
+        print(tid, r.status_code, r.get_json())
