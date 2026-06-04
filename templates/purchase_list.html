@@ -116,7 +116,13 @@
                             <td>{{ p.purchase_type }}</td>
                             <td>{{ p.supplier or '-' }}</td>
                             <td class="text-end">{{ "%.2f"|format(p.total_amount_calc if p.total_amount_calc else p.total_amount) }}</td>
-                            <td class="text-end">{{ "%.2f"|format(p.total_qty or 0) }}</td>
+                            <td class="text-end">
+                                {% if p.total_qty and p.total_qty > 0 %}
+                                {{ "%g"|format(p.total_qty) }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
                             <td>{{ p.purchase_date or '-' }}</td>
                             <td class="text-center">
                                 {% if p.transport_count > 0 %}

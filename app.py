@@ -5219,6 +5219,46 @@ def _replace_purchase_items(db, purchase_id):
             f"INSERT INTO purchase_items ({columns}) VALUES ({placeholders})",
             list(row.values()),
         )
+    _recalc_purchase_totals(db, purchase_id)
+
+
+def _recalc_purchase_totals(db, purchase_id):
+    """按明细汇总回写采购单表头金额与数量。"""
+    row = db.execute(
+        """SELECT COALESCE(SUM(amount), 0) AS amt, COALESCE(SUM(quantity), 0) AS qty
+           FROM purchase_items WHERE purchase_id=?""",
+        (purchase_id,),
+    ).fetchone()
+    po_cols = _table_columns(db, 'purchase_orders')
+    sets, params = [], []
+    if 'total_amount' in po_cols:
+        sets.append('total_amount=?')
+        params.append(float(row['amt'] or 0))
+    if 'total_qty' in po_cols:
+        sets.append('total_qty=?')
+        params.append(float(row['qty'] or 0))
+    if sets:
+        params.append(purchase_id)
+        db.execute(
+            f"UPDATE purchase_orders SET {', '.join(sets)} WHERE id=?",
+            params,
+        )
+
+
+def _sync_purchase_qty_from_items(db):
+    """修复表头数量为 0 但明细有数量的历史采购单。"""
+    po_cols = _table_columns(db, 'purchase_orders')
+    if 'total_qty' not in po_cols:
+        return
+    db.execute(
+        """UPDATE purchase_orders SET total_qty = (
+               SELECT COALESCE(SUM(quantity), 0) FROM purchase_items
+               WHERE purchase_id = purchase_orders.id
+           )
+           WHERE COALESCE(total_qty, 0) = 0
+             AND (SELECT COALESCE(SUM(quantity), 0) FROM purchase_items
+                  WHERE purchase_id = purchase_orders.id) > 0"""
+    )
 
 
 @app.route('/purchase/list')
@@ -5226,6 +5266,8 @@ def _replace_purchase_items(db, purchase_id):
 def purchase_list():
     """采购单列表"""
     db = get_db()
+    _sync_purchase_qty_from_items(db)
+    db.commit()
     project_id = request.args.get('project_id', type=int)
     status = request.args.get('status', '')
     purchase_type = request.args.get('type', '').strip()
@@ -5237,8 +5279,14 @@ def purchase_list():
                      FROM transport_purchase_items tpi 
                      JOIN purchase_items pi ON tpi.purchase_item_id = pi.id 
                      WHERE pi.purchase_id = po.id) as transport_count,
-                    COALESCE(po.total_qty, (SELECT COALESCE(SUM(pi2.quantity), 0) FROM purchase_items pi2 WHERE pi2.purchase_id = po.id)) as total_qty,
-                    COALESCE(po.total_amount, (SELECT COALESCE(SUM(pi2.amount), 0) FROM purchase_items pi2 WHERE pi2.purchase_id = po.id)) as total_amount_calc
+                    COALESCE(
+                        NULLIF((SELECT COALESCE(SUM(pi2.quantity), 0) FROM purchase_items pi2 WHERE pi2.purchase_id = po.id), 0),
+                        po.total_qty, 0
+                    ) as total_qty,
+                    COALESCE(
+                        NULLIF((SELECT COALESCE(SUM(pi2.amount), 0) FROM purchase_items pi2 WHERE pi2.purchase_id = po.id), 0),
+                        po.total_amount, 0
+                    ) as total_amount_calc
              FROM purchase_orders po
              LEFT JOIN projects p ON po.project_id = p.id
              LEFT JOIN contracts c ON po.contract_id = c.id
@@ -5655,8 +5703,7 @@ def purchase_item_import(purchase_id):
                            (purchase_id, item_name, specification, unit, quantity, unit_price, amount, max_order))
                 count += 1
 
-            total = db.execute("SELECT COALESCE(SUM(amount), 0) FROM purchase_items WHERE purchase_id=?", (purchase_id,)).fetchone()[0]
-            db.execute("UPDATE purchase_orders SET total_amount=? WHERE id=?", (total, purchase_id))
+            _recalc_purchase_totals(db, purchase_id)
             db.commit()
             add_log(session.get('user_id'), session.get('username', ''), '导入采购明细', f'采购单ID: {purchase_id}, 导入{count}条')
             flash(f'成功导入 {count} 条明细', 'success')
