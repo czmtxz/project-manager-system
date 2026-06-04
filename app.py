@@ -6181,6 +6181,203 @@ def _parse_excel_cell_date(value):
     return str(value).strip()
 
 
+def _parse_transport_excel_row(row):
+    """解析 Excel 一行：车牌号、司机、运输日期、数量、单价运费、运费金额、备注"""
+    if row is None or all(c is None or str(c).strip() == '' for c in row):
+        return None
+
+    def cell(i):
+        return row[i] if len(row) > i else None
+
+    vehicle_no = str(cell(0)).strip() if cell(0) is not None else ''
+    driver_name = str(cell(1)).strip() if cell(1) is not None else ''
+    transport_date = _parse_excel_cell_date(cell(2))
+    quantity = _coerce_float(cell(3))
+    unit_price = _coerce_float(cell(4))
+    freight_amount = _coerce_float(cell(5), round(quantity * unit_price, 2))
+    if freight_amount == 0 and quantity and unit_price:
+        freight_amount = round(quantity * unit_price, 2)
+    remark = str(cell(6)).strip() if cell(6) is not None else ''
+
+    if not vehicle_no and not driver_name and freight_amount == 0:
+        return None
+
+    return {
+        'vehicle_no': vehicle_no,
+        'driver_name': driver_name,
+        'transport_date': transport_date or None,
+        'quantity': quantity,
+        'unit_price': unit_price,
+        'freight_amount': freight_amount,
+        'remark': remark,
+    }
+
+
+def _import_transport_records(db, rows, *, sales_order_id=None, purchase_id=None, start_batch=0):
+    """批量写入运输记录，返回 (success_count, errors)。"""
+    tr_cols = _table_columns(db, 'transport_records')
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    success = 0
+    errors = []
+
+    for idx, row in enumerate(rows, start=1):
+        if not row:
+            continue
+        try:
+            fields = {
+                'batch_no': f'第{start_batch + success + 1}车',
+                'vehicle_no': row.get('vehicle_no', ''),
+                'driver_name': row.get('driver_name', ''),
+                'transport_date': row.get('transport_date'),
+                'quantity': row.get('quantity', 0),
+                'unit_price': row.get('unit_price', 0),
+                'freight_amount': row.get('freight_amount', 0),
+                'remark': row.get('remark', ''),
+            }
+            if purchase_id and 'purchase_id' in tr_cols:
+                fields['purchase_id'] = purchase_id
+            if sales_order_id and 'sales_order_id' in tr_cols:
+                fields['sales_order_id'] = sales_order_id
+            if 'created_by' in tr_cols:
+                fields['created_by'] = session.get('user_id')
+            if 'created_at' in tr_cols:
+                fields['created_at'] = now
+            fields = {k: v for k, v in fields.items() if k in tr_cols}
+            columns = ', '.join(fields.keys())
+            placeholders = ', '.join('?' for _ in fields)
+            db.execute(
+                f"INSERT INTO transport_records ({columns}) VALUES ({placeholders})",
+                list(fields.values()),
+            )
+            success += 1
+        except Exception as e:
+            errors.append(f'第 {idx} 行：{e}')
+
+    return success, errors
+
+
+def _flash_transport_import_result(success, errors, empty_skipped=0):
+    if success:
+        msg = f'成功导入 {success} 条运费明细'
+        if empty_skipped:
+            msg += f'，跳过 {empty_skipped} 个空行'
+        flash(msg, 'success')
+    if errors:
+        preview = '；'.join(errors[:5])
+        more = f'（另有 {len(errors) - 5} 条问题未显示）' if len(errors) > 5 else ''
+        flash(f'有 {len(errors)} 行未导入：{preview}{more}', 'warning')
+    if not success and not errors:
+        flash('未发现可导入的数据行，请检查文件是否按模板填写', 'warning')
+
+
+@app.route('/sales/order/<int:id>/transport/import', methods=['POST'])
+@login_required
+def sales_order_transport_import(id):
+    """销售出库单 - 运输记录导入（Excel / 图片识别）"""
+    db = get_db()
+    order = db.execute("SELECT id FROM sales_orders WHERE id=?", (id,)).fetchone()
+    if not order:
+        flash('出库单不存在', 'danger')
+        return redirect(url_for('sales_order_list'))
+
+    back_url = url_for('sales_order_detail', id=id)
+    import_type = (request.form.get('import_type') or 'excel').strip()
+    existing = db.execute(
+        "SELECT COUNT(*) FROM transport_records WHERE sales_order_id=?", (id,)
+    ).fetchone()[0]
+    start_batch = int(existing or 0)
+
+    parsed_rows = []
+    errors = []
+    empty_skipped = 0
+
+    if import_type == 'ocr' or request.files.get('ocr_image'):
+        files = request.files.getlist('ocr_image') or request.files.getlist('image')
+        if not files or not any(f and f.filename for f in files):
+            flash('请选择要识别的图片', 'danger')
+            return redirect(back_url)
+        try:
+            from ocr_utils import recognize_freight_transport_table
+        except ImportError:
+            flash('OCR 组件未安装，请联系管理员', 'danger')
+            return redirect(back_url)
+
+        ocr_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'ocr')
+        os.makedirs(ocr_dir, exist_ok=True)
+        for f in files:
+            if not f or not f.filename:
+                continue
+            ext = f.filename.rsplit('.', 1)[-1].lower()
+            if ext not in ('jpg', 'jpeg', 'png', 'bmp', 'webp', 'gif'):
+                errors.append(f'{f.filename}：不支持的图片格式')
+                continue
+            save_name = f'sales_tr_{uuid.uuid4().hex[:8]}_{f.filename}'
+            filepath = os.path.join(ocr_dir, save_name)
+            f.save(filepath)
+            try:
+                recs = recognize_freight_transport_table(filepath)
+                if recs:
+                    parsed_rows.extend(recs)
+                else:
+                    errors.append(f'{f.filename}：未识别到有效运输记录')
+            except Exception as e:
+                errors.append(f'{f.filename}：识别失败（{e}）')
+    else:
+        f = request.files.get('excel_file') or request.files.get('file')
+        if not f or not f.filename:
+            flash('请选择要导入的 Excel 文件', 'danger')
+            return redirect(back_url)
+        if not f.filename.lower().endswith(('.xlsx', '.xls')):
+            flash('文件格式不支持，请上传 .xlsx 或 .xls 文件', 'danger')
+            return redirect(back_url)
+        try:
+            import openpyxl
+        except ImportError:
+            flash('服务器缺少 openpyxl 组件，无法解析 Excel', 'danger')
+            return redirect(back_url)
+        try:
+            wb = openpyxl.load_workbook(f, data_only=True)
+        except Exception as e:
+            flash(f'无法读取 Excel：{e}', 'danger')
+            return redirect(back_url)
+        ws = wb.active
+        if ws is None or ws.max_row < 2:
+            flash('Excel 中没有可导入的数据行', 'warning')
+            return redirect(back_url)
+        for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            if row is None or all(c is None or str(c).strip() == '' for c in row):
+                empty_skipped += 1
+                continue
+            try:
+                parsed = _parse_transport_excel_row(row)
+                if parsed:
+                    parsed_rows.append(parsed)
+                else:
+                    errors.append(f'第 {idx} 行：无有效数据，已跳过')
+            except Exception as e:
+                errors.append(f'第 {idx} 行：解析失败（{e}）')
+
+    if not parsed_rows:
+        _flash_transport_import_result(0, errors, empty_skipped)
+        return redirect(back_url)
+
+    success, write_errors = _import_transport_records(
+        db, parsed_rows, sales_order_id=id, start_batch=start_batch
+    )
+    errors.extend(write_errors)
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        flash(f'导入写入失败：{e}', 'danger')
+        return redirect(back_url)
+
+    add_log(session.get('user_id'), session.get('username', ''), '导入销售运输记录',
+            f'出库单 {id}，成功 {success} 条')
+    _flash_transport_import_result(success, errors, empty_skipped)
+    return redirect(back_url)
+
+
 @app.route('/transport/import', methods=['GET', 'POST'])
 @login_required
 def transport_import():
@@ -6201,12 +6398,63 @@ def transport_import():
                 flash('关联的采购单不存在，请重新选择', 'danger')
                 return redirect(back_url)
 
-        # 图片识别暂未在本入口实现，给出明确提示而非静默失败
+        # 图片识别
         if import_type == 'ocr' or ('ocr_image' in request.files and 'file' not in request.files and 'excel_file' not in request.files):
-            flash('运费图片识别功能尚未开放，请使用「Excel 导入」或「手动添加」录入运费明细', 'warning')
+            files = request.files.getlist('ocr_image') or request.files.getlist('image')
+            if not files or not any(f and f.filename for f in files):
+                flash('请选择要识别的图片', 'danger')
+                return redirect(back_url)
+            try:
+                from ocr_utils import recognize_freight_transport_table
+            except ImportError:
+                flash('OCR 组件未安装，请联系管理员', 'danger')
+                return redirect(back_url)
+            ocr_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'ocr')
+            os.makedirs(ocr_dir, exist_ok=True)
+            parsed_rows = []
+            errors = []
+            existing = 0
+            if purchase_id:
+                existing = db.execute(
+                    "SELECT COUNT(*) FROM transport_records WHERE purchase_id=?", (purchase_id,)
+                ).fetchone()[0]
+            for f in files:
+                if not f or not f.filename:
+                    continue
+                ext = f.filename.rsplit('.', 1)[-1].lower()
+                if ext not in ('jpg', 'jpeg', 'png', 'bmp', 'webp', 'gif'):
+                    errors.append(f'{f.filename}：不支持的图片格式')
+                    continue
+                save_name = f'pur_tr_{uuid.uuid4().hex[:8]}_{f.filename}'
+                filepath = os.path.join(ocr_dir, save_name)
+                f.save(filepath)
+                try:
+                    recs = recognize_freight_transport_table(filepath)
+                    if recs:
+                        parsed_rows.extend(recs)
+                    else:
+                        errors.append(f'{f.filename}：未识别到有效运输记录')
+                except Exception as e:
+                    errors.append(f'{f.filename}：识别失败（{e}）')
+            if not parsed_rows:
+                _flash_transport_import_result(0, errors)
+                return redirect(back_url)
+            success, write_errors = _import_transport_records(
+                db, parsed_rows, purchase_id=purchase_id, start_batch=int(existing or 0)
+            )
+            errors.extend(write_errors)
+            try:
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                flash(f'导入写入失败：{e}', 'danger')
+                return redirect(back_url)
+            add_log(session.get('user_id'), session.get('username', ''), '导入运输记录',
+                    f'采购单 {purchase_id or "-"}，成功 {success} 条')
+            _flash_transport_import_result(success, errors)
             return redirect(back_url)
 
-        # 取文件（兼容两种字段名）
+        # Excel 导入
         f = request.files.get('excel_file') or request.files.get('file')
         if not f or not f.filename:
             flash('请选择要导入的 Excel 文件', 'danger')
@@ -6233,64 +6481,36 @@ def transport_import():
             flash('Excel 中没有可导入的数据行（第 1 行为表头，数据请从第 2 行开始）', 'warning')
             return redirect(back_url)
 
-        tr_cols = _table_columns(db, 'transport_records')
-        tpi_cols = _table_columns(db, 'transport_purchase_items')
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        existing = 0
+        if purchase_id:
+            existing = db.execute(
+                "SELECT COUNT(*) FROM transport_records WHERE purchase_id=?", (purchase_id,)
+            ).fetchone()[0]
 
-        success = 0
+        parsed_rows = []
         errors = []
         empty_skipped = 0
-        # 列：车牌号、司机、运输日期、数量、单价运费、运费金额、备注
         for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
             if row is None or all(c is None or str(c).strip() == '' for c in row):
                 empty_skipped += 1
                 continue
             try:
-                def cell(i):
-                    return row[i] if len(row) > i else None
-
-                vehicle_no = str(cell(0)).strip() if cell(0) is not None else ''
-                driver_name = str(cell(1)).strip() if cell(1) is not None else ''
-                transport_date = _parse_excel_cell_date(cell(2))
-                quantity = _coerce_float(cell(3))
-                unit_price = _coerce_float(cell(4))
-                freight_amount = _coerce_float(cell(5), round(quantity * unit_price, 2))
-                if freight_amount == 0 and quantity and unit_price:
-                    freight_amount = round(quantity * unit_price, 2)
-                remark = str(cell(6)).strip() if cell(6) is not None else ''
-
-                if not vehicle_no and not driver_name and freight_amount == 0:
-                    errors.append(f'第 {idx} 行：车牌号、司机、运费金额均为空，已跳过')
-                    continue
-
-                fields = {
-                    'batch_no': f'第{success + 1}车',
-                    'vehicle_no': vehicle_no,
-                    'driver_name': driver_name,
-                    'transport_date': transport_date or None,
-                    'quantity': quantity,
-                    'unit_price': unit_price,
-                    'freight_amount': freight_amount,
-                    'remark': remark,
-                }
-                if 'purchase_id' in tr_cols:
-                    fields['purchase_id'] = purchase_id
-                if 'created_by' in tr_cols:
-                    fields['created_by'] = session.get('user_id')
-                if 'created_at' in tr_cols:
-                    fields['created_at'] = now
-                fields = {k: v for k, v in fields.items() if k in tr_cols}
-
-                columns = ', '.join(fields.keys())
-                placeholders = ', '.join('?' for _ in fields)
-                cur = db.execute(
-                    f"INSERT INTO transport_records ({columns}) VALUES ({placeholders})",
-                    list(fields.values()),
-                )
-                success += 1
+                parsed = _parse_transport_excel_row(row)
+                if parsed:
+                    parsed_rows.append(parsed)
+                else:
+                    errors.append(f'第 {idx} 行：无有效数据，已跳过')
             except Exception as e:
                 errors.append(f'第 {idx} 行：解析失败（{e}）')
 
+        if not parsed_rows:
+            _flash_transport_import_result(0, errors, empty_skipped)
+            return redirect(back_url)
+
+        success, write_errors = _import_transport_records(
+            db, parsed_rows, purchase_id=purchase_id, start_batch=int(existing or 0)
+        )
+        errors.extend(write_errors)
         try:
             db.commit()
         except Exception as e:
@@ -6300,19 +6520,7 @@ def transport_import():
 
         add_log(session.get('user_id'), session.get('username', ''), '导入运输记录',
                 f'采购单 {purchase_id or "-"}，成功 {success} 条')
-
-        if success:
-            msg = f'成功导入 {success} 条运费明细'
-            if empty_skipped:
-                msg += f'，跳过 {empty_skipped} 个空行'
-            flash(msg, 'success')
-        if errors:
-            preview = '；'.join(errors[:5])
-            more = f'（另有 {len(errors) - 5} 条问题未显示）' if len(errors) > 5 else ''
-            flash(f'有 {len(errors)} 行未导入：{preview}{more}', 'warning')
-        if not success and not errors:
-            flash('未发现可导入的数据行，请检查 Excel 是否按模板填写', 'warning')
-
+        _flash_transport_import_result(success, errors, empty_skipped)
         return redirect(back_url)
 
     purchases = db.execute(
@@ -7642,7 +7850,7 @@ def sales_order_ocr_confirm(order_id):
         session.pop('ocr_transport_results', None)
         session.pop('ocr_transport_image', None)
 
-        return redirect(url_for('sales_order_detail', order_id=order_id))
+        return redirect(url_for('sales_order_detail', id=order_id))
 
     return render_template('sales_order_ocr_confirm.html',
                           order=order, records=records, image_file=image_file)

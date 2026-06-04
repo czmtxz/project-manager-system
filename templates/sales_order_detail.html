@@ -166,9 +166,12 @@
             <div class="card">
                 <div class="card-header py-2 d-flex justify-content-between align-items-center">
                     <h6 class="mb-0"><i class="bi bi-truck"></i> 运输记录 ({{ transports|length }}车)</h6>
-                    <button type="button" class="btn btn-outline-success btn-sm" onclick="showTransportModal()">
-                        <i class="bi bi-plus"></i> 添加运输记录
-                    </button>
+                    <div class="d-flex gap-1">
+                        {{ import_btn('importSalesTransportModal', 'btn-outline-primary btn-sm', '导入') }}
+                        <button type="button" class="btn btn-outline-success btn-sm" onclick="showTransportModal()">
+                            <i class="bi bi-plus"></i> 添加运输记录
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body p-0">
                     {% if transports %}
@@ -689,6 +692,22 @@ function saveEditSalesItem() {
     excel_hint='<p class="mb-0">表头：品名、规格型号、单位、数量、单价。</p>',
     image_extra=si_ocr_hidden,
     excel_extra=si_xls_hidden
+) }}
+
+{% set st_ocr_hidden %}<input type="hidden" name="import_type" value="ocr">{% endset %}
+{% set st_xls_hidden %}<input type="hidden" name="import_type" value="excel">{% endset %}
+{{ import_modal(
+    'importSalesTransportModal',
+    '运输记录导入',
+    image_action=url_for('sales_order_transport_import', id=order.id),
+    excel_action=url_for('sales_order_transport_import', id=order.id),
+    image_field='ocr_image',
+    image_multiple=true,
+    excel_field='excel_file',
+    image_hint='上传运费明细截图（表头：车牌号、司机、运输日期、数量、单价运费、运费金额），可多选。',
+    excel_hint='<p class="mb-1">第 1 行为表头，数据从第 2 行起。</p><p class="mb-0">列顺序：<strong>车牌号、司机、运输日期、数量(吨)、单价运费、运费金额、备注</strong>（备注可选）。</p>',
+    image_extra=st_ocr_hidden,
+    excel_extra=st_xls_hidden
 ) }}
 
 <script>
