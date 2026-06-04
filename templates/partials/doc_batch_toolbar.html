@@ -1,0 +1,100 @@
+{# 列表页批量提交/反提交工具栏
+   变量: doc_label, batch_submit_url, batch_unsubmit_url, id_field_name(默认 ids)
+#}
+{% set id_field = id_field_name|default('ids') %}
+<div class="card-header py-2 doc-batch-toolbar"
+     data-doc-label="{{ doc_label }}"
+     data-id-field="{{ id_field }}">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span class="text-muted small">勾选后可批量提交（草稿/待审核）或反提交</span>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <span class="text-muted small" id="batchSubmitHint">可提交 0 笔</span>
+            <span class="text-muted small" id="batchUnsubmitHint">可反提交 0 笔</span>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-batch-select="submit">全选可提交</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-batch-select="unsubmit">全选可反提交</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-batch-select="none">取消全选</button>
+            <button type="submit" form="batchSubmitForm" class="btn btn-success btn-sm" data-batch-action="submit">
+                <i class="bi bi-check-circle"></i> 批量提交
+            </button>
+            <button type="submit" form="batchUnsubmitForm" class="btn btn-warning btn-sm" data-batch-action="unsubmit">
+                <i class="bi bi-arrow-counterclockwise"></i> 批量反提交
+            </button>
+        </div>
+    </div>
+</div>
+<form id="batchSubmitForm" method="POST" action="{{ batch_submit_url }}"></form>
+<form id="batchUnsubmitForm" method="POST" action="{{ batch_unsubmit_url }}"></form>
+<script>
+(function() {
+    function submitChecks() {
+        return Array.from(document.querySelectorAll('.batch-submit-check'));
+    }
+    function unsubmitChecks() {
+        return Array.from(document.querySelectorAll('.batch-unsubmit-check'));
+    }
+    function updateHints() {
+        const ns = submitChecks().filter(c => c.checked).length;
+        const nu = unsubmitChecks().filter(c => c.checked).length;
+        const es = document.getElementById('batchSubmitHint');
+        const eu = document.getElementById('batchUnsubmitHint');
+        if (es) es.textContent = '可提交 已选 ' + ns + ' 笔';
+        if (eu) eu.textContent = '可反提交 已选 ' + nu + ' 笔';
+        const allS = document.getElementById('selectAllSubmit');
+        const allU = document.getElementById('selectAllUnsubmit');
+        const bs = submitChecks();
+        const bu = unsubmitChecks();
+        if (allS && bs.length) {
+            allS.checked = bs.every(c => c.checked);
+            allS.indeterminate = ns > 0 && ns < bs.length;
+        }
+        if (allU && bu.length) {
+            allU.checked = bu.every(c => c.checked);
+            allU.indeterminate = nu > 0 && nu < bu.length;
+        }
+    }
+    function toggleGroup(kind, checked) {
+        const sel = kind === 'submit' ? '.batch-submit-check' : '.batch-unsubmit-check';
+        document.querySelectorAll(sel).forEach(c => { c.checked = !!checked; });
+        updateHints();
+    }
+    function confirmAction(kind) {
+        const toolbar = document.querySelector('.doc-batch-toolbar');
+        const label = toolbar ? toolbar.dataset.docLabel : '单据';
+        const checks = kind === 'submit' ? submitChecks() : unsubmitChecks();
+        const n = checks.filter(c => c.checked).length;
+        if (n === 0) {
+            alert('请先勾选需要' + (kind === 'submit' ? '提交' : '反提交') + '的' + label);
+            return false;
+        }
+        const verb = kind === 'submit' ? '提交' : '反提交';
+        return confirm('确定将选中的 ' + n + ' 笔' + label + '批量' + verb + '吗？');
+    }
+    document.querySelectorAll('[data-batch-select]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const mode = this.getAttribute('data-batch-select');
+            if (mode === 'none') {
+                submitChecks().concat(unsubmitChecks()).forEach(c => { c.checked = false; });
+            } else {
+                toggleGroup(mode, true);
+            }
+            updateHints();
+        });
+    });
+    document.querySelectorAll('[data-batch-action]').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            if (!confirmAction(this.getAttribute('data-batch-action'))) {
+                e.preventDefault();
+            }
+        });
+    });
+    const allS = document.getElementById('selectAllSubmit');
+    const allU = document.getElementById('selectAllUnsubmit');
+    if (allS) allS.addEventListener('change', function() { toggleGroup('submit', this.checked); });
+    if (allU) allU.addEventListener('change', function() { toggleGroup('unsubmit', this.checked); });
+    document.querySelectorAll('.batch-submit-check, .batch-unsubmit-check').forEach(c => {
+        c.addEventListener('change', updateHints);
+    });
+    document.addEventListener('DOMContentLoaded', updateHints);
+    updateHints();
+})();
+</script>

@@ -289,14 +289,107 @@ def register_missing_routes(app, ctx):
             return redirect(url_for('contract_list'))
         return render_template('contract_import.html')
 
+    def _contract_submit_one(db, contract_id):
+        row = db.execute(
+            'SELECT id, contract_no, status FROM contracts WHERE id=?', (contract_id,)
+        ).fetchone()
+        if not row:
+            return False, '合同不存在', None
+        if (row['status'] or '').strip() != '草稿':
+            return False, f'编号 {row["contract_no"]} 非草稿，无法提交', row['contract_no']
+        db.execute(
+            "UPDATE contracts SET status='审批中', approval_status='pending' WHERE id=?",
+            (contract_id,),
+        )
+        return True, row['contract_no'], row['contract_no']
+
+    def _contract_unsubmit_one(db, contract_id):
+        row = db.execute(
+            'SELECT id, contract_no, status FROM contracts WHERE id=?', (contract_id,)
+        ).fetchone()
+        if not row:
+            return False, '合同不存在', None
+        if (row['status'] or '').strip() != '审批中':
+            return False, f'编号 {row["contract_no"]} 非审批中，无法反提交', row['contract_no']
+        db.execute(
+            "UPDATE contracts SET status='草稿', approval_status=NULL WHERE id=?",
+            (contract_id,),
+        )
+        return True, row['contract_no'], row['contract_no']
+
     @app.route('/contract/<int:id>/submit')
     @login_required
     def contract_submit(id):
         db = get_db()
-        db.execute("UPDATE contracts SET status='审批中', approval_status='pending' WHERE id=?", (id,))
+        ok, msg, no = _contract_submit_one(db, id)
+        if not ok:
+            flash(msg, 'warning' if no else 'danger')
+            return redirect(url_for('contract_list'))
         db.commit()
         flash('合同已提交审批', 'success')
         return redirect(url_for('contract_list'))
+
+    @app.route('/contract/<int:id>/unsubmit', methods=['POST'])
+    @login_required
+    def contract_unsubmit(id):
+        db = get_db()
+        ok, msg, no = _contract_unsubmit_one(db, id)
+        if not ok:
+            flash(msg, 'warning' if no else 'danger')
+            return redirect(url_for('contract_list'))
+        db.commit()
+        flash('合同已反提交为草稿，可继续编辑', 'success')
+        return redirect(url_for('contract_list'))
+
+    @app.route('/contract/batch/submit', methods=['POST'])
+    @login_required
+    def contract_batch_submit():
+        db = get_db()
+        ids = [int(x) for x in request.form.getlist('ids') if str(x).isdigit()]
+        if not ids:
+            flash('请先勾选需要提交的合同', 'warning')
+            return redirect(url_for('contract_list'))
+        ok_count, skipped = 0, []
+        for cid in ids:
+            success, msg, _no = _contract_submit_one(db, cid)
+            if success:
+                ok_count += 1
+            else:
+                skipped.append(msg)
+        if ok_count:
+            db.commit()
+            flash(f'已成功提交 {ok_count} 份合同审批', 'success')
+        else:
+            db.rollback()
+            flash(f'未能提交：{"；".join(skipped[:5])}', 'danger')
+        if ok_count and skipped:
+            flash(f'跳过 {len(skipped)} 份：{"；".join(skipped[:5])}', 'warning')
+        return redirect(request.referrer or url_for('contract_list'))
+
+    @app.route('/contract/batch/unsubmit', methods=['POST'])
+    @login_required
+    def contract_batch_unsubmit():
+        db = get_db()
+        ids = [int(x) for x in request.form.getlist('ids') if str(x).isdigit()]
+        if not ids:
+            flash('请先勾选需要反提交的合同', 'warning')
+            return redirect(url_for('contract_list'))
+        ok_count, skipped = 0, []
+        for cid in ids:
+            success, msg, _no = _contract_unsubmit_one(db, cid)
+            if success:
+                ok_count += 1
+            else:
+                skipped.append(msg)
+        if ok_count:
+            db.commit()
+            flash(f'已成功反提交 {ok_count} 份合同', 'success')
+        else:
+            db.rollback()
+            flash(f'未能反提交：{"；".join(skipped[:5])}', 'danger')
+        if ok_count and skipped:
+            flash(f'跳过 {len(skipped)} 份：{"；".join(skipped[:5])}', 'warning')
+        return redirect(request.referrer or url_for('contract_list'))
 
     @app.route('/contract/<int:id>/complete')
     @login_required
@@ -777,33 +870,6 @@ def register_missing_routes(app, ctx):
         add_log(session.get('user_id'), session.get('username', ''), '删除发票', f'发票号: {row["invoice_no"] or id}')
         flash('发票已删除', 'success')
         return redirect(url_for(back))
-
-    # ---------- 采购扩展 ----------
-    @app.route('/purchase/<int:id>/submit')
-    @login_required
-    def purchase_submit(id):
-        db = get_db()
-        purchase = db.execute(
-            'SELECT id, purchase_no, status FROM purchase_orders WHERE id=?', (id,)
-        ).fetchone()
-        if not purchase:
-            flash('采购单不存在', 'danger')
-            return redirect(url_for('purchase_list'))
-        status = (purchase['status'] or '').strip()
-        if status not in ('draft', '草稿'):
-            flash('该采购单已提交或不可重复提交', 'warning')
-            return redirect(url_for('purchase_detail', id=id))
-        items = db.execute(
-            'SELECT COUNT(*) as cnt FROM purchase_items WHERE purchase_id=?', (id,)
-        ).fetchone()
-        if not items or items['cnt'] == 0:
-            flash('请先添加采购明细后再提交', 'warning')
-            return redirect(url_for('purchase_detail', id=id))
-        db.execute("UPDATE purchase_orders SET status='已提交' WHERE id=?", (id,))
-        db.commit()
-        add_log(session.get('user_id'), session.get('username', ''), '提交采购单', f'采购单号: {purchase["purchase_no"]}')
-        flash('采购单已提交', 'success')
-        return redirect(url_for('purchase_detail', id=id))
 
     # ---------- 对账扩展 ----------
     @app.route('/reconciliation/create/<int:purchase_id>')

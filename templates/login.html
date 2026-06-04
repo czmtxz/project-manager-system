@@ -1,5 +1,5 @@
-{% extends "base.html" %}
-{% block title %}登录 - 项目投资管理系统{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}登录 - 工程项目投资采运销分红系统{% endblock %}
 {% block body %}
 {% set theme = login_theme|default(none) %}
 {% set bg = (theme.bg if theme else 'img/login-bg.png') %}
@@ -11,10 +11,10 @@
                 <i class="bi bi-shield-check"></i> {{ theme.badge if theme else '企业级 · 安全可信' }}
             </div>
             <h1 class="login-hero-title">
-                项目投资管理系统
+                工程项目投资采运销分红系统
             </h1>
             <p class="login-hero-subtitle">
-                {% if theme %}{{ theme.subtitle|safe }}{% else %}一站式打通 <b>项目 · 投资 · 销售 · 采购 · 财务 · 报表</b><br>让每一笔资金都看得清，让每一分利润都算得准。{% endif %}
+                {% if theme %}{{ theme.subtitle|safe }}{% else %}一站式打通 <b>工程投资 · 采购 · 运输 · 销售 · 分红 · 报表</b><br>让每一笔资金都看得清，让每一分利润都算得准。{% endif %}
             </p>
             <ul class="login-hero-features">
                 {% if theme %}

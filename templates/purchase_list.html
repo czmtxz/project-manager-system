@@ -1,5 +1,5 @@
-{% extends "nav_base.html" %}
-{% block title %}采购管理 - 项目费用归集系统{% endblock %}
+﻿{% extends "nav_base.html" %}
+{% block title %}采购管理 - 工程项目投资采运销分红系统{% endblock %}
 {% block content %}
 <div class="container-fluid px-4">
     <!-- 页面标题 -->
@@ -106,11 +106,21 @@
         </div>
     </div>
     <div class="card">
+        {% set doc_label = '采购单' %}
+        {% set batch_submit_url = url_for('purchase_batch_submit') %}
+        {% set batch_unsubmit_url = url_for('purchase_batch_unsubmit') %}
+        {% include 'partials/doc_batch_toolbar.html' %}
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover table-striped mb-0">
                     <thead class="table-light">
                         <tr>
+                            <th style="width:42px" class="text-center" title="批量提交/反提交">
+                                <div class="d-flex flex-column gap-1 align-items-center">
+                                    <input type="checkbox" class="form-check-input" id="selectAllSubmit" title="全选可提交">
+                                    <input type="checkbox" class="form-check-input" id="selectAllUnsubmit" title="全选可反提交">
+                                </div>
+                            </th>
                             <th>采购单号</th>
                             <th>项目</th>
                             <th>类型</th>
@@ -127,6 +137,17 @@
                     <tbody>
                         {% for p in purchases %}
                         <tr>
+                            <td class="text-center">
+                                {% if purchase_is_draft(p.status) %}
+                                <input type="checkbox" class="form-check-input batch-submit-check" form="batchSubmitForm"
+                                       name="ids" value="{{ p.id }}">
+                                {% elif purchase_can_unsubmit(p.status) %}
+                                <input type="checkbox" class="form-check-input batch-unsubmit-check" form="batchUnsubmitForm"
+                                       name="ids" value="{{ p.id }}">
+                                {% else %}
+                                <input type="checkbox" class="form-check-input" disabled title="不可批量操作">
+                                {% endif %}
+                            </td>
                             <td><a href="{{ url_for('purchase_detail', id=p.id) }}"><code>{{ p.purchase_no }}</code></a></td>
                             <td>{{ p.project_name or '-' }}</td>
                             <td>{{ p.purchase_type }}</td>
@@ -199,7 +220,7 @@
                     </tbody>
                     <tfoot class="table-light">
                         <tr class="fw-semibold">
-                            <td colspan="4">合计（{{ summary.count }} 笔{% if not summary.include_draft %}，不含未提交{% endif %}）</td>
+                            <td colspan="5">合计（{{ summary.count }} 笔{% if not summary.include_draft %}，不含未提交{% endif %}）</td>
                             <td class="text-end text-primary">¥{{ "%.2f"|format(summary.total_amount) }}</td>
                             <td class="text-end">{{ "%.2f"|format(summary.total_qty) }}</td>
                             <td class="text-end text-warning">¥{{ "%.2f"|format(summary.total_freight) }}</td>

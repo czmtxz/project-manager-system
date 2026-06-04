@@ -1,6 +1,6 @@
-{% extends "nav_base.html" %}
+﻿{% extends "nav_base.html" %}
 {% from 'macros/import_modal.html' import import_btn, import_modal %}
-{% block title %}{% if contract_type == '支出合同' %}采购合同管理{% else %}合同管理{% endif %} - 项目费用归集系统{% endblock %}
+{% block title %}{% if contract_type == '支出合同' %}采购合同管理{% else %}合同管理{% endif %} - 工程项目投资采运销分红系统{% endblock %}
 {% block content %}
 <div class="container-fluid px-4">
     <!-- 页面标题与新增按钮 -->
@@ -60,11 +60,21 @@
     <!-- 合同列表 -->
     {% if contracts %}
     <div class="card">
+        {% set doc_label = '合同' %}
+        {% set batch_submit_url = url_for('contract_batch_submit') %}
+        {% set batch_unsubmit_url = url_for('contract_batch_unsubmit') %}
+        {% include 'partials/doc_batch_toolbar.html' %}
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover table-striped mb-0">
                     <thead class="table-light">
                         <tr>
+                            <th style="width:42px" class="text-center" title="批量提交/反提交">
+                                <div class="d-flex flex-column gap-1 align-items-center">
+                                    <input type="checkbox" class="form-check-input" id="selectAllSubmit" title="全选可提交">
+                                    <input type="checkbox" class="form-check-input" id="selectAllUnsubmit" title="全选可反提交">
+                                </div>
+                            </th>
                             <th>合同编号</th>
                             <th>合同名称</th>
                             <th>类型</th>
@@ -80,6 +90,17 @@
                     <tbody>
                         {% for c in contracts %}
                         <tr>
+                            <td class="text-center">
+                                {% if c.status == '草稿' %}
+                                <input type="checkbox" class="form-check-input batch-submit-check" form="batchSubmitForm"
+                                       name="ids" value="{{ c.id }}">
+                                {% elif c.status == '审批中' %}
+                                <input type="checkbox" class="form-check-input batch-unsubmit-check" form="batchUnsubmitForm"
+                                       name="ids" value="{{ c.id }}">
+                                {% else %}
+                                <input type="checkbox" class="form-check-input" disabled title="不可批量操作">
+                                {% endif %}
+                            </td>
                             <td><code>{{ c.contract_no }}</code></td>
                             <td>{{ c.name }}</td>
                             <td>
@@ -96,6 +117,8 @@
                             <td>
                                 {% if c.status == '草稿' %}
                                 <span class="badge bg-secondary">{{ c.status }}</span>
+                                {% elif c.status == '审批中' %}
+                                <span class="badge bg-info text-dark">{{ c.status }}</span>
                                 {% elif c.status == '执行中' %}
                                 <span class="badge bg-primary">{{ c.status }}</span>
                                 {% elif c.status == '已完成' %}
@@ -127,6 +150,13 @@
                                        onclick="return confirm('确定要提交此合同进行审批吗？')">
                                         <i class="bi bi-check-circle"></i>
                                     </a>
+                                    {% elif c.status == '审批中' %}
+                                    <form method="POST" action="{{ url_for('contract_unsubmit', id=c.id) }}" style="display:inline"
+                                          onsubmit="return confirm('确定反提交此合同为草稿？')">
+                                        <button type="submit" class="btn btn-outline-warning" title="反提交">
+                                            <i class="bi bi-arrow-counterclockwise"></i>
+                                        </button>
+                                    </form>
                                     {% endif %}
                                     {% if c.status == '执行中' %}
                                     <a href="{{ url_for('contract_complete', id=c.id) }}" class="btn btn-outline-success" title="完成"

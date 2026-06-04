@@ -1,4 +1,4 @@
-# 部署到生产服务器 (36.212.73.151:888)
+﻿# 部署到生产服务器 (36.212.73.151:888)
 
 目标目录：`/opt/project_manager/project_manager/`
 
@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\deploy_to_server.ps1
    ```
 2. 在项目目录执行：
    ```powershell
-   cd "C:\Users\User\Desktop\项目管理系统"
+   cd "C:\Users\User\Desktop\工程项目投资采运销分红系统"
    powershell -ExecutionPolicy Bypass -File .\tools\deploy_to_server.ps1
    ```
 

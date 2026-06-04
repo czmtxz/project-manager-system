@@ -1,5 +1,5 @@
-{% extends "nav_base.html" %}
-{% block title %}销售出库单 - 项目费用归集系统{% endblock %}
+﻿{% extends "nav_base.html" %}
+{% block title %}销售出库单 - 工程项目投资采运销分红系统{% endblock %}
 {% block content %}
 <div class="container-fluid px-4">
     <!-- 页面标题 -->
@@ -97,27 +97,20 @@
         </div>
     </div>
     <div class="card">
-        <div class="card-header py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <span class="text-muted small">勾选后可批量反提交（不含待审核、已完成）</span>
-            <div class="d-flex gap-2 align-items-center">
-                <span class="text-muted small" id="unsubmitSelectedHint">已选 0 笔</span>
-                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleAllUnsubmit(true)">全选可反提交</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleAllUnsubmit(false)">取消全选</button>
-                <button type="submit" form="batchUnsubmitForm" class="btn btn-warning btn-sm"
-                        onclick="return confirmBatchUnsubmit()">
-                    <i class="bi bi-arrow-counterclockwise"></i> 批量反提交
-                </button>
-            </div>
-        </div>
-        <form id="batchUnsubmitForm" method="POST" action="{{ url_for('sales_order_batch_unsubmit') }}"></form>
+        {% set doc_label = '出库单' %}
+        {% set batch_submit_url = url_for('sales_order_batch_submit') %}
+        {% set batch_unsubmit_url = url_for('sales_order_batch_unsubmit') %}
+        {% include 'partials/doc_batch_toolbar.html' %}
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover table-striped mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th style="width:42px" class="text-center">
-                                <input type="checkbox" class="form-check-input" id="selectAllUnsubmit"
-                                       title="全选本页可反提交" onchange="toggleAllUnsubmit(this.checked)">
+                            <th style="width:42px" class="text-center" title="批量提交/反提交">
+                                <div class="d-flex flex-column gap-1 align-items-center">
+                                    <input type="checkbox" class="form-check-input" id="selectAllSubmit" title="全选可提交">
+                                    <input type="checkbox" class="form-check-input" id="selectAllUnsubmit" title="全选可反提交">
+                                </div>
                             </th>
                             <th>出库单号</th>
                             <th>项目</th>
@@ -136,11 +129,14 @@
                         {% for o in orders %}
                         <tr>
                             <td class="text-center">
-                                {% if sales_can_unsubmit(o.status) %}
-                                <input type="checkbox" class="form-check-input unsubmit-check" form="batchUnsubmitForm"
-                                       name="order_ids" value="{{ o.id }}" onchange="updateUnsubmitHint()">
+                                {% if sales_is_draft(o.status) %}
+                                <input type="checkbox" class="form-check-input batch-submit-check" form="batchSubmitForm"
+                                       name="ids" value="{{ o.id }}">
+                                {% elif sales_can_unsubmit(o.status) %}
+                                <input type="checkbox" class="form-check-input batch-unsubmit-check" form="batchUnsubmitForm"
+                                       name="ids" value="{{ o.id }}">
                                 {% else %}
-                                <input type="checkbox" class="form-check-input" disabled title="不可反提交">
+                                <input type="checkbox" class="form-check-input" disabled title="不可批量操作">
                                 {% endif %}
                             </td>
                             <td><a href="{{ url_for('sales_order_detail', id=o.id) }}"><code>{{ o.order_no }}</code></a></td>
@@ -224,7 +220,7 @@
                     </tbody>
                     <tfoot class="table-light">
                         <tr class="fw-semibold">
-                            <td colspan="4">合计（{{ summary.count }} 笔{% if not summary.include_draft %}，不含未提交{% endif %}）</td>
+                            <td colspan="5">合计（{{ summary.count }} 笔{% if not summary.include_draft %}，不含未提交{% endif %}）</td>
                             <td class="text-end text-primary">¥{{ "%.2f"|format(summary.total_amount) }}</td>
                             <td class="text-end">{{ "%.2f"|format(summary.total_qty) }}</td>
                             <td class="text-end">{{ "%.2f"|format(summary.transport_qty) }}</td>
@@ -254,33 +250,4 @@
     </div>
     {% endif %}
 </div>
-<script>
-function unsubmitChecks() {
-    return Array.from(document.querySelectorAll('.unsubmit-check'));
-}
-function updateUnsubmitHint() {
-    const n = unsubmitChecks().filter(c => c.checked).length;
-    const el = document.getElementById('unsubmitSelectedHint');
-    if (el) el.textContent = '已选 ' + n + ' 笔';
-    const all = document.getElementById('selectAllUnsubmit');
-    const boxes = unsubmitChecks();
-    if (all && boxes.length) {
-        all.checked = boxes.every(c => c.checked);
-        all.indeterminate = n > 0 && n < boxes.length;
-    }
-}
-function toggleAllUnsubmit(checked) {
-    unsubmitChecks().forEach(c => { c.checked = !!checked; });
-    updateUnsubmitHint();
-}
-function confirmBatchUnsubmit() {
-    const n = unsubmitChecks().filter(c => c.checked).length;
-    if (n === 0) {
-        alert('请先勾选需要反提交的出库单');
-        return false;
-    }
-    return confirm('确定将选中的 ' + n + ' 笔出库单反提交为「待审核」吗？');
-}
-document.addEventListener('DOMContentLoaded', updateUnsubmitHint);
-</script>
 {% endblock %}

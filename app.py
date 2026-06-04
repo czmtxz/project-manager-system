@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-项目费用归集系统 - 主程序
-功能：项目管理、合同管理、发票管理、付款管理、往来款登记、图片OCR识别、Excel导入
+工程项目投资采运销分红系统 - 主程序
+功能：项目管理、投资分红、采购销售、合同发票、费用归集、报表分析
 """
+
+APP_DISPLAY_NAME = '工程项目投资采运销分红系统'
 
 import os
 import json
@@ -5745,6 +5747,111 @@ def _sales_unsubmit_one(db, order_id):
     return True, order['order_no'], order['order_no']
 
 
+def _purchase_can_unsubmit(status):
+    return _purchase_is_submitted(status)
+
+
+def _purchase_recon_blocks_unsubmit(db, purchase_id):
+    recon_cols = {r[1] for r in db.execute('PRAGMA table_info(reconciliations)').fetchall()}
+    if 'purchase_id' not in recon_cols:
+        return False
+    recon = db.execute(
+        'SELECT status FROM reconciliations WHERE purchase_id=? ORDER BY id DESC LIMIT 1',
+        (purchase_id,),
+    ).fetchone()
+    return bool(
+        recon and (recon['status'] or '').strip() in ('matched', 'confirmed', '已确认', '对账一致')
+    )
+
+
+def _purchase_unsubmit_one(db, purchase_id):
+    """单笔采购单反提交。返回 (成功与否, 提示信息, 单号)。"""
+    purchase = db.execute(
+        'SELECT id, purchase_no, status, project_id FROM purchase_orders WHERE id=?',
+        (purchase_id,),
+    ).fetchone()
+    if not purchase:
+        return False, '采购单不存在', None
+    from user_access import can_access_project
+    if not can_access_project(
+            db, session.get('user_id'), session.get('role', ''), purchase['project_id']):
+        return False, f'单号 {purchase["purchase_no"]} 无权操作', purchase['purchase_no']
+    if not _purchase_can_unsubmit(purchase['status']):
+        return False, f'单号 {purchase["purchase_no"]} 仅「已提交」可反提交', purchase['purchase_no']
+    if _purchase_recon_blocks_unsubmit(db, purchase_id):
+        return False, f'单号 {purchase["purchase_no"]} 对账已确认，无法反提交', purchase['purchase_no']
+    db.execute("UPDATE purchase_orders SET status='draft' WHERE id=?", (purchase_id,))
+    return True, purchase['purchase_no'], purchase['purchase_no']
+
+
+def _purchase_submit_one(db, purchase_id):
+    """单笔采购单提交。返回 (成功与否, 提示信息, 单号)。"""
+    purchase = db.execute(
+        'SELECT id, purchase_no, status, project_id FROM purchase_orders WHERE id=?',
+        (purchase_id,),
+    ).fetchone()
+    if not purchase:
+        return False, '采购单不存在', None
+    from user_access import can_access_project
+    if not can_access_project(
+            db, session.get('user_id'), session.get('role', ''), purchase['project_id']):
+        return False, f'单号 {purchase["purchase_no"]} 无权操作', purchase['purchase_no']
+    if not _purchase_is_draft(purchase['status']):
+        return False, f'单号 {purchase["purchase_no"]} 已提交或不可重复提交', purchase['purchase_no']
+    items = db.execute(
+        'SELECT COUNT(*) as cnt FROM purchase_items WHERE purchase_id=?', (purchase_id,)
+    ).fetchone()
+    if not items or items['cnt'] == 0:
+        return False, f'单号 {purchase["purchase_no"]} 无明细，请先添加采购明细', purchase['purchase_no']
+    db.execute("UPDATE purchase_orders SET status='已提交' WHERE id=?", (purchase_id,))
+    return True, purchase['purchase_no'], purchase['purchase_no']
+
+
+def _sales_submit_one(db, order_id):
+    """单笔销售出库单提交。返回 (成功与否, 提示信息, 单号)。"""
+    order = db.execute(
+        'SELECT id, order_no, status, project_id FROM sales_orders WHERE id=?',
+        (order_id,),
+    ).fetchone()
+    if not order:
+        return False, '出库单不存在', None
+    from user_access import can_access_project
+    if not can_access_project(
+            db, session.get('user_id'), session.get('role', ''), order['project_id']):
+        return False, f'单号 {order["order_no"]} 无权操作', order['order_no']
+    if not _sales_is_draft(order['status']):
+        return False, f'单号 {order["order_no"]} 已提交或不可重复提交', order['order_no']
+    items = db.execute(
+        'SELECT COUNT(*) as cnt FROM sales_order_items WHERE sales_order_id=?', (order_id,)
+    ).fetchone()
+    if not items or items['cnt'] == 0:
+        return False, f'单号 {order["order_no"]} 无明细，请先添加出库明细', order['order_no']
+    db.execute("UPDATE sales_orders SET status='已提交' WHERE id=?", (order_id,))
+    return True, order['order_no'], order['order_no']
+
+
+def _parse_batch_ids():
+    ids = []
+    for raw in request.form.getlist('ids') + request.form.getlist('order_ids') + request.form.getlist('purchase_ids'):
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+def _flash_batch_doc_result(ok_count, skipped, doc_label, action_label):
+    if ok_count and not skipped:
+        flash(f'已成功{action_label} {ok_count} 笔{doc_label}', 'success')
+    elif ok_count:
+        flash(
+            f'成功{action_label} {ok_count} 笔；跳过 {len(skipped)} 笔：{"；".join(skipped[:5])}',
+            'warning',
+        )
+    else:
+        flash(f'未能{action_label}：{"；".join(skipped[:5])}', 'danger')
+
+
 def _purchase_summary_rows(purchases, include_draft):
     if include_draft:
         return list(purchases)
@@ -5982,34 +6089,104 @@ def purchase_detail(id):
     )
 
 
+@app.route('/purchase/<int:id>/submit')
+@login_required
+@permission_required('purchase.edit')
+def purchase_submit(id):
+    """采购单提交"""
+    db = get_db()
+    ok, msg, purchase_no = _purchase_submit_one(db, id)
+    if not ok:
+        flash(msg, 'warning' if purchase_no else 'danger')
+        if purchase_no:
+            return redirect(url_for('purchase_detail', id=id))
+        return redirect(url_for('purchase_list'))
+    db.commit()
+    add_log(session.get('user_id'), session.get('username', ''), '提交采购单', f'采购单号: {purchase_no}')
+    flash('采购单已提交', 'success')
+    return redirect(url_for('purchase_detail', id=id))
+
+
 @app.route('/purchase/<int:id>/unsubmit', methods=['POST'])
 @login_required
+@permission_required('purchase.edit')
 def purchase_unsubmit(id):
     """已提交采购单反提交为草稿"""
     db = get_db()
-    purchase = db.execute('SELECT id, purchase_no, status FROM purchase_orders WHERE id=?', (id,)).fetchone()
-    if not purchase:
-        flash('采购单不存在', 'danger')
-        return redirect(url_for('purchase_list'))
-    if not _purchase_is_submitted(purchase['status']):
-        flash('仅「已提交」状态的采购单可反提交', 'warning')
-        return redirect(url_for('purchase_detail', id=id))
-
-    recon_cols = {r[1] for r in db.execute('PRAGMA table_info(reconciliations)').fetchall()}
-    if 'purchase_id' in recon_cols:
-        recon = db.execute(
-            'SELECT status FROM reconciliations WHERE purchase_id=? ORDER BY id DESC LIMIT 1',
-            (id,),
-        ).fetchone()
-        if recon and (recon['status'] or '').strip() in ('matched', 'confirmed', '已确认', '对账一致'):
-            flash('该采购单对账已确认，无法反提交', 'warning')
+    ok, msg, purchase_no = _purchase_unsubmit_one(db, id)
+    if not ok:
+        flash(msg, 'warning' if purchase_no else 'danger')
+        if purchase_no:
             return redirect(url_for('purchase_detail', id=id))
-
-    db.execute("UPDATE purchase_orders SET status='draft' WHERE id=?", (id,))
+        return redirect(url_for('purchase_list'))
     db.commit()
-    add_log(session.get('user_id'), session.get('username', ''), '反提交采购单', f'采购单号: {purchase["purchase_no"]}')
+    add_log(session.get('user_id'), session.get('username', ''), '反提交采购单', f'采购单号: {purchase_no}')
     flash('采购单已反提交，可继续编辑', 'success')
     return redirect(url_for('purchase_detail', id=id))
+
+
+@app.route('/purchase/batch/submit', methods=['POST'])
+@login_required
+@permission_required('purchase.edit')
+def purchase_batch_submit():
+    """批量提交采购单"""
+    db = get_db()
+    ids = _parse_batch_ids()
+    if not ids:
+        flash('请先勾选需要提交的采购单', 'warning')
+        return redirect(url_for('purchase_list'))
+    ok_count, skipped, done_nos = 0, [], []
+    for pid in ids:
+        success, msg, no = _purchase_submit_one(db, pid)
+        if success:
+            ok_count += 1
+            if no:
+                done_nos.append(no)
+        else:
+            skipped.append(msg)
+    if ok_count:
+        db.commit()
+        add_log(
+            session.get('user_id'), session.get('username', ''),
+            '批量提交采购单',
+            f'成功 {ok_count} 笔: {", ".join(done_nos[:20])}' + ('…' if len(done_nos) > 20 else ''),
+        )
+    else:
+        db.rollback()
+    _flash_batch_doc_result(ok_count, skipped, '采购单', '提交')
+    return redirect(request.referrer or url_for('purchase_list'))
+
+
+@app.route('/purchase/batch/unsubmit', methods=['POST'])
+@login_required
+@permission_required('purchase.edit')
+def purchase_batch_unsubmit():
+    """批量反提交采购单"""
+    db = get_db()
+    ids = _parse_batch_ids()
+    if not ids:
+        flash('请先勾选需要反提交的采购单', 'warning')
+        return redirect(url_for('purchase_list'))
+    ok_count, skipped, done_nos = 0, [], []
+    for pid in ids:
+        success, msg, no = _purchase_unsubmit_one(db, pid)
+        if success:
+            ok_count += 1
+            if no:
+                done_nos.append(no)
+        else:
+            skipped.append(msg)
+    if ok_count:
+        db.commit()
+        add_log(
+            session.get('user_id'), session.get('username', ''),
+            '批量反提交采购单',
+            f'成功 {ok_count} 笔: {", ".join(done_nos[:20])}' + ('…' if len(done_nos) > 20 else ''),
+        )
+    else:
+        db.rollback()
+    _flash_batch_doc_result(ok_count, skipped, '采购单', '反提交')
+    return redirect(request.referrer or url_for('purchase_list'))
 
 
 @app.route('/purchase/<int:id>/edit', methods=['GET', 'POST'])
@@ -6523,27 +6700,18 @@ def sales_order_detail(id):
 
 @app.route('/sales/order/<int:id>/submit')
 @login_required
+@permission_required('sales.edit')
 def sales_order_submit(id):
     """销售出库单提交"""
     db = get_db()
-    order = db.execute('SELECT id, order_no, status FROM sales_orders WHERE id=?', (id,)).fetchone()
-    if not order:
-        flash('出库单不存在', 'danger')
+    ok, msg, order_no = _sales_submit_one(db, id)
+    if not ok:
+        flash(msg, 'warning' if order_no else 'danger')
+        if order_no:
+            return redirect(url_for('sales_order_detail', id=id))
         return redirect(url_for('sales_order_list'))
-    if not _sales_is_draft(order['status']):
-        flash('该出库单已提交或不可重复提交', 'warning')
-        return redirect(url_for('sales_order_detail', id=id))
-
-    items = db.execute(
-        'SELECT COUNT(*) as cnt FROM sales_order_items WHERE sales_order_id=?', (id,)
-    ).fetchone()
-    if not items or items['cnt'] == 0:
-        flash('请先添加出库明细后再提交', 'warning')
-        return redirect(url_for('sales_order_detail', id=id))
-
-    db.execute("UPDATE sales_orders SET status='已提交' WHERE id=?", (id,))
     db.commit()
-    add_log(session.get('user_id'), session.get('username', ''), '提交销售出库单', f'出库单号: {order["order_no"]}')
+    add_log(session.get('user_id'), session.get('username', ''), '提交销售出库单', f'出库单号: {order_no}')
     flash('销售出库单已提交', 'success')
     return redirect(url_for('sales_order_detail', id=id))
 
@@ -6566,25 +6734,50 @@ def sales_order_unsubmit(id):
     return redirect(url_for('sales_order_detail', id=id))
 
 
+@app.route('/sales/order/batch/submit', methods=['POST'])
+@login_required
+@permission_required('sales.edit')
+def sales_order_batch_submit():
+    """批量提交销售出库单"""
+    db = get_db()
+    ids = _parse_batch_ids()
+    if not ids:
+        flash('请先勾选需要提交的出库单', 'warning')
+        return redirect(url_for('sales_order_list'))
+    ok_count, skipped, done_nos = 0, [], []
+    for oid in ids:
+        success, msg, order_no = _sales_submit_one(db, oid)
+        if success:
+            ok_count += 1
+            if order_no:
+                done_nos.append(order_no)
+        else:
+            skipped.append(msg)
+    if ok_count:
+        db.commit()
+        add_log(
+            session.get('user_id'), session.get('username', ''),
+            '批量提交销售出库单',
+            f'成功 {ok_count} 笔: {", ".join(done_nos[:20])}' + ('…' if len(done_nos) > 20 else ''),
+        )
+    else:
+        db.rollback()
+    _flash_batch_doc_result(ok_count, skipped, '出库单', '提交')
+    return redirect(request.referrer or url_for('sales_order_list'))
+
+
 @app.route('/sales/order/batch/unsubmit', methods=['POST'])
 @login_required
 @permission_required('sales.edit')
 def sales_order_batch_unsubmit():
     """批量反提交销售出库单"""
     db = get_db()
-    raw_ids = request.form.getlist('order_ids')
-    if not raw_ids:
+    ids = _parse_batch_ids()
+    if not ids:
         flash('请先勾选需要反提交的出库单', 'warning')
         return redirect(url_for('sales_order_list'))
-
-    ok_count = 0
-    skipped = []
-    done_nos = []
-    for raw in raw_ids:
-        try:
-            oid = int(raw)
-        except (TypeError, ValueError):
-            continue
+    ok_count, skipped, done_nos = 0, [], []
+    for oid in ids:
         success, msg, order_no = _sales_unsubmit_one(db, oid)
         if success:
             ok_count += 1
@@ -6592,25 +6785,16 @@ def sales_order_batch_unsubmit():
                 done_nos.append(order_no)
         else:
             skipped.append(msg)
-
     if ok_count:
         db.commit()
         add_log(
             session.get('user_id'), session.get('username', ''),
             '批量反提交销售出库单',
-            f'成功 {ok_count} 笔: {", ".join(done_nos[:20])}'
-            + ('…' if len(done_nos) > 20 else ''),
+            f'成功 {ok_count} 笔: {", ".join(done_nos[:20])}' + ('…' if len(done_nos) > 20 else ''),
         )
     else:
         db.rollback()
-
-    if ok_count and not skipped:
-        flash(f'已成功反提交 {ok_count} 笔出库单', 'success')
-    elif ok_count:
-        flash(f'成功反提交 {ok_count} 笔；跳过 {len(skipped)} 笔：{"；".join(skipped[:5])}', 'warning')
-    else:
-        flash(f'未能反提交：{"；".join(skipped[:5])}', 'danger')
-
+    _flash_batch_doc_result(ok_count, skipped, '出库单', '反提交')
     return redirect(request.referrer or url_for('sales_order_list'))
 
 
@@ -8606,11 +8790,13 @@ def inject_public_urls():
     if base and not base.endswith('/'):
         base += '/'
     return {
+        'app_display_name': APP_DISPLAY_NAME,
         'public_base_url': base,
         'LOW_BALANCE_THRESHOLD': LOW_BALANCE_THRESHOLD,
         'is_low_balance': is_low_balance,
         'purchase_is_draft': _purchase_is_draft,
         'purchase_is_submitted': _purchase_is_submitted,
+        'purchase_can_unsubmit': _purchase_can_unsubmit,
         'sales_is_draft': _sales_is_draft,
         'sales_is_submitted': _sales_is_submitted,
         'sales_is_editable': _sales_is_editable,
@@ -8763,7 +8949,7 @@ if __name__ == '__main__':
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
     print("=" * 50)
-    print("  项目费用归集系统已启动")
+    print(f"  {APP_DISPLAY_NAME} 已启动")
     print("  默认账号: admin / admin123")
     print("  默认端口: 5002")
     print("=" * 50)
